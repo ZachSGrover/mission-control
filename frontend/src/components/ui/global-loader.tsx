@@ -1,14 +1,19 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import { useIsFetching, useIsMutating } from "@tanstack/react-query";
 
 export function GlobalLoader() {
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => { setMounted(true); }, []);
+
   const fetchingCount = useIsFetching({
     predicate: (query) =>
       query.state.fetchStatus === "fetching" && query.state.data === undefined,
   });
   const mutatingCount = useIsMutating();
-  const visible = fetchingCount + mutatingCount > 0;
+  // Only show after mount — prevents server/client HTML mismatch
+  const visible = mounted && fetchingCount + mutatingCount > 0;
 
   return (
     <div

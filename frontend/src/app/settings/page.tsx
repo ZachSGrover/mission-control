@@ -2,283 +2,326 @@
 
 export const dynamic = "force-dynamic";
 
-import { useMemo, useState } from "react";
-import { useRouter } from "next/navigation";
+import { useCallback, useEffect, useState } from "react";
+import { Eye, EyeOff, X } from "lucide-react";
 
-import { useAuth, useUser } from "@/auth/clerk";
-import { useQueryClient } from "@tanstack/react-query";
-import { Globe, Mail, RotateCcw, Save, Trash2, User } from "lucide-react";
+import { SignedIn, SignedOut } from "@/auth/clerk";
+import { getLocalAuthToken } from "@/auth/localAuth";
+import { getApiBaseUrl } from "@/lib/api-base";
+import { SignedOutPanel } from "@/components/auth/SignedOutPanel";
+import { DashboardSidebar } from "@/components/organisms/DashboardSidebar";
+import { DashboardShell } from "@/components/templates/DashboardShell";
 
-import {
-  useDeleteMeApiV1UsersMeDelete,
-  getGetMeApiV1UsersMeGetQueryKey,
-  type getMeApiV1UsersMeGetResponse,
-  useGetMeApiV1UsersMeGet,
-  useUpdateMeApiV1UsersMePatch,
-} from "@/api/generated/users/users";
-import { ApiError } from "@/api/mutator";
-import { DashboardPageLayout } from "@/components/templates/DashboardPageLayout";
-import { Button } from "@/components/ui/button";
-import { ConfirmActionDialog } from "@/components/ui/confirm-action-dialog";
-import { Input } from "@/components/ui/input";
-import SearchableSelect from "@/components/ui/searchable-select";
-import { getSupportedTimezones } from "@/lib/timezones";
+// ── Types ────────────────────────────────────────────────────────────────────
 
-type ClerkGlobal = {
-  signOut?: (options?: { redirectUrl?: string }) => Promise<void> | void;
-};
+type Provider = "openai" | "gemini" | "anthropic";
+type KeyStatus = { configured: boolean; preview: string | null };
+type AllKeyStatuses = Record<Provider, KeyStatus>;
 
-export default function SettingsPage() {
-  const router = useRouter();
-  const queryClient = useQueryClient();
-  const { isSignedIn } = useAuth();
-  const { user } = useUser();
+const PROVIDERS: { id: Provider; label: string; hint: string; placeholder: string }[] = [
+  {
+    id: "openai",
+    label: "OpenAI",
+    hint: "Used by ChatGPT tab",
+    placeholder: "sk-proj-...",
+  },
+  {
+    id: "gemini",
+    label: "Gemini",
+    hint: "Used by Gemini tab",
+    placeholder: "AIza...",
+  },
+  {
+    id: "anthropic",
+    label: "Claude (direct)",
+    hint: "Anthropic API key — for direct Claude access",
+    placeholder: "sk-ant-...",
+  },
+];
 
-  const [name, setName] = useState("");
-  const [timezone, setTimezone] = useState<string | null>(null);
-  const [nameEdited, setNameEdited] = useState(false);
-  const [timezoneEdited, setTimezoneEdited] = useState(false);
-  const [saveError, setSaveError] = useState<string | null>(null);
-  const [saveSuccess, setSaveSuccess] = useState<string | null>(null);
-  const [deleteError, setDeleteError] = useState<string | null>(null);
-  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+// ── API helpers ──────────────────────────────────────────────────────────────
 
-  const meQuery = useGetMeApiV1UsersMeGet<
-    getMeApiV1UsersMeGetResponse,
-    ApiError
-  >({
-    query: {
-      enabled: Boolean(isSignedIn),
-      retry: false,
-      refetchOnMount: "always",
-    },
+function authHeaders(): Record<string, string> {
+  const token = getLocalAuthToken();
+  return token ? { Authorization: `Bearer ${token}` } : {};
+}
+
+async function fetchStatuses(): Promise<AllKeyStatuses> {
+  const res = await fetch(`${getApiBaseUrl()}/api/v1/settings/api-keys`, {
+    headers: authHeaders(),
   });
-  const meQueryKey = getGetMeApiV1UsersMeGetQueryKey();
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  return res.json() as Promise<AllKeyStatuses>;
+}
 
-  const profile = meQuery.data?.status === 200 ? meQuery.data.data : null;
-  const clerkFallbackName =
-    user?.fullName ?? user?.firstName ?? user?.username ?? "";
-  const displayEmail =
-    profile?.email ?? user?.primaryEmailAddress?.emailAddress ?? "";
-  const resolvedName = nameEdited
-    ? name
-    : (profile?.name ?? profile?.preferred_name ?? clerkFallbackName);
-  const resolvedTimezone = timezoneEdited
-    ? (timezone ?? "")
-    : (profile?.timezone ?? "");
-
-  const timezones = useMemo(() => getSupportedTimezones(), []);
-  const timezoneOptions = useMemo(
-    () => timezones.map((value) => ({ value, label: value })),
-    [timezones],
-  );
-
-  const updateMeMutation = useUpdateMeApiV1UsersMePatch<ApiError>({
-    mutation: {
-      onSuccess: async () => {
-        setSaveError(null);
-        setSaveSuccess("Settings saved.");
-        await queryClient.invalidateQueries({ queryKey: meQueryKey });
-      },
-      onError: (error) => {
-        setSaveSuccess(null);
-        setSaveError(error.message || "Unable to save settings.");
-      },
-    },
+async function saveKey(provider: Provider, key: string): Promise<KeyStatus> {
+  const res = await fetch(`${getApiBaseUrl()}/api/v1/settings/api-keys/${provider}`, {
+    method: "PUT",
+    headers: { ...authHeaders(), "Content-Type": "application/json" },
+    body: JSON.stringify({ key }),
   });
+  if (!res.ok) {
+    const body = await res.json().catch(() => null) as { detail?: string } | null;
+    throw new Error(body?.detail ?? `HTTP ${res.status}`);
+  }
+  return res.json() as Promise<KeyStatus>;
+}
 
-  const deleteAccountMutation = useDeleteMeApiV1UsersMeDelete<ApiError>({
-    mutation: {
-      onSuccess: async () => {
-        setDeleteError(null);
-        if (typeof window !== "undefined") {
-          const clerk = (window as Window & { Clerk?: ClerkGlobal }).Clerk;
-          if (clerk?.signOut) {
-            try {
-              await clerk.signOut({ redirectUrl: "/sign-in" });
-              return;
-            } catch {
-              // Fall through to local redirect.
-            }
-          }
-        }
-        router.replace("/sign-in");
-      },
-      onError: (error) => {
-        setDeleteError(error.message || "Unable to delete account.");
-      },
-    },
+async function clearKey(provider: Provider): Promise<void> {
+  await fetch(`${getApiBaseUrl()}/api/v1/settings/api-keys/${provider}`, {
+    method: "DELETE",
+    headers: authHeaders(),
   });
+}
 
-  const handleSave = async (event: React.FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
-    if (!isSignedIn) return;
-    if (!resolvedName.trim() || !resolvedTimezone.trim()) {
-      setSaveSuccess(null);
-      setSaveError("Name and timezone are required.");
-      return;
+// ── Key row ──────────────────────────────────────────────────────────────────
+
+function KeyRow({
+  id,
+  label,
+  hint,
+  placeholder,
+  status,
+  onSaved,
+  onCleared,
+}: {
+  id: Provider;
+  label: string;
+  hint: string;
+  placeholder: string;
+  status: KeyStatus | undefined;
+  onSaved: (s: KeyStatus) => void;
+  onCleared: () => void;
+}) {
+  const [value, setValue] = useState("");
+  const [shown, setShown] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [feedback, setFeedback] = useState<{ ok: boolean; msg: string } | null>(null);
+
+  const fb = useCallback((ok: boolean, msg: string) => {
+    setFeedback({ ok, msg });
+    setTimeout(() => setFeedback(null), 3000);
+  }, []);
+
+  const handleSave = async () => {
+    const trimmed = value.trim();
+    if (!trimmed) { fb(false, "Enter a key first."); return; }
+    setSaving(true);
+    try {
+      const s = await saveKey(id, trimmed);
+      onSaved(s);
+      setValue("");
+      fb(true, "Saved.");
+    } catch (err) {
+      fb(false, err instanceof Error ? err.message : "Failed to save.");
+    } finally {
+      setSaving(false);
     }
-    setSaveError(null);
-    setSaveSuccess(null);
-    await updateMeMutation.mutateAsync({
-      data: {
-        name: resolvedName.trim(),
-        timezone: resolvedTimezone.trim(),
-      },
-    });
   };
 
-  const handleReset = () => {
-    setName("");
-    setTimezone(null);
-    setNameEdited(false);
-    setTimezoneEdited(false);
-    setSaveError(null);
-    setSaveSuccess(null);
+  const handleClear = async () => {
+    setSaving(true);
+    try {
+      await clearKey(id);
+      onCleared();
+      setValue("");
+      fb(true, "Removed.");
+    } catch {
+      fb(false, "Failed to remove.");
+    } finally {
+      setSaving(false);
+    }
   };
-
-  const isSaving = updateMeMutation.isPending;
 
   return (
-    <>
-      <DashboardPageLayout
-        signedOut={{
-          message: "Sign in to manage your settings.",
-          forceRedirectUrl: "/settings",
-          signUpForceRedirectUrl: "/settings",
-        }}
-        title="Settings"
-        description="Update your profile and account preferences."
-      >
-        <div className="space-y-6">
-          <section className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
-            <h2 className="text-base font-semibold text-slate-900">Profile</h2>
-            <p className="mt-1 text-sm text-slate-500">
-              Keep your identity and timezone up to date.
-            </p>
-
-            <form onSubmit={handleSave} className="mt-6 space-y-5">
-              <div className="grid gap-5 md:grid-cols-2">
-                <div className="space-y-2">
-                  <label className="flex items-center gap-2 text-sm font-medium text-slate-700">
-                    <User className="h-4 w-4 text-slate-500" />
-                    Name
-                  </label>
-                  <Input
-                    value={resolvedName}
-                    onChange={(event) => {
-                      setName(event.target.value);
-                      setNameEdited(true);
-                    }}
-                    placeholder="Your name"
-                    disabled={isSaving}
-                    className="border-slate-300 text-slate-900 focus-visible:ring-blue-500"
-                  />
-                </div>
-                <div className="space-y-2">
-                  <label className="flex items-center gap-2 text-sm font-medium text-slate-700">
-                    <Globe className="h-4 w-4 text-slate-500" />
-                    Timezone
-                  </label>
-                  <SearchableSelect
-                    ariaLabel="Select timezone"
-                    value={resolvedTimezone}
-                    onValueChange={(value) => {
-                      setTimezone(value);
-                      setTimezoneEdited(true);
-                    }}
-                    options={timezoneOptions}
-                    placeholder="Select timezone"
-                    searchPlaceholder="Search timezones..."
-                    emptyMessage="No matching timezones."
-                    disabled={isSaving}
-                    triggerClassName="w-full h-11 rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-900 shadow-sm focus:border-blue-500 focus:ring-2 focus:ring-blue-200"
-                    contentClassName="rounded-xl border border-slate-200 shadow-lg"
-                    itemClassName="px-4 py-3 text-sm text-slate-700 data-[selected=true]:bg-slate-50 data-[selected=true]:text-slate-900"
-                  />
-                </div>
-              </div>
-
-              <div className="space-y-2">
-                <label className="flex items-center gap-2 text-sm font-medium text-slate-700">
-                  <Mail className="h-4 w-4 text-slate-500" />
-                  Email
-                </label>
-                <Input
-                  value={displayEmail}
-                  readOnly
-                  disabled
-                  className="border-slate-200 bg-slate-50 text-slate-600"
-                />
-              </div>
-
-              {saveError ? (
-                <div className="rounded-lg border border-rose-200 bg-rose-50 p-3 text-sm text-rose-700">
-                  {saveError}
-                </div>
-              ) : null}
-              {saveSuccess ? (
-                <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-700">
-                  {saveSuccess}
-                </div>
-              ) : null}
-
-              <div className="flex flex-wrap gap-3">
-                <Button type="submit" disabled={isSaving}>
-                  <Save className="h-4 w-4" />
-                  {isSaving ? "Saving…" : "Save settings"}
-                </Button>
-                <Button
-                  type="button"
-                  variant="outline"
-                  onClick={handleReset}
-                  disabled={isSaving}
-                >
-                  <RotateCcw className="h-4 w-4" />
-                  Reset
-                </Button>
-              </div>
-            </form>
-          </section>
-
-          <section className="rounded-xl border border-rose-200 bg-rose-50/70 p-6 shadow-sm">
-            <h2 className="text-base font-semibold text-rose-900">
-              Delete account
-            </h2>
-            <p className="mt-1 text-sm text-rose-800">
-              This permanently removes your Mission Control account and related
-              personal data. This action cannot be undone.
-            </p>
-            <div className="mt-4">
-              <Button
-                type="button"
-                className="bg-rose-600 text-white hover:bg-rose-700"
-                onClick={() => {
-                  setDeleteError(null);
-                  setDeleteDialogOpen(true);
-                }}
-                disabled={deleteAccountMutation.isPending}
-              >
-                <Trash2 className="h-4 w-4" />
-                Delete account
-              </Button>
-            </div>
-          </section>
+    <div
+      className="rounded-xl p-4 space-y-3"
+      style={{ background: "var(--surface-strong)", border: "1px solid var(--border)" }}
+    >
+      {/* Header row */}
+      <div className="flex items-center justify-between">
+        <div>
+          <p className="text-sm font-medium" style={{ color: "var(--text)" }}>{label}</p>
+          <p className="text-xs mt-0.5" style={{ color: "var(--text-quiet)" }}>{hint}</p>
         </div>
-      </DashboardPageLayout>
+        {status ? (
+          status.configured ? (
+            <span className="flex items-center gap-1.5 text-xs font-medium" style={{ color: "#22c55e" }}>
+              <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
+              Configured
+              {status.preview && (
+                <span className="font-mono ml-1" style={{ color: "var(--text-quiet)" }}>
+                  {status.preview}
+                </span>
+              )}
+            </span>
+          ) : (
+            <span className="flex items-center gap-1.5 text-xs" style={{ color: "var(--text-quiet)" }}>
+              <span className="h-1.5 w-1.5 rounded-full" style={{ background: "var(--border-strong)" }} />
+              Not set
+            </span>
+          )
+        ) : (
+          <span className="text-xs" style={{ color: "var(--text-quiet)" }}>Loading…</span>
+        )}
+      </div>
 
-      <ConfirmActionDialog
-        open={deleteDialogOpen}
-        onOpenChange={setDeleteDialogOpen}
-        title="Delete your account?"
-        description="Your account and personal data will be permanently deleted."
-        onConfirm={() => deleteAccountMutation.mutate()}
-        isConfirming={deleteAccountMutation.isPending}
-        errorMessage={deleteError}
-        confirmLabel="Delete account"
-        confirmingLabel="Deleting account…"
-        ariaLabel="Delete account confirmation"
-      />
-    </>
+      {/* Input row */}
+      <div className="flex gap-2">
+        <div className="relative flex-1">
+          <input
+            type={shown ? "text" : "password"}
+            value={value}
+            onChange={(e) => setValue(e.target.value)}
+            onKeyDown={(e) => { if (e.key === "Enter") void handleSave(); }}
+            placeholder={
+              status?.configured && status.preview
+                ? `Current: ${status.preview}`
+                : placeholder
+            }
+            disabled={saving}
+            className="w-full rounded-lg pr-9 pl-3 py-2 text-sm font-mono focus:outline-none disabled:opacity-50"
+            style={{
+              background: "var(--surface-muted)",
+              border: "1px solid var(--border-strong)",
+              color: "var(--text)",
+            }}
+          />
+          <button
+            type="button"
+            tabIndex={-1}
+            onClick={() => setShown((s) => !s)}
+            className="absolute right-2.5 top-1/2 -translate-y-1/2 transition-opacity hover:opacity-70"
+            style={{ color: "var(--text-quiet)" }}
+          >
+            {shown ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
+          </button>
+        </div>
+
+        <button
+          type="button"
+          onClick={() => void handleSave()}
+          disabled={saving || !value.trim()}
+          className="rounded-lg px-4 py-2 text-sm font-medium text-white transition-opacity disabled:opacity-40"
+          style={{ background: "var(--accent)" }}
+        >
+          {saving ? "…" : "Save"}
+        </button>
+
+        {status?.configured && (
+          <button
+            type="button"
+            onClick={() => void handleClear()}
+            disabled={saving}
+            className="rounded-lg p-2 transition-colors disabled:opacity-40"
+            style={{
+              background: "var(--surface-muted)",
+              border: "1px solid var(--border-strong)",
+              color: "var(--text-quiet)",
+            }}
+            title="Remove key"
+          >
+            <X className="h-3.5 w-3.5" />
+          </button>
+        )}
+      </div>
+
+      {/* Feedback */}
+      {feedback && (
+        <p
+          className="text-xs"
+          style={{ color: feedback.ok ? "#22c55e" : "var(--danger)" }}
+        >
+          {feedback.msg}
+        </p>
+      )}
+    </div>
+  );
+}
+
+// ── Settings page ────────────────────────────────────────────────────────────
+
+export default function SettingsPage() {
+  const [statuses, setStatuses] = useState<AllKeyStatuses | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
+
+  useEffect(() => {
+    fetchStatuses()
+      .then((data) => { setStatuses(data); setLoadError(null); })
+      .catch((err) => setLoadError(err instanceof Error ? err.message : "Failed to load."));
+  }, []);
+
+  const updateStatus = (provider: Provider, s: KeyStatus) =>
+    setStatuses((prev) => prev ? { ...prev, [provider]: s } : prev);
+
+  const clearStatus = (provider: Provider) =>
+    setStatuses((prev) =>
+      prev ? { ...prev, [provider]: { configured: false, preview: null } } : prev,
+    );
+
+  return (
+    <DashboardShell>
+      <SignedOut>
+        <SignedOutPanel
+          message="Sign in to access Digidle OS"
+          forceRedirectUrl="/settings"
+        />
+      </SignedOut>
+
+      <SignedIn>
+        <DashboardSidebar />
+
+        <main
+          className="flex-1 overflow-y-auto"
+          style={{ background: "var(--bg)" }}
+        >
+          <div className="max-w-2xl mx-auto px-6 py-8 space-y-8">
+
+            {/* Page header */}
+            <div>
+              <h1
+                className="text-xl font-semibold"
+                style={{ color: "var(--text)" }}
+              >
+                Settings
+              </h1>
+              <p className="mt-1 text-sm" style={{ color: "var(--text-muted)" }}>
+                API keys are encrypted and stored in the database. Changes take effect immediately.
+              </p>
+            </div>
+
+            {/* API Keys */}
+            <section className="space-y-3">
+              <h2 className="text-xs font-semibold uppercase tracking-widest" style={{ color: "var(--text-quiet)" }}>
+                API Keys
+              </h2>
+
+              {loadError && (
+                <div
+                  className="rounded-xl px-4 py-3 text-sm"
+                  style={{ background: "rgba(239,68,68,0.1)", color: "#ef4444", border: "1px solid rgba(239,68,68,0.2)" }}
+                >
+                  {loadError}
+                </div>
+              )}
+
+              {PROVIDERS.map(({ id, label, hint, placeholder }) => (
+                <KeyRow
+                  key={id}
+                  id={id}
+                  label={label}
+                  hint={hint}
+                  placeholder={placeholder}
+                  status={statuses?.[id]}
+                  onSaved={(s) => updateStatus(id, s)}
+                  onCleared={() => clearStatus(id)}
+                />
+              ))}
+            </section>
+
+          </div>
+        </main>
+      </SignedIn>
+    </DashboardShell>
   );
 }

@@ -52,6 +52,18 @@ class Settings(BaseSettings):
     cors_origins: str = ""
     base_url: str = ""
 
+    # OpenAI integration (optional)
+    openai_api_key: str = ""
+    openai_model: str = "gpt-4o-mini"
+
+    # Gemini integration (optional)
+    gemini_api_key: str = ""
+    gemini_model: str = "gemini-2.5-flash"
+
+    # Anthropic integration (optional — used for synthesis)
+    anthropic_api_key: str = ""
+    anthropic_synthesis_model: str = "claude-sonnet-4-5"
+
     # Security response headers (set to blank to disable a specific header)
     security_header_x_content_type_options: str = "nosniff"
     security_header_x_frame_options: str = "DENY"

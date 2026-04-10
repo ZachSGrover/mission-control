@@ -66,14 +66,15 @@ export function DashboardPageLayout({
         <DashboardSidebar />
         <main
           ref={mainRef}
-          className={cn("flex-1 overflow-y-auto bg-slate-50", mainClassName)}
+          className={cn("flex-1 overflow-y-auto h-full", mainClassName)}
+          style={{ background: "var(--bg)" }}
         >
           <div
             className={cn(
-              "border-b border-slate-200 bg-white",
               stickyHeader && "sticky top-0 z-30",
               headerClassName,
             )}
+            style={{ borderBottom: "1px solid var(--border)", background: "var(--surface)" }}
           >
             <div className="px-4 py-4 md:px-8 md:py-6">
               {headerActions ? (

@@ -1,11 +1,14 @@
 {
-  "name": "frontend",
+  "name": "mission-control",
   "version": "0.1.0",
   "private": true,
+  "main": "electron/main.js",
   "scripts": {
-    "dev": "next dev",
+    "dev": "next dev --webpack",
     "build": "next build",
     "start": "next start",
+    "electron:dev": "electron .",
+    "build:app": "next build && electron-builder --mac dir",
     "lint": "eslint",
     "test": "vitest run --passWithNoTests --coverage",
     "test:full-coverage": "vitest run --passWithNoTests --coverage --config ./vitest.full-coverage.config.ts",
@@ -14,6 +17,31 @@
     "api:gen": "orval --config ./orval.config.ts",
     "e2e": "cypress run",
     "e2e:open": "cypress open"
+  },
+  "build": {
+    "appId": "com.zachary.mission-control",
+    "productName": "Mission Control",
+    "copyright": "Zachary",
+    "directories": {
+      "output": "electron-dist"
+    },
+    "asar": false,
+    "mac": {
+      "category": "public.app-category.productivity",
+      "target": {
+        "target": "dir",
+        "arch": "universal"
+      },
+      "darkModeSupport": true
+    },
+    "files": [
+      "electron/**/*",
+      "node_modules/**/*",
+      ".next/**/*",
+      "next.config.js",
+      "package.json"
+    ],
+    "extraResources": []
   },
   "dependencies": {
     "@clerk/nextjs": "^6.37.3",
@@ -46,6 +74,8 @@
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "cypress": "^14.5.4",
+    "electron": "^33.4.11",
+    "electron-builder": "^25.1.8",
     "eslint": "^9",
     "eslint-config-next": "16.1.6",
     "jsdom": "^25.0.1",

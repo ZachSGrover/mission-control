@@ -4,6 +4,7 @@ node_modules/
 .env
 out/
 dist/
+electron-dist/
 
 # clerk configuration (can include secrets)
 /.clerk/

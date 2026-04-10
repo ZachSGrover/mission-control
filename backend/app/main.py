@@ -11,6 +11,13 @@ from fastapi.openapi.utils import get_openapi
 from fastapi_pagination import add_pagination
 
 from app.api.activity import router as activity_router
+from app.api.app_settings import router as app_settings_router
+from app.api.gemini_chat import router as gemini_chat_router
+from app.api.journal import router as journal_router
+from app.api.judge import router as judge_router
+from app.api.synthesize import router as synthesize_router
+from app.api.operator import router as operator_router
+from app.api.openai_chat import router as openai_chat_router
 from app.api.agent import router as agent_router
 from app.api.agents import router as agents_router
 from app.api.approvals import router as approvals_router
@@ -558,6 +565,13 @@ api_v1.include_router(tasks_router)
 api_v1.include_router(task_custom_fields_router)
 api_v1.include_router(tags_router)
 api_v1.include_router(users_router)
+api_v1.include_router(openai_chat_router)
+api_v1.include_router(gemini_chat_router)
+api_v1.include_router(journal_router)
+api_v1.include_router(judge_router)
+api_v1.include_router(synthesize_router)
+api_v1.include_router(operator_router)
+api_v1.include_router(app_settings_router)
 app.include_router(api_v1)
 
 add_pagination(app)

@@ -7,12 +7,27 @@ node_modules/
 .next/
 *.tsbuildinfo
 
-# Env
+# Env — never commit real secrets
 .env
 .env.local
+.env.*.local
+.env.production
+.env.staging
+.env.development
+
+# OS
+.DS_Store
+**/.DS_Store
+Thumbs.db
+
+# Backups / archives
+*.zip
+*.tar.gz
+mission-control-backup*
 
 # IDE
 .idea/
+.vscode/settings.json
 .runlogs/
 
 # Worktrees

@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "mission-control",
+      "runtimeExecutable": "node",
+      "runtimeArgs": ["node_modules/.bin/next", "start"],
+      "port": 3000
+    }
+  ]
+}

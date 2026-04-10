@@ -21,15 +21,23 @@ export function setLocalAuthToken(token: string): void {
 
 export function getLocalAuthToken(): string | null {
   if (localToken) return localToken;
-  if (typeof window === "undefined") return null;
-  try {
-    const stored = window.sessionStorage.getItem(STORAGE_KEY);
-    if (stored) {
-      localToken = stored;
-      return stored;
+  if (typeof window !== "undefined") {
+    try {
+      const stored = window.sessionStorage.getItem(STORAGE_KEY);
+      if (stored) {
+        localToken = stored;
+        return stored;
+      }
+    } catch {
+      // Ignore storage failures (private mode / policy).
     }
-  } catch {
-    // Ignore storage failures (private mode / policy).
+  }
+  // Fall back to the token baked in at build time — eliminates manual login
+  // for personal local deployments.
+  const envToken = process.env.NEXT_PUBLIC_LOCAL_AUTH_TOKEN;
+  if (envToken && envToken.length >= 50) {
+    localToken = envToken;
+    return envToken;
   }
   return null;
 }

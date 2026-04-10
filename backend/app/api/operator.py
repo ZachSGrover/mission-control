@@ -1,0 +1,330 @@
+"""Operator System — AI planning, routing, and sequential step execution."""
+
+from __future__ import annotations
+
+import json
+import logging
+import re
+from typing import Literal
+
+from fastapi import APIRouter, Depends, HTTPException, status
+from pydantic import BaseModel
+from sqlmodel.ext.asyncio.session import AsyncSession
+
+from app.core.auth import AuthContext, get_auth_context
+from app.core.config import settings
+from app.core.secrets_store import get_api_key
+from app.db.session import get_session
+
+router = APIRouter(prefix="/operator", tags=["operator"])
+AUTH_DEP = Depends(get_auth_context)
+SESSION_DEP = Depends(get_session)
+logger = logging.getLogger(__name__)
+
+StepType = Literal["research", "write", "analyze", "decide"]
+ProviderType = Literal["claude", "chatgpt", "gemini"]
+
+# ── Schemas ───────────────────────────────────────────────────────────────────
+
+
+class PlanRequest(BaseModel):
+    objective: str
+    memory_context: str = ""
+
+
+class PlanStep(BaseModel):
+    id: int
+    task: str
+    type: StepType
+
+
+class PlanResponse(BaseModel):
+    goal: str
+    steps: list[PlanStep]
+
+
+class ExecuteRequest(BaseModel):
+    task: str
+    provider: ProviderType
+    context: str = ""
+    memory_context: str = ""
+
+
+class ExecuteResponse(BaseModel):
+    result: str
+    provider: str
+
+
+class ExtractInsightsRequest(BaseModel):
+    goal: str
+    step_task: str
+    step_result: str
+
+
+class Insight(BaseModel):
+    type: Literal["context", "decision", "insight"]
+    content: str
+
+
+class ExtractInsightsResponse(BaseModel):
+    insights: list[Insight]
+
+
+# ── Prompts ───────────────────────────────────────────────────────────────────
+
+PLANNING_SYSTEM = (
+    "You are an expert AI operator. Given an objective, create a precise, minimal execution plan.\n"
+    "Return ONLY valid JSON — no markdown, no explanation, nothing else.\n\n"
+    'Schema: {"goal": "concise goal statement", "steps": [{"id": 1, "task": "specific actionable task", "type": "research|write|analyze|decide"}]}\n\n'
+    "Rules:\n"
+    "- 2 to 6 steps maximum — be efficient\n"
+    "- research: gathering facts, data, or existing knowledge\n"
+    "- analyze: evaluation, comparison, or synthesis of information\n"
+    "- write: producing formatted content, documents, or summaries\n"
+    "- decide: making recommendations or final judgments\n"
+    "- Each task must be specific and self-contained\n"
+    "- Return ONLY the JSON object"
+)
+
+EXECUTION_SYSTEM = (
+    "You are an expert AI assistant executing a specific task as part of a larger plan. "
+    "Be thorough, precise, and actionable. Stay focused on exactly what is asked."
+)
+
+INSIGHT_SYSTEM = (
+    "You extract concise, reusable insights from completed AI work.\n"
+    "Return ONLY valid JSON — no markdown, nothing else.\n\n"
+    'Schema: {"insights": [{"type": "context|decision|insight", "content": "one sentence, specific and actionable"}]}\n\n'
+    "Rules:\n"
+    "- 1 to 3 insights maximum\n"
+    "- context: background facts useful for future reference\n"
+    "- decision: choices made or recommendations given\n"
+    "- insight: non-obvious observations or conclusions\n"
+    "- Each insight must be a single sentence, under 100 words\n"
+    "- Return ONLY the JSON object"
+)
+
+
+# ── JSON extraction ───────────────────────────────────────────────────────────
+
+
+def _extract_json(text: str) -> dict:
+    text = text.strip()
+    try:
+        return json.loads(text)
+    except json.JSONDecodeError:
+        pass
+    match = re.search(r"```(?:json)?\s*([\s\S]*?)\s*```", text)
+    if match:
+        try:
+            return json.loads(match.group(1).strip())
+        except json.JSONDecodeError:
+            pass
+    match = re.search(r"\{[\s\S]*\}", text)
+    if match:
+        try:
+            return json.loads(match.group(0))
+        except json.JSONDecodeError:
+            pass
+    raise ValueError(f"No valid JSON found in: {text[:300]}")
+
+
+# ── Endpoints ─────────────────────────────────────────────────────────────────
+
+
+@router.post("/plan", response_model=PlanResponse)
+async def create_plan(
+    request: PlanRequest,
+    _: AuthContext = AUTH_DEP,
+    session: AsyncSession = SESSION_DEP,
+) -> PlanResponse:
+    """Generate a structured execution plan for an objective."""
+    anthropic_key = await get_api_key("anthropic", session, settings.anthropic_api_key)
+    if not anthropic_key.strip():
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Anthropic API key required for Operator planning. Add it in Settings.",
+        )
+
+    prompt_parts: list[str] = []
+    if request.memory_context:
+        prompt_parts.append(f"User Memory Context:\n{request.memory_context}")
+    prompt_parts.append(f"Objective: {request.objective}")
+    prompt = "\n\n".join(prompt_parts)
+
+    from anthropic import AsyncAnthropic
+
+    client = AsyncAnthropic(api_key=anthropic_key.strip())
+
+    try:
+        resp = await client.messages.create(
+            model=settings.anthropic_synthesis_model,
+            max_tokens=1024,
+            system=PLANNING_SYSTEM,
+            messages=[{"role": "user", "content": prompt}],
+        )
+        text = resp.content[0].text if resp.content else ""
+        logger.info("[operator/plan] raw: %s", text[:400])
+    except Exception as exc:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=f"Planning error: {exc}",
+        ) from exc
+
+    try:
+        data = _extract_json(text)
+        plan = PlanResponse(
+            goal=str(data.get("goal", request.objective)),
+            steps=[PlanStep(**s) for s in data.get("steps", [])],
+        )
+        logger.info("[operator/plan] goal=%r steps=%d", plan.goal, len(plan.steps))
+        return plan
+    except Exception as exc:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=f"Invalid plan JSON: {exc} | Raw: {text[:300]}",
+        ) from exc
+
+
+@router.post("/execute", response_model=ExecuteResponse)
+async def execute_step(
+    request: ExecuteRequest,
+    _: AuthContext = AUTH_DEP,
+    session: AsyncSession = SESSION_DEP,
+) -> ExecuteResponse:
+    """Execute a single operator step with the specified provider."""
+    parts: list[str] = []
+    if request.context:
+        parts.append(f"Context from previous steps:\n{request.context}")
+    parts.append(f"Task: {request.task}")
+    user_message = "\n\n".join(parts)
+
+    system = EXECUTION_SYSTEM
+    if request.memory_context:
+        system = f"{EXECUTION_SYSTEM}\n\nUser Memory:\n{request.memory_context}"
+
+    logger.info("[operator/execute] provider=%s task=%r", request.provider, request.task[:80])
+
+    if request.provider == "claude":
+        anthropic_key = await get_api_key("anthropic", session, settings.anthropic_api_key)
+        if not anthropic_key.strip():
+            raise HTTPException(status_code=400, detail="Anthropic API key not configured.")
+        return await _run_claude(anthropic_key.strip(), user_message, system)
+
+    if request.provider == "chatgpt":
+        openai_key = await get_api_key("openai", session, settings.openai_api_key)
+        if not openai_key.strip():
+            raise HTTPException(status_code=400, detail="OpenAI API key not configured.")
+        return await _run_openai(openai_key.strip(), user_message, system)
+
+    if request.provider == "gemini":
+        gemini_key = await get_api_key("gemini", session, settings.gemini_api_key)
+        if not gemini_key.strip():
+            raise HTTPException(status_code=400, detail="Gemini API key not configured.")
+        return await _run_gemini(gemini_key.strip(), user_message, system)
+
+    raise HTTPException(status_code=400, detail=f"Unknown provider: {request.provider}")
+
+
+@router.post("/extract-insights", response_model=ExtractInsightsResponse)
+async def extract_insights(
+    request: ExtractInsightsRequest,
+    _: AuthContext = AUTH_DEP,
+    session: AsyncSession = SESSION_DEP,
+) -> ExtractInsightsResponse:
+    """Extract memory insights from a completed step result."""
+    anthropic_key = await get_api_key("anthropic", session, settings.anthropic_api_key)
+    if not anthropic_key.strip():
+        return ExtractInsightsResponse(insights=[])
+
+    from anthropic import AsyncAnthropic
+
+    client = AsyncAnthropic(api_key=anthropic_key.strip())
+
+    prompt = (
+        f"Goal: {request.goal}\n"
+        f"Task: {request.step_task}\n"
+        f"Result:\n{request.step_result[:1500]}"
+    )
+
+    try:
+        resp = await client.messages.create(
+            model=settings.anthropic_synthesis_model,
+            max_tokens=512,
+            system=INSIGHT_SYSTEM,
+            messages=[{"role": "user", "content": prompt}],
+        )
+        text = resp.content[0].text if resp.content else "{}"
+        data = _extract_json(text)
+        insights = [Insight(**i) for i in data.get("insights", [])]
+        logger.info("[operator/extract-insights] %d insights", len(insights))
+        return ExtractInsightsResponse(insights=insights)
+    except Exception as exc:
+        logger.warning("[operator/extract-insights] failed: %s", exc)
+        return ExtractInsightsResponse(insights=[])
+
+
+# ── Provider runners ──────────────────────────────────────────────────────────
+
+
+async def _run_claude(api_key: str, user_message: str, system: str) -> ExecuteResponse:
+    from anthropic import AsyncAnthropic
+
+    client = AsyncAnthropic(api_key=api_key)
+    model = settings.anthropic_synthesis_model
+    try:
+        resp = await client.messages.create(
+            model=model,
+            max_tokens=2048,
+            system=system,
+            messages=[{"role": "user", "content": user_message}],
+        )
+        text = (resp.content[0].text if resp.content else "").strip()
+        logger.info("[operator/execute] claude/%s done (%d chars)", model, len(text))
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f"Claude error: {exc}") from exc
+    return ExecuteResponse(result=text, provider=f"claude/{model}")
+
+
+async def _run_openai(api_key: str, user_message: str, system: str) -> ExecuteResponse:
+    from openai import AsyncOpenAI
+
+    client = AsyncOpenAI(api_key=api_key)
+    model = "gpt-4o"
+    try:
+        resp = await client.chat.completions.create(
+            model=model,
+            max_tokens=2048,
+            temperature=0.4,
+            messages=[
+                {"role": "system", "content": system},
+                {"role": "user", "content": user_message},
+            ],
+        )
+        text = (resp.choices[0].message.content or "").strip()
+        logger.info("[operator/execute] openai/%s done (%d chars)", model, len(text))
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f"OpenAI error: {exc}") from exc
+    return ExecuteResponse(result=text, provider=f"openai/{model}")
+
+
+async def _run_gemini(api_key: str, user_message: str, system: str) -> ExecuteResponse:
+    from google import genai
+    from google.genai import types
+
+    client = genai.Client(api_key=api_key)
+    model = settings.gemini_model
+    try:
+        resp = client.models.generate_content(
+            model=model,
+            contents=user_message,
+            config=types.GenerateContentConfig(
+                system_instruction=system,
+                temperature=0.4,
+            ),
+        )
+        text = (resp.text or "").strip()
+        logger.info("[operator/execute] gemini/%s done (%d chars)", model, len(text))
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f"Gemini error: {exc}") from exc
+    return ExecuteResponse(result=text, provider=f"gemini/{model}")

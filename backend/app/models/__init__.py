@@ -1,5 +1,6 @@
 """Model exports for SQLAlchemy/SQLModel metadata discovery."""
 
+from app.models.app_setting import AppSetting
 from app.models.activity_events import ActivityEvent
 from app.models.agents import Agent
 from app.models.approval_task_links import ApprovalTaskLink
@@ -31,6 +32,7 @@ from app.models.tasks import Task
 from app.models.users import User
 
 __all__ = [
+    "AppSetting",
     "ActivityEvent",
     "Agent",
     "ApprovalTaskLink",

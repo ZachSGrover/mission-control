@@ -96,6 +96,15 @@ class Settings(BaseSettings):
     # OpenClaw gateway runtime compatibility
     gateway_min_version: str = "2026.02.9"
 
+    # GitHub save — enables one-click push from the Save button.
+    # Add to backend/.env:
+    #   GITHUB_PAT=ghp_yourtoken
+    #   GITHUB_USERNAME=ZachSGrover
+    #   GITHUB_REPO=ZachSGrover/mission-control
+    github_pat: str = ""
+    github_username: str = ""
+    github_repo: str = ""
+
     # Logging
     log_level: str = "INFO"
     log_format: str = "text"

@@ -12,6 +12,7 @@ from fastapi_pagination import add_pagination
 
 from app.api.activity import router as activity_router
 from app.api.app_settings import router as app_settings_router
+from app.api.git_save import router as git_save_router
 from app.api.gemini_chat import router as gemini_chat_router
 from app.api.journal import router as journal_router
 from app.api.judge import router as judge_router
@@ -572,6 +573,7 @@ api_v1.include_router(judge_router)
 api_v1.include_router(synthesize_router)
 api_v1.include_router(operator_router)
 api_v1.include_router(app_settings_router)
+api_v1.include_router(git_save_router)
 app.include_router(api_v1)
 
 add_pagination(app)

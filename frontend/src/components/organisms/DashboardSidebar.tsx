@@ -7,13 +7,17 @@ import {
   Bot,
   Brain,
   CalendarDays,
+  Check,
+  CloudUpload,
   Code2,
   FolderOpen,
   GitBranch,
+  Loader2,
   MessageSquare,
   MessagesSquare,
   Settings,
   Sparkles,
+  TriangleAlert,
   Zap,
 } from "lucide-react";
 
@@ -22,6 +26,7 @@ import {
   type healthzHealthzGetResponse,
   useHealthzHealthzGet,
 } from "@/api/generated/default/default";
+import { useGitSave } from "@/hooks/use-git-save";
 import { cn } from "@/lib/utils";
 
 // ── Section label ─────────────────────────────────────────────────────────────
@@ -144,6 +149,7 @@ export function DashboardSidebar() {
     : "unknown";
 
   const isSettingsActive = pathname.startsWith("/settings");
+  const gitSave = useGitSave();
 
   return (
     <aside
@@ -184,11 +190,57 @@ export function DashboardSidebar() {
 
       </div>
 
-      {/* ── Pinned bottom: Settings + status ────────────────────────── */}
+      {/* ── Pinned bottom: Save + Settings + status ─────────────────── */}
       <div
         className="shrink-0 px-3 pb-4 pt-2 space-y-1"
         style={{ borderTop: "1px solid var(--border)" }}
       >
+        {/* ── Save button ──────────────────────────────────────────── */}
+        <button
+          type="button"
+          onClick={() => {
+            if (gitSave.status === "error") gitSave.reset();
+            else void gitSave.save();
+          }}
+          disabled={gitSave.status === "saving"}
+          className={cn(
+            "w-full flex items-center gap-2.5 rounded-lg px-3 py-2 text-sm font-normal transition-colors disabled:opacity-60",
+          )}
+          style={{
+            color:
+              gitSave.status === "saved"  ? "var(--accent-strong)" :
+              gitSave.status === "error"  ? "rgb(248 113 113)" :
+              "var(--text-muted)",
+          }}
+          onMouseEnter={(e) => {
+            if (gitSave.status === "idle")
+              (e.currentTarget as HTMLElement).style.color = "var(--text)";
+          }}
+          onMouseLeave={(e) => {
+            if (gitSave.status === "idle")
+              (e.currentTarget as HTMLElement).style.color = "var(--text-muted)";
+          }}
+          title={gitSave.message || "Save to GitHub"}
+        >
+          {gitSave.status === "saving" && <Loader2 className="h-4 w-4 shrink-0 animate-spin" />}
+          {gitSave.status === "saved"  && <Check className="h-4 w-4 shrink-0" />}
+          {gitSave.status === "error"  && <TriangleAlert className="h-4 w-4 shrink-0" />}
+          {gitSave.status === "idle"   && <CloudUpload className="h-4 w-4 shrink-0" />}
+          <span className="truncate">
+            {gitSave.status === "saving" ? "Saving…" :
+             gitSave.status === "saved"  ? "Saved" :
+             gitSave.status === "error"  ? "Save failed — tap to dismiss" :
+             "Save"}
+          </span>
+        </button>
+
+        {/* Error detail */}
+        {gitSave.status === "error" && gitSave.message && (
+          <p className="px-3 text-[11px] leading-snug text-red-400">
+            {gitSave.message}
+          </p>
+        )}
+
         <Link
           href="/settings"
           className={cn(

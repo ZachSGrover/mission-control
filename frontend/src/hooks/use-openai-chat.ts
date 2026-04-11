@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 
-import { getLocalAuthToken } from "@/auth/localAuth";
+import { useAuth } from "@/auth/clerk";
 import type { ChatState } from "@/components/templates/AiChatPage";
 import type { ChatMessage } from "@/hooks/use-openclaw-chat";
 import { getApiBaseUrl } from "@/lib/api-base";
@@ -100,6 +100,10 @@ async function executeOpenAiStream(opts: {
 // ── Hook ─────────────────────────────────────────────────────────────────────
 
 export function useOpenAiChat(model?: string, provider = "chatgpt"): ChatState & { isConfigured: boolean; isReconnected: boolean } {
+  const { getToken } = useAuth();
+  const getTokenRef = useRef(getToken);
+  useEffect(() => { getTokenRef.current = getToken; }, [getToken]);
+
   const modelRef = useRef(model ?? DEFAULT_OPENAI_MODEL);
   useEffect(() => { modelRef.current = model ?? DEFAULT_OPENAI_MODEL; }, [model]);
 
@@ -139,7 +143,7 @@ export function useOpenAiChat(model?: string, provider = "chatgpt"): ChatState &
     (async () => {
       try {
         const baseUrl = getApiBaseUrl();
-        const token = getLocalAuthToken();
+        const token = await getTokenRef.current();
         const headers: Record<string, string> = {};
         if (token) headers["Authorization"] = `Bearer ${token}`;
         const res = await fetch(`${baseUrl}/api/v1/openai/status`, { headers });
@@ -253,6 +257,7 @@ export function useOpenAiChat(model?: string, provider = "chatgpt"): ChatState &
       requestManager.start(provider, assistantMsgId);
 
       // Fire and forget — runs at module level, not tied to component lifecycle
+      const token = await getTokenRef.current();
       void executeOpenAiStream({
         provider,
         assistantMsgId,
@@ -261,7 +266,7 @@ export function useOpenAiChat(model?: string, provider = "chatgpt"): ChatState &
         apiMessages,
         model: modelRef.current,
         baseUrl: getApiBaseUrl(),
-        token: getLocalAuthToken(),
+        token,
       });
 
       return true;

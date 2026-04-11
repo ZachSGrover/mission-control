@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 
-import { getLocalAuthToken } from "@/auth/localAuth";
+import { useAuth } from "@/auth/clerk";
 import type { ChatState } from "@/components/templates/AiChatPage";
 import type { ChatMessage } from "@/hooks/use-openclaw-chat";
 import { getApiBaseUrl } from "@/lib/api-base";
@@ -96,6 +96,10 @@ async function executeGeminiStream(opts: {
 // ── Hook ─────────────────────────────────────────────────────────────────────
 
 export function useGeminiChat(model?: string, provider = "gemini"): ChatState & { isConfigured: boolean; isReconnected: boolean } {
+  const { getToken } = useAuth();
+  const getTokenRef = useRef(getToken);
+  useEffect(() => { getTokenRef.current = getToken; }, [getToken]);
+
   const modelRef = useRef(model ?? DEFAULT_GEMINI_MODEL);
   useEffect(() => { modelRef.current = model ?? DEFAULT_GEMINI_MODEL; }, [model]);
 
@@ -134,7 +138,7 @@ export function useGeminiChat(model?: string, provider = "gemini"): ChatState & 
     (async () => {
       try {
         const baseUrl = getApiBaseUrl();
-        const token = getLocalAuthToken();
+        const token = await getTokenRef.current();
         const headers: Record<string, string> = {};
         if (token) headers["Authorization"] = `Bearer ${token}`;
         const res = await fetch(`${baseUrl}/api/v1/gemini/status`, { headers });
@@ -242,6 +246,7 @@ export function useGeminiChat(model?: string, provider = "gemini"): ChatState & 
 
       requestManager.start(provider, assistantMsgId);
 
+      const token = await getTokenRef.current();
       void executeGeminiStream({
         provider,
         assistantMsgId,
@@ -250,7 +255,7 @@ export function useGeminiChat(model?: string, provider = "gemini"): ChatState & 
         apiMessages,
         model: modelRef.current,
         baseUrl: getApiBaseUrl(),
-        token: getLocalAuthToken(),
+        token,
       });
 
       return true;

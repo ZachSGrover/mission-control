@@ -31,7 +31,7 @@ export function getApiBaseUrl(): string {
       const url = `${protocol}://${host}:8000`;
       // Warn in production: auto-resolve only works if the backend is on the
       // same domain as the frontend (unusual for Vercel deployments).
-      if (protocol === "https:" && host !== "localhost") {
+      if (protocol === "https" && host !== "localhost") {
         console.warn(
           `[api-base] NEXT_PUBLIC_API_URL is not set. ` +
           `Auto-resolving to ${url} — this will fail unless the backend ` +

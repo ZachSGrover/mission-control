@@ -2,8 +2,7 @@
 
 import { useCallback, useState } from "react";
 
-import { getLocalAuthToken } from "@/auth/localAuth";
-import { getApiBaseUrl } from "@/lib/api-base";
+import { useAuthFetch } from "@/hooks/use-auth-fetch";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -36,6 +35,8 @@ export function useGitSave(): SaveState {
   const [commitHash, setCommitHash] = useState("");
   const [error, setError] = useState("");
 
+  const { fetchWithAuth, apiBase } = useAuthFetch();
+
   const reset = useCallback(() => {
     setStatus("idle");
     setMessage("");
@@ -52,13 +53,9 @@ export function useGitSave(): SaveState {
     setError("");
 
     try {
-      const token = getLocalAuthToken();
-      const headers: Record<string, string> = { "Content-Type": "application/json" };
-      if (token) headers["Authorization"] = `Bearer ${token}`;
-
-      const res = await fetch(`${getApiBaseUrl()}/api/v1/git/save`, {
+      const res = await fetchWithAuth(`${apiBase}/api/v1/git/save`, {
         method: "POST",
-        headers,
+        headers: { "Content-Type": "application/json" },
       });
 
       const data = (await res.json()) as SaveResponse;
@@ -97,7 +94,7 @@ export function useGitSave(): SaveState {
       setMessage(msg);
       setError(msg);
     }
-  }, [status]);
+  }, [status, fetchWithAuth, apiBase]);
 
   return { status, message, filesChanged, commitHash, error, save, reset };
 }

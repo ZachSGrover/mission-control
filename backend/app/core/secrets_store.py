@@ -1,8 +1,14 @@
 """Runtime secrets store: encrypted API keys persisted in the database.
 
 Keys are encrypted with Fernet symmetric encryption.  The encryption key is
-derived deterministically from LOCAL_AUTH_TOKEN so no additional env var is
-required.  DB values take priority over .env; .env acts as a seed/fallback.
+derived deterministically from LOCAL_AUTH_TOKEN (or CLERK_SECRET_KEY as
+fallback) so no additional env var is required.  DB values take priority over
+.env; .env acts as a seed/fallback.
+
+Decryption failure diagnostic:
+  If CLERK_SECRET_KEY or LOCAL_AUTH_TOKEN changes between when keys were saved
+  and when they are read, decryption will fail silently (returns "").  The fix
+  is to re-save keys through Settings → API Keys after any credential rotation.
 """
 
 from __future__ import annotations
@@ -23,6 +29,12 @@ PROVIDER_KEYS: dict[str, str] = {
     "openai":    "api_key.openai",
     "gemini":    "api_key.gemini",
     "anthropic": "api_key.anthropic",
+}
+
+GITHUB_KEYS: dict[str, str] = {
+    "github_username": "github.username",
+    "github_pat":      "github.pat",
+    "github_repo":     "github.repo",
 }
 
 # ── Fernet helpers ───────────────────────────────────────────────────────────
@@ -47,11 +59,16 @@ def _encrypt(plaintext: str) -> str:
     return _get_fernet().encrypt(plaintext.encode()).decode()
 
 
-def _decrypt(ciphertext: str) -> str:
+def _decrypt(ciphertext: str, *, db_key: str = "unknown") -> str:
     try:
         return _get_fernet().decrypt(ciphertext.encode()).decode()
     except (InvalidToken, Exception):
-        logger.warning("secrets_store: failed to decrypt value")
+        logger.warning(
+            "secrets_store: decrypt_failed key=%s — "
+            "the encryption seed (CLERK_SECRET_KEY / LOCAL_AUTH_TOKEN) may have changed "
+            "since this key was saved. Re-save the key in Settings → API Keys to fix.",
+            db_key,
+        )
         return ""
 
 
@@ -59,16 +76,54 @@ def _decrypt(ciphertext: str) -> str:
 
 
 async def get_secret(session: AsyncSession, db_key: str, fallback: str = "") -> str:
-    """Return the decrypted secret for *db_key*, or *fallback* if not stored."""
+    """Return the decrypted secret for *db_key*, or *fallback* if not stored.
+
+    Priority: DB (decrypted) → fallback (ENV var passed by caller).
+    Logs at DEBUG which source was used, and at WARNING when decryption fails.
+    """
     from app.models.app_setting import AppSetting
 
     result = await session.exec(select(AppSetting).where(AppSetting.key == db_key))
     row = result.first()
     if row and row.value:
-        decrypted = _decrypt(row.value)
+        decrypted = _decrypt(row.value, db_key=db_key)
         if decrypted:
+            logger.debug("secrets_store: key_source=db key=%s", db_key)
             return decrypted
-    return fallback
+        # Decryption failed — fall through to ENV fallback below.
+
+    if fallback.strip():
+        logger.debug("secrets_store: key_source=env key=%s", db_key)
+        return fallback.strip()
+
+    logger.debug(
+        "secrets_store: key_source=none key=%s — not in DB and no ENV fallback set",
+        db_key,
+    )
+    return ""
+
+
+async def get_secret_with_source(
+    session: AsyncSession, db_key: str, fallback: str = ""
+) -> tuple[str, str]:
+    """Like get_secret but also returns the source: 'db' | 'env' | 'none'.
+
+    Used by the settings status endpoint so the UI can show which source
+    each key is coming from, making it easier to diagnose misconfigurations.
+    """
+    from app.models.app_setting import AppSetting
+
+    result = await session.exec(select(AppSetting).where(AppSetting.key == db_key))
+    row = result.first()
+    if row and row.value:
+        decrypted = _decrypt(row.value, db_key=db_key)
+        if decrypted:
+            return decrypted, "db"
+
+    if fallback.strip():
+        return fallback.strip(), "env"
+
+    return "", "none"
 
 
 async def set_secret(session: AsyncSession, db_key: str, plaintext: str) -> None:
@@ -105,6 +160,17 @@ async def get_api_key(provider: str, session: AsyncSession, env_fallback: str = 
     if not db_key:
         return env_fallback
     return await get_secret(session, db_key, fallback=env_fallback.strip())
+
+
+async def get_api_key_with_source(
+    provider: str, session: AsyncSession, env_fallback: str = ""
+) -> tuple[str, str]:
+    """Return (key, source) for *provider* — source is 'db' | 'env' | 'none'."""
+    db_key = PROVIDER_KEYS.get(provider)
+    if not db_key:
+        src = "env" if env_fallback.strip() else "none"
+        return env_fallback.strip(), src
+    return await get_secret_with_source(session, db_key, fallback=env_fallback.strip())
 
 
 def mask_key(key: str) -> str | None:

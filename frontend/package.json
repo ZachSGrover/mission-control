@@ -4,7 +4,7 @@
   "private": true,
   "main": "electron/main.js",
   "scripts": {
-    "dev": "next dev --webpack",
+    "dev": "NODE_EXTRA_CA_CERTS=/etc/ssl/cert.pem next dev --webpack",
     "build": "next build",
     "start": "next start",
     "electron:dev": "electron .",

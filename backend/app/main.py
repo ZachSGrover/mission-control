@@ -13,6 +13,8 @@ from fastapi_pagination import add_pagination
 from app.api.activity import router as activity_router
 from app.api.app_settings import router as app_settings_router
 from app.api.git_save import router as git_save_router
+from app.api.mc_roles import router as mc_roles_router
+from app.api.mc_allowed_users import router as mc_allowed_users_router
 from app.api.gemini_chat import router as gemini_chat_router
 from app.api.journal import router as journal_router
 from app.api.judge import router as judge_router
@@ -438,6 +440,29 @@ class MissionControlFastAPI(FastAPI):
         return _build_custom_openapi(self)
 
 
+def _log_key_availability() -> None:
+    """Log which API keys are available from environment variables at startup.
+
+    DB-stored keys are not checked here (no DB session at startup) — they are
+    resolved per-request.  Missing ENV keys may still be in the DB.
+    """
+    env_keys = {
+        "openai":    settings.openai_api_key,
+        "gemini":    settings.gemini_api_key,
+        "anthropic": settings.anthropic_api_key,
+        "github_pat": settings.github_pat,
+    }
+    for name, val in env_keys.items():
+        if val.strip():
+            logger.info("app.startup.key name=%s source=env status=present", name)
+        else:
+            logger.info(
+                "app.startup.key name=%s source=env status=missing "
+                "(may be stored encrypted in DB — will resolve per-request)",
+                name,
+            )
+
+
 @asynccontextmanager
 async def lifespan(_: FastAPI) -> AsyncIterator[None]:
     """Initialize application resources before serving requests."""
@@ -447,6 +472,7 @@ async def lifespan(_: FastAPI) -> AsyncIterator[None]:
         settings.db_auto_migrate,
     )
     await init_db()
+    _log_key_availability()
     if settings.rate_limit_backend == RateLimitBackend.REDIS:
         validate_rate_limit_redis(settings.rate_limit_redis_url)
         logger.info("app.lifecycle.rate_limit backend=redis")
@@ -574,6 +600,8 @@ api_v1.include_router(synthesize_router)
 api_v1.include_router(operator_router)
 api_v1.include_router(app_settings_router)
 api_v1.include_router(git_save_router)
+api_v1.include_router(mc_roles_router)
+api_v1.include_router(mc_allowed_users_router)
 app.include_router(api_v1)
 
 add_pagination(app)

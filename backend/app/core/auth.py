@@ -452,6 +452,61 @@ def _parse_subject(claims: dict[str, object]) -> str | None:
     return payload.sub
 
 
+async def _check_allowlist(session: AsyncSession, clerk_user_id: str) -> None:
+    """Enforce invite-only access: raise 403 if caller is not on the allowlist.
+
+    Bootstrap rule: if the allowlist is empty, the first caller is auto-added
+    (they will also become the owner via mc_user_roles auto-seed logic).
+
+    Owner bypass: if the caller has an 'owner' role row in mc_user_roles, they
+    are always permitted — so existing owners are never locked out even if the
+    allowlist is empty or they were added before the allowlist existed.
+    """
+    from sqlmodel import func, select as sql_select
+
+    from app.models.mc_allowed_user import MCAllowedUser
+    from app.models.mc_role import MCUserRole
+
+    # Check if already on allowlist (fast path)
+    allowed_result = await session.exec(
+        sql_select(MCAllowedUser).where(MCAllowedUser.clerk_user_id == clerk_user_id)
+    )
+    if allowed_result.first() is not None:
+        return
+
+    # Owner bypass: env-pinned owner always passes
+    owner_id = (settings.owner_user_id or "").strip()
+    if owner_id and clerk_user_id == owner_id:
+        return
+
+    # Owner bypass: DB owner row passes (existing owners pre-dating the allowlist)
+    role_result = await session.exec(
+        sql_select(MCUserRole).where(MCUserRole.clerk_user_id == clerk_user_id)
+    )
+    role_row = role_result.first()
+    if role_row and role_row.role == "owner" and not role_row.disabled:
+        # Auto-add owner to allowlist so future checks are fast
+        new_entry = MCAllowedUser(clerk_user_id=clerk_user_id)
+        session.add(new_entry)
+        await session.commit()
+        return
+
+    # Bootstrap: if allowlist is empty, the first caller is admitted and added
+    count_result = await session.exec(sql_select(func.count()).select_from(MCAllowedUser))
+    count = count_result.one()
+    if count == 0:
+        new_entry = MCAllowedUser(clerk_user_id=clerk_user_id)
+        session.add(new_entry)
+        await session.commit()
+        return
+
+    # Not on allowlist → deny
+    raise HTTPException(
+        status_code=status.HTTP_403_FORBIDDEN,
+        detail="Access denied. You are not on the allowlist for this application.",
+    )
+
+
 async def get_auth_context(
     request: Request,
     credentials: HTTPAuthorizationCredentials | None = SECURITY_DEP,
@@ -484,6 +539,9 @@ async def get_auth_context(
         clerk_user_id=clerk_user_id,
         claims=claims,
     )
+
+    await _check_allowlist(session, clerk_user_id)
+
     from app.services.organizations import ensure_member_for_user
 
     await ensure_member_for_user(session, user)

@@ -18,6 +18,7 @@ import {
   Settings,
   Sparkles,
   TriangleAlert,
+  Users,
   Zap,
 } from "lucide-react";
 
@@ -27,6 +28,7 @@ import {
   useHealthzHealthzGet,
 } from "@/api/generated/default/default";
 import { useGitSave } from "@/hooks/use-git-save";
+import { useRole } from "@/hooks/use-role";
 import { cn } from "@/lib/utils";
 
 // ── Section label ─────────────────────────────────────────────────────────────
@@ -150,6 +152,7 @@ export function DashboardSidebar() {
 
   const isSettingsActive = pathname.startsWith("/settings");
   const gitSave = useGitSave();
+  const { role } = useRole();
 
   return (
     <aside
@@ -245,23 +248,51 @@ export function DashboardSidebar() {
           href="/settings"
           className={cn(
             "flex items-center gap-2.5 rounded-lg px-3 py-2 text-sm transition-colors",
-            isSettingsActive ? "font-medium" : "font-normal",
+            isSettingsActive && !pathname.startsWith("/settings/users") ? "font-medium" : "font-normal",
           )}
           style={
-            isSettingsActive
+            isSettingsActive && !pathname.startsWith("/settings/users")
               ? { background: "var(--accent-soft)", color: "var(--accent-strong)" }
               : { color: "var(--text-muted)" }
           }
           onMouseEnter={(e) => {
-            if (!isSettingsActive) (e.currentTarget as HTMLElement).style.color = "var(--text)";
+            if (!(isSettingsActive && !pathname.startsWith("/settings/users")))
+              (e.currentTarget as HTMLElement).style.color = "var(--text)";
           }}
           onMouseLeave={(e) => {
-            if (!isSettingsActive) (e.currentTarget as HTMLElement).style.color = "var(--text-muted)";
+            if (!(isSettingsActive && !pathname.startsWith("/settings/users")))
+              (e.currentTarget as HTMLElement).style.color = "var(--text-muted)";
           }}
         >
           <Settings className="h-4 w-4 shrink-0" />
           Settings
         </Link>
+
+        {role === "owner" && (
+          <Link
+            href="/settings/users"
+            className={cn(
+              "flex items-center gap-2.5 rounded-lg px-3 py-2 text-sm transition-colors",
+              pathname.startsWith("/settings/users") ? "font-medium" : "font-normal",
+            )}
+            style={
+              pathname.startsWith("/settings/users")
+                ? { background: "var(--accent-soft)", color: "var(--accent-strong)" }
+                : { color: "var(--text-muted)" }
+            }
+            onMouseEnter={(e) => {
+              if (!pathname.startsWith("/settings/users"))
+                (e.currentTarget as HTMLElement).style.color = "var(--text)";
+            }}
+            onMouseLeave={(e) => {
+              if (!pathname.startsWith("/settings/users"))
+                (e.currentTarget as HTMLElement).style.color = "var(--text-muted)";
+            }}
+          >
+            <Users className="h-4 w-4 shrink-0" />
+            Users
+          </Link>
+        )}
 
         <div className="flex items-center gap-2 px-3 py-1.5">
           <span

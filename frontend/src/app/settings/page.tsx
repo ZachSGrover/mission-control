@@ -6,92 +6,100 @@ import { useCallback, useEffect, useState } from "react";
 import { Eye, EyeOff, X } from "lucide-react";
 
 import { SignedIn, SignedOut } from "@/auth/clerk";
-import { getLocalAuthToken } from "@/auth/localAuth";
 import { getApiBaseUrl } from "@/lib/api-base";
+import { RoleGuard } from "@/components/auth/RoleGuard";
 import { SignedOutPanel } from "@/components/auth/SignedOutPanel";
 import { DashboardSidebar } from "@/components/organisms/DashboardSidebar";
 import { DashboardShell } from "@/components/templates/DashboardShell";
+import { useAuthFetch } from "@/hooks/use-auth-fetch";
 
-// ── Types ────────────────────────────────────────────────────────────────────
+// ── Types ─────────────────────────────────────────────────────────────────────
 
 type Provider = "openai" | "gemini" | "anthropic";
-type KeyStatus = { configured: boolean; preview: string | null };
-type AllKeyStatuses = Record<Provider, KeyStatus>;
+type GitHubField = "github_username" | "github_pat" | "github_repo";
+type FieldStatus = { configured: boolean; preview: string | null; source?: string };
+type AllKeyStatuses = Record<Provider, FieldStatus>;
+type GitHubStatuses = Record<GitHubField, FieldStatus>;
+type FetchFn = (url: string, init?: RequestInit) => Promise<Response>;
 
 const PROVIDERS: { id: Provider; label: string; hint: string; placeholder: string }[] = [
-  {
-    id: "openai",
-    label: "OpenAI",
-    hint: "Used by ChatGPT tab",
-    placeholder: "sk-proj-...",
-  },
-  {
-    id: "gemini",
-    label: "Gemini",
-    hint: "Used by Gemini tab",
-    placeholder: "AIza...",
-  },
-  {
-    id: "anthropic",
-    label: "Claude (direct)",
-    hint: "Anthropic API key — for direct Claude access",
-    placeholder: "sk-ant-...",
-  },
+  { id: "openai",    label: "OpenAI",         hint: "Used by ChatGPT tab",                          placeholder: "sk-proj-..." },
+  { id: "gemini",    label: "Gemini",          hint: "Used by Gemini tab",                           placeholder: "AIza..." },
+  { id: "anthropic", label: "Claude (direct)", hint: "Anthropic API key — for direct Claude access", placeholder: "sk-ant-..." },
 ];
 
-// ── API helpers ──────────────────────────────────────────────────────────────
+const GITHUB_FIELDS: { id: GitHubField; label: string; hint: string; placeholder: string; secret: boolean }[] = [
+  { id: "github_username", label: "GitHub Username",       hint: "Your GitHub username",        placeholder: "ZachSGrover",                    secret: false },
+  { id: "github_pat",      label: "Personal Access Token", hint: "repo scope required",         placeholder: "ghp_...",                        secret: true  },
+  { id: "github_repo",     label: "Repository",            hint: "owner/repo format",           placeholder: "ZachSGrover/mission-control",    secret: false },
+];
 
-function authHeaders(): Record<string, string> {
-  const token = getLocalAuthToken();
-  return token ? { Authorization: `Bearer ${token}` } : {};
-}
+// ── API helpers (accept fetchFn so auth mode is transparent) ──────────────────
 
-async function fetchStatuses(): Promise<AllKeyStatuses> {
-  const res = await fetch(`${getApiBaseUrl()}/api/v1/settings/api-keys`, {
-    headers: authHeaders(),
-  });
+async function fetchKeyStatuses(fetchFn: FetchFn): Promise<AllKeyStatuses> {
+  const res = await fetchFn(`${getApiBaseUrl()}/api/v1/settings/api-keys`);
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
   return res.json() as Promise<AllKeyStatuses>;
 }
 
-async function saveKey(provider: Provider, key: string): Promise<KeyStatus> {
-  const res = await fetch(`${getApiBaseUrl()}/api/v1/settings/api-keys/${provider}`, {
+async function saveKey(provider: Provider, key: string, fetchFn: FetchFn): Promise<FieldStatus> {
+  const res = await fetchFn(`${getApiBaseUrl()}/api/v1/settings/api-keys/${provider}`, {
     method: "PUT",
-    headers: { ...authHeaders(), "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ key }),
   });
   if (!res.ok) {
     const body = await res.json().catch(() => null) as { detail?: string } | null;
     throw new Error(body?.detail ?? `HTTP ${res.status}`);
   }
-  return res.json() as Promise<KeyStatus>;
+  return res.json() as Promise<FieldStatus>;
 }
 
-async function clearKey(provider: Provider): Promise<void> {
-  await fetch(`${getApiBaseUrl()}/api/v1/settings/api-keys/${provider}`, {
-    method: "DELETE",
-    headers: authHeaders(),
+async function clearKey(provider: Provider, fetchFn: FetchFn): Promise<void> {
+  await fetchFn(`${getApiBaseUrl()}/api/v1/settings/api-keys/${provider}`, { method: "DELETE" });
+}
+
+async function fetchGitHubStatuses(fetchFn: FetchFn): Promise<GitHubStatuses> {
+  const res = await fetchFn(`${getApiBaseUrl()}/api/v1/settings/github`);
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  return res.json() as Promise<GitHubStatuses>;
+}
+
+async function saveGitHubField(field: GitHubField, value: string, fetchFn: FetchFn): Promise<FieldStatus> {
+  const res = await fetchFn(`${getApiBaseUrl()}/api/v1/settings/github/${field}`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ value }),
   });
+  if (!res.ok) {
+    const body = await res.json().catch(() => null) as { detail?: string } | null;
+    throw new Error(body?.detail ?? `HTTP ${res.status}`);
+  }
+  return res.json() as Promise<FieldStatus>;
 }
 
-// ── Key row ──────────────────────────────────────────────────────────────────
+async function clearGitHubField(field: GitHubField, fetchFn: FetchFn): Promise<void> {
+  await fetchFn(`${getApiBaseUrl()}/api/v1/settings/github/${field}`, { method: "DELETE" });
+}
 
-function KeyRow({
-  id,
+// ── Shared field row ──────────────────────────────────────────────────────────
+
+function FieldRow({
   label,
   hint,
   placeholder,
+  secret,
   status,
-  onSaved,
-  onCleared,
+  onSave,
+  onClear,
 }: {
-  id: Provider;
   label: string;
   hint: string;
   placeholder: string;
-  status: KeyStatus | undefined;
-  onSaved: (s: KeyStatus) => void;
-  onCleared: () => void;
+  secret: boolean;
+  status: FieldStatus | undefined;
+  onSave: (value: string) => Promise<FieldStatus>;
+  onClear: () => Promise<void>;
 }) {
   const [value, setValue] = useState("");
   const [shown, setShown] = useState(false);
@@ -105,11 +113,10 @@ function KeyRow({
 
   const handleSave = async () => {
     const trimmed = value.trim();
-    if (!trimmed) { fb(false, "Enter a key first."); return; }
+    if (!trimmed) { fb(false, "Enter a value first."); return; }
     setSaving(true);
     try {
-      const s = await saveKey(id, trimmed);
-      onSaved(s);
+      await onSave(trimmed);
       setValue("");
       fb(true, "Saved.");
     } catch (err) {
@@ -122,8 +129,7 @@ function KeyRow({
   const handleClear = async () => {
     setSaving(true);
     try {
-      await clearKey(id);
-      onCleared();
+      await onClear();
       setValue("");
       fb(true, "Removed.");
     } catch {
@@ -138,7 +144,7 @@ function KeyRow({
       className="rounded-xl p-4 space-y-3"
       style={{ background: "var(--surface-strong)", border: "1px solid var(--border)" }}
     >
-      {/* Header row */}
+      {/* Header */}
       <div className="flex items-center justify-between">
         <div>
           <p className="text-sm font-medium" style={{ color: "var(--text)" }}>{label}</p>
@@ -149,6 +155,19 @@ function KeyRow({
             <span className="flex items-center gap-1.5 text-xs font-medium" style={{ color: "#22c55e" }}>
               <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
               Configured
+              {status.source && status.source !== "none" && (
+                <span
+                  className="rounded px-1.5 py-0.5 text-xs font-semibold uppercase tracking-wide"
+                  style={{
+                    background: status.source === "db"
+                      ? "rgba(99,102,241,0.15)"
+                      : "rgba(234,179,8,0.15)",
+                    color: status.source === "db" ? "#818cf8" : "#ca8a04",
+                  }}
+                >
+                  {status.source === "db" ? "DB" : "ENV"}
+                </span>
+              )}
               {status.preview && (
                 <span className="font-mono ml-1" style={{ color: "var(--text-quiet)" }}>
                   {status.preview}
@@ -166,11 +185,11 @@ function KeyRow({
         )}
       </div>
 
-      {/* Input row */}
+      {/* Input */}
       <div className="flex gap-2">
         <div className="relative flex-1">
           <input
-            type={shown ? "text" : "password"}
+            type={secret && !shown ? "password" : "text"}
             value={value}
             onChange={(e) => setValue(e.target.value)}
             onKeyDown={(e) => { if (e.key === "Enter") void handleSave(); }}
@@ -187,15 +206,17 @@ function KeyRow({
               color: "var(--text)",
             }}
           />
-          <button
-            type="button"
-            tabIndex={-1}
-            onClick={() => setShown((s) => !s)}
-            className="absolute right-2.5 top-1/2 -translate-y-1/2 transition-opacity hover:opacity-70"
-            style={{ color: "var(--text-quiet)" }}
-          >
-            {shown ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
-          </button>
+          {secret && (
+            <button
+              type="button"
+              tabIndex={-1}
+              onClick={() => setShown((s) => !s)}
+              className="absolute right-2.5 top-1/2 -translate-y-1/2 transition-opacity hover:opacity-70"
+              style={{ color: "var(--text-quiet)" }}
+            >
+              {shown ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
+            </button>
+          )}
         </div>
 
         <button
@@ -219,19 +240,15 @@ function KeyRow({
               border: "1px solid var(--border-strong)",
               color: "var(--text-quiet)",
             }}
-            title="Remove key"
+            title="Remove"
           >
             <X className="h-3.5 w-3.5" />
           </button>
         )}
       </div>
 
-      {/* Feedback */}
       {feedback && (
-        <p
-          className="text-xs"
-          style={{ color: feedback.ok ? "#22c55e" : "var(--danger)" }}
-        >
+        <p className="text-xs" style={{ color: feedback.ok ? "#22c55e" : "var(--danger)" }}>
           {feedback.msg}
         </p>
       )}
@@ -239,85 +256,120 @@ function KeyRow({
   );
 }
 
-// ── Settings page ────────────────────────────────────────────────────────────
+// ── Settings page ─────────────────────────────────────────────────────────────
 
 export default function SettingsPage() {
-  const [statuses, setStatuses] = useState<AllKeyStatuses | null>(null);
+  const [keyStatuses, setKeyStatuses] = useState<AllKeyStatuses | null>(null);
+  const [ghStatuses, setGhStatuses] = useState<GitHubStatuses | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
 
+  const { fetchWithAuth } = useAuthFetch();
+
   useEffect(() => {
-    fetchStatuses()
-      .then((data) => { setStatuses(data); setLoadError(null); })
+    Promise.all([fetchKeyStatuses(fetchWithAuth), fetchGitHubStatuses(fetchWithAuth)])
+      .then(([keys, gh]) => {
+        setKeyStatuses(keys);
+        setGhStatuses(gh);
+        setLoadError(null);
+      })
       .catch((err) => setLoadError(err instanceof Error ? err.message : "Failed to load."));
-  }, []);
+  }, [fetchWithAuth]);
 
-  const updateStatus = (provider: Provider, s: KeyStatus) =>
-    setStatuses((prev) => prev ? { ...prev, [provider]: s } : prev);
-
-  const clearStatus = (provider: Provider) =>
-    setStatuses((prev) =>
+  const updateKey = (provider: Provider, s: FieldStatus) =>
+    setKeyStatuses((prev) => prev ? { ...prev, [provider]: s } : prev);
+  const clearKeyStatus = (provider: Provider) =>
+    setKeyStatuses((prev) =>
       prev ? { ...prev, [provider]: { configured: false, preview: null } } : prev,
+    );
+
+  const updateGh = (field: GitHubField, s: FieldStatus) =>
+    setGhStatuses((prev) => prev ? { ...prev, [field]: s } : prev);
+  const clearGhStatus = (field: GitHubField) =>
+    setGhStatuses((prev) =>
+      prev ? { ...prev, [field]: { configured: false, preview: null } } : prev,
     );
 
   return (
     <DashboardShell>
       <SignedOut>
-        <SignedOutPanel
-          message="Sign in to access Digidle OS"
-          forceRedirectUrl="/settings"
-        />
+        <SignedOutPanel message="Sign in to access Digidle OS" forceRedirectUrl="/settings" />
       </SignedOut>
-
       <SignedIn>
         <DashboardSidebar />
-
-        <main
-          className="flex-1 overflow-y-auto"
-          style={{ background: "var(--bg)" }}
-        >
+        <main className="flex-1 overflow-y-auto" style={{ background: "var(--bg)" }}>
           <div className="max-w-2xl mx-auto px-6 py-8 space-y-8">
 
-            {/* Page header */}
+            {/* Header */}
             <div>
-              <h1
-                className="text-xl font-semibold"
-                style={{ color: "var(--text)" }}
-              >
-                Settings
-              </h1>
+              <h1 className="text-xl font-semibold" style={{ color: "var(--text)" }}>Settings</h1>
               <p className="mt-1 text-sm" style={{ color: "var(--text-muted)" }}>
-                API keys are encrypted and stored in the database. Changes take effect immediately.
+                All credentials are encrypted and stored in the database. Changes take effect immediately.
               </p>
             </div>
 
-            {/* API Keys */}
-            <section className="space-y-3">
-              <h2 className="text-xs font-semibold uppercase tracking-widest" style={{ color: "var(--text-quiet)" }}>
-                API Keys
-              </h2>
+            {loadError && (
+              <div
+                className="rounded-xl px-4 py-3 text-sm"
+                style={{ background: "rgba(239,68,68,0.1)", color: "#ef4444", border: "1px solid rgba(239,68,68,0.2)" }}
+              >
+                {loadError}
+              </div>
+            )}
 
-              {loadError && (
-                <div
-                  className="rounded-xl px-4 py-3 text-sm"
-                  style={{ background: "rgba(239,68,68,0.1)", color: "#ef4444", border: "1px solid rgba(239,68,68,0.2)" }}
+            {/* Credentials — owner only */}
+            <RoleGuard
+              require="owner"
+              denied={
+                <section
+                  className="rounded-xl px-4 py-3 text-sm space-y-1"
+                  style={{ background: "var(--surface-strong)", border: "1px solid var(--border)" }}
                 >
-                  {loadError}
-                </div>
-              )}
+                  <p className="font-medium" style={{ color: "var(--text)" }}>API Keys &amp; GitHub</p>
+                  <p style={{ color: "var(--text-quiet)" }}>Credential management is restricted to owners.</p>
+                </section>
+              }
+            >
+              {/* API Keys */}
+              <section className="space-y-3">
+                <h2 className="text-xs font-semibold uppercase tracking-widest" style={{ color: "var(--text-quiet)" }}>
+                  API Keys
+                </h2>
+                {PROVIDERS.map(({ id, label, hint, placeholder }) => (
+                  <FieldRow
+                    key={id}
+                    label={label}
+                    hint={hint}
+                    placeholder={placeholder}
+                    secret={true}
+                    status={keyStatuses?.[id]}
+                    onSave={(v) => saveKey(id, v, fetchWithAuth).then((s) => { updateKey(id, s); return s; })}
+                    onClear={() => clearKey(id, fetchWithAuth).then(() => clearKeyStatus(id))}
+                  />
+                ))}
+              </section>
 
-              {PROVIDERS.map(({ id, label, hint, placeholder }) => (
-                <KeyRow
-                  key={id}
-                  id={id}
-                  label={label}
-                  hint={hint}
-                  placeholder={placeholder}
-                  status={statuses?.[id]}
-                  onSaved={(s) => updateStatus(id, s)}
-                  onCleared={() => clearStatus(id)}
-                />
-              ))}
-            </section>
+              {/* GitHub */}
+              <section className="space-y-3">
+                <h2 className="text-xs font-semibold uppercase tracking-widest" style={{ color: "var(--text-quiet)" }}>
+                  GitHub
+                </h2>
+                <p className="text-xs" style={{ color: "var(--text-quiet)" }}>
+                  Used by the Save button to commit and push to your repository.
+                </p>
+                {GITHUB_FIELDS.map(({ id, label, hint, placeholder, secret }) => (
+                  <FieldRow
+                    key={id}
+                    label={label}
+                    hint={hint}
+                    placeholder={placeholder}
+                    secret={secret}
+                    status={ghStatuses?.[id]}
+                    onSave={(v) => saveGitHubField(id, v, fetchWithAuth).then((s) => { updateGh(id, s); return s; })}
+                    onClear={() => clearGitHubField(id, fetchWithAuth).then(() => clearGhStatus(id))}
+                  />
+                ))}
+              </section>
+            </RoleGuard>
 
           </div>
         </main>

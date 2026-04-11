@@ -13,13 +13,15 @@ import {
   useGetMeApiV1UsersMeGet,
 } from "@/api/generated/users/users";
 import { BrandMark } from "@/components/atoms/BrandMark";
+import { SystemStatusDot } from "@/components/atoms/SystemStatusDot";
 import { UserMenu } from "@/components/organisms/UserMenu";
 import { isOnboardingComplete } from "@/lib/onboarding";
+import { systemMonitor } from "@/lib/system-monitor";
 
 export function DashboardShell({ children }: { children: ReactNode }) {
   const router = useRouter();
   const pathname = usePathname();
-  const { isSignedIn } = useAuth();
+  const { isSignedIn, getToken } = useAuth();
 
   // Log sign-in once per session (ref prevents duplicate logs across re-renders)
   const hasLoggedSignIn = useRef(false);
@@ -29,6 +31,20 @@ export function DashboardShell({ children }: { children: ReactNode }) {
       logSystemAction("auth", "User signed in to Mission Control");
     }
   }, [isSignedIn]);
+
+  // Start the system monitor once the user is signed in.
+  // getToken changes identity across renders; keep a stable ref so the
+  // monitor always calls the latest version without restarting.
+  const getTokenRef = useRef(getToken);
+  useEffect(() => { getTokenRef.current = getToken; }, [getToken]);
+
+  useEffect(() => {
+    if (!isSignedIn) return;
+    systemMonitor.start(() => getTokenRef.current());
+    return () => systemMonitor.stop();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isSignedIn]); // only re-run when sign-in state changes
+
   const isOnboardingPath = pathname === "/onboarding";
 
   const [sidebarState, setSidebarState] = useState({ open: false, path: pathname });
@@ -127,12 +143,13 @@ export function DashboardShell({ children }: { children: ReactNode }) {
         {/* Drag spacer */}
         <div className="flex-1" />
 
-        {/* Account menu */}
+        {/* System status + account menu */}
         <SignedIn>
           <div
-            className="flex items-center pr-5"
+            className="flex items-center gap-4 pr-5"
             style={{ WebkitAppRegion: "no-drag" } as React.CSSProperties}
           >
+            <SystemStatusDot />
             <UserMenu displayName={displayName} displayEmail={displayEmail} />
           </div>
         </SignedIn>

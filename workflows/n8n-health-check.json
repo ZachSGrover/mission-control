@@ -1,0 +1,161 @@
+{
+  "name": "Mission Control — Health Check",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": { "interval": [{ "field": "cronExpression", "expression": "*/15 * * * *" }] }
+      },
+      "id": "trigger-cron",
+      "name": "Every 15 minutes",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1,
+      "position": [250, 300]
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "mc-health",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "trigger-webhook",
+      "name": "Manual Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [250, 500],
+      "webhookId": "mc-health"
+    },
+    {
+      "parameters": {
+        "url": "https://mission-control-jbx8.onrender.com/api/v1/workflows/health-check",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "Authorization", "value": "Bearer {{ $env.MC_OWNER_TOKEN }}" }
+          ]
+        },
+        "options": { "timeout": 30000 }
+      },
+      "id": "run-health-check",
+      "name": "Run Health Check API",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [500, 400]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "conditions": [{ "leftValue": "={{ $json.overall }}", "rightValue": "healthy", "operator": { "type": "string", "operation": "equals" } }]
+        }
+      },
+      "id": "check-overall",
+      "name": "System Healthy?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [750, 400]
+    },
+    {
+      "parameters": {
+        "keepOnlySet": true,
+        "values": {
+          "string": [
+            { "name": "status", "value": "healthy" },
+            { "name": "pass", "value": "={{ $('run-health-check').item.json.pass_count }}" },
+            { "name": "fail", "value": "={{ $('run-health-check').item.json.fail_count }}" },
+            { "name": "timestamp", "value": "={{ $('run-health-check').item.json.timestamp }}" }
+          ]
+        }
+      },
+      "id": "format-healthy",
+      "name": "Format Healthy",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3,
+      "position": [1000, 300]
+    },
+    {
+      "parameters": {
+        "url": "https://mission-control-jbx8.onrender.com/api/v1/workflows/error-detect",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "Authorization", "value": "Bearer {{ $env.MC_OWNER_TOKEN }}" }
+          ]
+        },
+        "options": { "timeout": 30000 }
+      },
+      "id": "run-error-detect",
+      "name": "Run Error Detection",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [1000, 500]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "conditions": [{ "leftValue": "={{ $json.errors.length }}", "rightValue": 0, "operator": { "type": "number", "operation": "larger" } }]
+        }
+      },
+      "id": "check-errors",
+      "name": "Has Errors?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [1250, 500]
+    },
+    {
+      "parameters": {
+        "url": "https://mission-control-jbx8.onrender.com/api/v1/workflows/deploy",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "Authorization", "value": "Bearer {{ $env.MC_OWNER_TOKEN }}" },
+            { "name": "Content-Type", "value": "application/json" }
+          ]
+        },
+        "sendBody": true,
+        "body": "{\"clear_cache\": false, \"message\": \"Auto-fix triggered by health check\"}",
+        "options": {}
+      },
+      "id": "auto-fix-deploy",
+      "name": "Auto-Fix: Redeploy",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [1500, 600],
+      "notes": "Only triggers if errors found. Requires RENDER_API_KEY on backend."
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $('run-health-check').item.json }}"
+      },
+      "id": "respond-result",
+      "name": "Respond with Report",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [1500, 300]
+    }
+  ],
+  "connections": {
+    "Every 15 minutes": { "main": [[{ "node": "Run Health Check API", "type": "main", "index": 0 }]] },
+    "Manual Webhook": { "main": [[{ "node": "Run Health Check API", "type": "main", "index": 0 }]] },
+    "Run Health Check API": { "main": [[{ "node": "System Healthy?", "type": "main", "index": 0 }]] },
+    "System Healthy?": {
+      "main": [
+        [{ "node": "Format Healthy", "type": "main", "index": 0 }, { "node": "Respond with Report", "type": "main", "index": 0 }],
+        [{ "node": "Run Error Detection", "type": "main", "index": 0 }]
+      ]
+    },
+    "Run Error Detection": { "main": [[{ "node": "Has Errors?", "type": "main", "index": 0 }]] },
+    "Has Errors?": {
+      "main": [
+        [{ "node": "Auto-Fix: Redeploy", "type": "main", "index": 0 }],
+        []
+      ]
+    }
+  },
+  "settings": { "executionOrder": "v1" },
+  "meta": {
+    "description": "Runs every 15 min. On degraded health, runs error detection. On errors found, auto-triggers redeploy. Webhook: POST /webhook/mc-health. Env vars: MC_OWNER_TOKEN."
+  }
+}

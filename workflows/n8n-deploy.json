@@ -1,0 +1,128 @@
+{
+  "name": "Mission Control — Deploy",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": { "interval": [{ "field": "cronExpression", "expression": "0 */6 * * *" }] }
+      },
+      "id": "trigger-schedule",
+      "name": "Every 6h (optional)",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1,
+      "position": [250, 300]
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "mc-deploy",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "trigger-webhook",
+      "name": "Webhook Trigger",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [250, 500],
+      "webhookId": "mc-deploy"
+    },
+    {
+      "parameters": {
+        "command": "cd /path/to/mission-control && ./scripts/deploy.sh --skip-build-check 2>&1"
+      },
+      "id": "run-deploy",
+      "name": "Run deploy.sh",
+      "type": "n8n-nodes-base.executeCommand",
+      "typeVersion": 1,
+      "position": [500, 400]
+    },
+    {
+      "parameters": {
+        "url": "https://mission-control-jbx8.onrender.com/health",
+        "options": { "timeout": 30000 }
+      },
+      "id": "health-check",
+      "name": "Verify Backend Health",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [750, 400]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": { "caseSensitive": true },
+          "conditions": [{ "leftValue": "={{ $json.ok }}", "rightValue": true, "operator": { "type": "boolean", "operation": "equals" } }]
+        }
+      },
+      "id": "check-health-result",
+      "name": "Health OK?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [1000, 400]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ { \"status\": \"success\", \"message\": \"Deploy complete and healthy\", \"commit\": $('run-deploy').item.json.stdout?.match(/commit ([a-f0-9]{7})/)?.[1] } }}"
+      },
+      "id": "respond-success",
+      "name": "Respond Success",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [1250, 300]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ { \"status\": \"error\", \"message\": \"Deploy completed but health check failed\", \"details\": $json } }}",
+        "options": { "responseCode": 500 }
+      },
+      "id": "respond-error",
+      "name": "Respond Error",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [1250, 500]
+    },
+    {
+      "parameters": {
+        "url": "={{ $env.MC_BACKEND_URL || 'https://mission-control-jbx8.onrender.com' }}/api/v1/workflows/deploy",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "Authorization", "value": "Bearer {{ $env.MC_OWNER_TOKEN }}" },
+            { "name": "Content-Type", "value": "application/json" }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            { "name": "clear_cache", "value": "false" },
+            { "name": "message", "value": "Triggered by n8n deploy workflow" }
+          ]
+        },
+        "options": {}
+      },
+      "id": "api-deploy",
+      "name": "Trigger via API (alt)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [500, 600],
+      "notes": "Alternative: call the backend /workflows/deploy endpoint instead of shell"
+    }
+  ],
+  "connections": {
+    "Webhook Trigger": { "main": [[{ "node": "Run deploy.sh", "type": "main", "index": 0 }]] },
+    "Every 6h (optional)": { "main": [[{ "node": "Run deploy.sh", "type": "main", "index": 0 }]] },
+    "Run deploy.sh": { "main": [[{ "node": "Verify Backend Health", "type": "main", "index": 0 }]] },
+    "Verify Backend Health": { "main": [[{ "node": "Health OK?", "type": "main", "index": 0 }]] },
+    "Health OK?": {
+      "main": [
+        [{ "node": "Respond Success", "type": "main", "index": 0 }],
+        [{ "node": "Respond Error", "type": "main", "index": 0 }]
+      ]
+    }
+  },
+  "settings": { "executionOrder": "v1" },
+  "meta": {
+    "description": "Deploys Mission Control on push or schedule. Webhook: POST /webhook/mc-deploy. Env vars needed: MC_OWNER_TOKEN (for API-based trigger)."
+  }
+}

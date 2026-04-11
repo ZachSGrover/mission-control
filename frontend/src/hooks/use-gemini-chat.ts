@@ -10,7 +10,7 @@ import type { ConnectionStatus } from "@/lib/openclaw-client";
 import { clearChatHistory, loadChatHistory, saveChatHistory } from "@/lib/chat-store";
 import { buildMemoryContext, loadMemory } from "@/lib/memory-store";
 import { getCachedStatus, setCachedStatus } from "@/lib/provider-status-cache";
-import { logSystemAction } from "@/lib/action-logger";
+import { logSystemAction, writeAutoJournal } from "@/lib/action-logger";
 import { requestManager } from "@/lib/request-manager";
 
 const DEFAULT_GEMINI_MODEL = "gemini-2.5-flash";
@@ -58,6 +58,7 @@ async function executeGeminiStream(opts: {
       const errMsg = body?.detail ?? `HTTP ${response.status}`;
       requestManager.fail(provider, errMsg);
       logSystemAction("error", "Gemini stream failed", errMsg);
+      writeAutoJournal();
       saveChatHistory(provider, [
         ...preRequestMessages, userMsg,
         { id: assistantMsgId, role: "assistant" as const, text: "", streaming: false, error: body?.detail ?? `HTTP ${response.status}`, createdAt: new Date().toISOString() },
@@ -91,6 +92,7 @@ async function executeGeminiStream(opts: {
     const msg = err instanceof Error ? err.message : "Request failed";
     requestManager.fail(provider, msg);
     logSystemAction("error", "Gemini request error", msg);
+    writeAutoJournal();
     saveChatHistory(provider, [
       ...preRequestMessages, userMsg,
       { id: assistantMsgId, role: "assistant" as const, text: "", streaming: false, error: msg, createdAt: new Date().toISOString() },
@@ -159,17 +161,27 @@ export function useGeminiChat(model?: string, provider = "gemini"): ChatState & 
         if (cancelled) return;
         if (res.ok) {
           const body = await res.json() as { configured: boolean };
+          // Read previous cached value BEFORE overwriting — detects recovery
+          const prevStatus = getCachedStatus("gemini");
           setCachedStatus("gemini", body.configured);
           setIsConfigured(body.configured);
           setStatus(body.configured ? "connected" : "error");
           if (body.configured) {
-            logSystemAction("config", "Gemini API key active", "Gemini provider ready");
+            if (prevStatus === false) {
+              // Was explicitly cached as failing — this is a recovery
+              logSystemAction("bug_fix", "Gemini provider recovered", "API key now active after previous failure");
+              writeAutoJournal();
+            } else {
+              logSystemAction("config", "Gemini API key active", "Gemini provider ready");
+            }
           } else {
             logSystemAction("error", "Gemini API key not configured", "Gemini unavailable — add key in Settings");
+            writeAutoJournal();
           }
         } else {
           setStatus("error");
           logSystemAction("error", "Gemini status check failed", `HTTP ${res.status}`);
+          writeAutoJournal();
         }
       } catch {
         if (!cancelled) setStatus("error");

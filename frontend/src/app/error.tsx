@@ -4,7 +4,7 @@
 // Catches render errors in the /app directory tree.
 
 import { useEffect } from "react";
-import { logSystemAction } from "@/lib/action-logger";
+import { logSystemAction, writeAutoJournal } from "@/lib/action-logger";
 
 export default function Error({
   error,
@@ -20,6 +20,7 @@ export default function Error({
       "App render error caught by boundary",
       error.message || error.digest || "Unknown render error",
     );
+    writeAutoJournal(); // render crashes are always worth journaling
   }, [error]);
 
   return (

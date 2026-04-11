@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 
 import { AiChatPage, type ModelOption } from "@/components/templates/AiChatPage";
 import { useOpenAiChat } from "@/hooks/use-openai-chat";
-import { logSystemAction } from "@/lib/action-logger";
+import { logProviderSwitch } from "@/lib/action-logger";
 
 const OPENAI_MODELS: ModelOption[] = [
   { value: "gpt-4o-mini", label: "GPT-4o mini" },
@@ -26,8 +26,8 @@ export default function ChatGptPage() {
         setModelState(stored);
       }
     } catch { /* ignore */ }
-    // Log provider switch — deduped within 10 min so rapid tab switches won't spam
-    logSystemAction("config", "Switched to ChatGPT provider", "/chat/gpt");
+    // Track provider switch — burst of 3+ switches auto-triggers journal
+    logProviderSwitch("ChatGPT", "/chat/gpt");
   }, []);
 
   const setModel = (next: string) => {

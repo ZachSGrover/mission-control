@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 
 import { AiChatPage, type ModelOption } from "@/components/templates/AiChatPage";
 import { useGeminiChat } from "@/hooks/use-gemini-chat";
-import { logSystemAction } from "@/lib/action-logger";
+import { logProviderSwitch } from "@/lib/action-logger";
 
 const GEMINI_MODELS: ModelOption[] = [
   { value: "gemini-2.5-flash",   label: "Gemini 2.5 Flash" },
@@ -26,8 +26,8 @@ export default function GeminiPage() {
         setModelState(stored);
       }
     } catch { /* ignore */ }
-    // Log provider switch — deduped within 10 min so rapid tab switches won't spam
-    logSystemAction("config", "Switched to Gemini provider", "/chat/gemini");
+    // Track provider switch — burst of 3+ switches auto-triggers journal
+    logProviderSwitch("Gemini", "/chat/gemini");
   }, []);
 
   const setModel = (next: string) => {

@@ -20,7 +20,7 @@ export default function Error({
       "App render error caught by boundary",
       error.message || error.digest || "Unknown render error",
     );
-    writeAutoJournal(); // render crashes are always worth journaling
+    writeAutoJournal({ priority: true }); // render crashes always journal immediately
   }, [error]);
 
   return (

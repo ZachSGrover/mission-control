@@ -360,7 +360,7 @@ export function useMasterChat(): MasterChatState {
           const hasAny = ALL_PROVIDERS.some((pr) => (responses[pr]?.length ?? 0) > 0);
           if (!hasAny) {
             logSystemAction("error", "All AI providers failed to respond", "Claude, ChatGPT, Gemini — check API keys and connectivity");
-            writeAutoJournal(); // all-fail is high-signal; journal regardless of threshold
+            writeAutoJournal({ priority: true }); // all-fail = priority event
             setTurns((prev) => {
               const next = (prev ?? []).map((t) =>
                 t.id === turnId

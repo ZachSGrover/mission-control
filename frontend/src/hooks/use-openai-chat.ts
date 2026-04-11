@@ -174,7 +174,7 @@ export function useOpenAiChat(model?: string, provider = "chatgpt"): ChatState &
             if (prevStatus === false) {
               // Was explicitly cached as failing — this is a recovery
               logSystemAction("bug_fix", "OpenAI provider recovered", "API key now active after previous failure");
-              writeAutoJournal();
+              writeAutoJournal({ priority: true }); // recovery = priority event
             } else {
               logSystemAction("config", "OpenAI API key active", "ChatGPT provider ready");
             }

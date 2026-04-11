@@ -170,7 +170,7 @@ export function useGeminiChat(model?: string, provider = "gemini"): ChatState & 
             if (prevStatus === false) {
               // Was explicitly cached as failing — this is a recovery
               logSystemAction("bug_fix", "Gemini provider recovered", "API key now active after previous failure");
-              writeAutoJournal();
+              writeAutoJournal({ priority: true }); // recovery = priority event
             } else {
               logSystemAction("config", "Gemini API key active", "Gemini provider ready");
             }

@@ -12,6 +12,13 @@
  *   logSystemAction("config", "Set OPENAI_API_KEY in Render")
  *   logSystemAction("integration", "Connected ElevenLabs voice API")
  *   logSystemAction("bug_fix", "Fixed CORS preflight 405 error")
+ *
+ * Priority events (bypass log threshold, 2-min cooldown instead of 15-min):
+ *   writeAutoJournal({ priority: true })
+ *
+ * Convenience helpers for common priority events:
+ *   logDeployCompleted(commit?)
+ *   logSystemPaused(reason?)
  */
 
 import { type MemoryEntry, loadMemory, saveMemory } from "@/lib/memory-store";
@@ -45,17 +52,27 @@ const CATEGORY_EMOJI: Record<ActionCategory, string> = {
   error:        "🚨",
 };
 
-// ── Journal rate-limit and threshold ─────────────────────────────────────────
+// ── Journal rate-limit constants ──────────────────────────────────────────────
 
-/** Minimum time between auto-journal entries. */
-const JOURNAL_MIN_INTERVAL_MS = 15 * 60 * 1000; // 15 minutes
+/**
+ * Normal auto-journal rate limit.
+ * Won't write more than once per 15 minutes under normal conditions.
+ */
+const JOURNAL_NORMAL_INTERVAL_MS = 15 * 60 * 1000;
 
-/** Minimum meaningful logs required since last journal before writing one. */
+/**
+ * Priority auto-journal rate limit.
+ * Priority events bypass the log-count threshold but still respect a 2-minute
+ * cooldown — prevents repeated crash loops from flooding the journal.
+ */
+const JOURNAL_PRIORITY_COOLDOWN_MS = 2 * 60 * 1000;
+
+/** Minimum meaningful logs required since last journal (normal path only). */
 const JOURNAL_MIN_MEANINGFUL = 5;
 
 /**
- * Routine status events that on their own don't warrant a journal entry.
- * A session that only contains these patterns will not auto-journal.
+ * Routine status patterns that don't count toward the meaningful-log threshold.
+ * A session consisting only of these will never trigger a normal auto-journal.
  */
 const ROUTINE_PATTERNS = [
   "Switched to ChatGPT provider",
@@ -65,22 +82,17 @@ const ROUTINE_PATTERNS = [
   "User signed in",
 ];
 
-// ── Session-level provider switch tracking ───────────────────────────────────
-// Module-scope: survives React remounts, reset per page-load session.
+// ── Session-level provider switch tracking ────────────────────────────────────
+// Module-scope so it survives React remounts within a page-load session.
 
 let _sessionSwitchCount = 0;
 
-// ── Core helpers ─────────────────────────────────────────────────────────────
+// ── Internal helpers ──────────────────────────────────────────────────────────
 
-/** Returns true if this log content is considered meaningful (not routine). */
 function isMeaningfulContent(content: string): boolean {
   return !ROUTINE_PATTERNS.some((p) => content.includes(p));
 }
 
-/**
- * Count meaningful system logs written since `since` ISO string.
- * Used to determine whether a journal entry is warranted.
- */
 function countMeaningfulSince(entries: MemoryEntry[], since: string): number {
   return entries.filter(
     (e) =>
@@ -91,13 +103,12 @@ function countMeaningfulSince(entries: MemoryEntry[], since: string): number {
   ).length;
 }
 
-/** Find the ISO timestamp of the most recent auto-journal, or a 24h fallback. */
 function lastJournalTimestamp(entries: MemoryEntry[]): string {
   const last = entries.find((e) => e.type === "journal" && e.source === "system");
   return last?.createdAt ?? new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
 }
 
-// ── Public API ────────────────────────────────────────────────────────────────
+// ── Core write ────────────────────────────────────────────────────────────────
 
 /**
  * Write a system action to the memory store (localStorage).
@@ -109,7 +120,6 @@ export function logSystemAction(
   detail?: string,
 ): void {
   if (typeof window === "undefined") return;
-
   try {
     const emoji = CATEGORY_EMOJI[category] ?? "📌";
     const content = detail
@@ -117,9 +127,7 @@ export function logSystemAction(
       : `${emoji} [${category.toUpperCase()}] ${description}`;
 
     const existing = loadMemory();
-    // Deduplicate within 10 minutes — prevents spam while still capturing genuine repeats
     const tenMinAgo = new Date(Date.now() - 10 * 60 * 1000).toISOString();
-
     const isDuplicate = existing.some(
       (e) => e.content === content && e.createdAt > tenMinAgo,
     );
@@ -134,52 +142,73 @@ export function logSystemAction(
       project:   "Mission Control",
       area:      "Operations",
     };
-
     saveMemory([entry, ...existing]);
   } catch {
-    // Non-fatal — logging must never throw
+    // Non-fatal
   }
+}
+
+// ── Auto-journal ──────────────────────────────────────────────────────────────
+
+export interface AutoJournalOptions {
+  /**
+   * When true, this event bypasses the meaningful-log threshold and uses a
+   * 2-minute cooldown instead of 15 minutes.
+   *
+   * Use for: all-providers-failed, app crash, provider recovery, deploy
+   * completed, system paused / manual-intervention required.
+   */
+  priority?: boolean;
 }
 
 /**
  * Compile system logs since the last journal into a structured journal entry.
  *
- * Guards:
- *   - Max once every 15 minutes
- *   - Requires at least 5 meaningful logs since the last journal
+ * Normal path guards (both must pass):
+ *   1. No journal written in the last 15 minutes
+ *   2. At least 5 meaningful logs since the last journal
  *
- * Call this after any high-signal event: deploys, errors, recoveries,
- * provider bursts, all-fail events. The guards ensure it only writes
- * when there is actually something worth recording.
+ * Priority path guards (only one must pass):
+ *   1. No journal written in the last 2 minutes (spam protection only)
+ *   — threshold is skipped entirely —
+ *
+ * Structured output sections:
+ *   🚨 Errors / 🐛 Fixes & Deploys / 🔑 Config changes / ⚙️ Activity
  */
-export function writeAutoJournal(): void {
+export function writeAutoJournal(opts?: AutoJournalOptions): void {
   if (typeof window === "undefined") return;
   try {
+    const isPriority = opts?.priority === true;
     const entries = loadMemory();
 
-    // ── Guard 1: rate-limit to once per 15 minutes ──
-    const intervalCutoff = new Date(Date.now() - JOURNAL_MIN_INTERVAL_MS).toISOString();
+    // ── Rate limit ──────────────────────────────────────────────────────────
+    // Priority events use a 2-min cooldown; normal events use 15 min.
+    const intervalMs = isPriority ? JOURNAL_PRIORITY_COOLDOWN_MS : JOURNAL_NORMAL_INTERVAL_MS;
+    const intervalCutoff = new Date(Date.now() - intervalMs).toISOString();
     const hasRecentJournal = entries.some(
       (e) => e.type === "journal" && e.source === "system" && e.createdAt > intervalCutoff,
     );
     if (hasRecentJournal) return;
 
-    // ── Guard 2: require minimum meaningful activity since last journal ──
+    // ── Meaningful-log threshold (normal path only) ────────────────────────
     const lastJournal = lastJournalTimestamp(entries);
-    const meaningfulCount = countMeaningfulSince(entries, lastJournal);
-    if (meaningfulCount < JOURNAL_MIN_MEANINGFUL) return;
+    if (!isPriority) {
+      const meaningfulCount = countMeaningfulSince(entries, lastJournal);
+      if (meaningfulCount < JOURNAL_MIN_MEANINGFUL) return;
+    }
 
-    // ── Gather logs since last journal (max 20, newest first) ──
+    // ── Gather logs since last journal (max 20, newest first) ─────────────
     const sinceLastJournal = entries
       .filter((e) => e.source === "system" && e.type === "note" && e.createdAt > lastJournal)
       .slice(0, 20);
     if (!sinceLastJournal.length) return;
 
-    // ── Build a structured summary by category group ──
+    // ── Build structured sections ──────────────────────────────────────────
     const dateLabel = new Date().toLocaleString("en-US", {
       month: "short", day: "numeric", year: "numeric",
       hour: "2-digit", minute: "2-digit",
     });
+    const priorityBadge = isPriority ? " ⚡ PRIORITY" : "";
 
     const errors       = sinceLastJournal.filter((e) => e.content.includes("[ERROR]"));
     const fixes        = sinceLastJournal.filter((e) => e.content.includes("[BUG_FIX]") || e.content.includes("[DEPLOY]"));
@@ -200,7 +229,7 @@ export function writeAutoJournal(): void {
       section("⚙️ Activity", routine),
     ].filter(Boolean).join("\n\n");
 
-    const content = `📓 Auto Journal — ${dateLabel}\n\n${sections}`;
+    const content = `📓 Auto Journal${priorityBadge} — ${dateLabel}\n\n${sections}`;
 
     const journalEntry: MemoryEntry = {
       id:        crypto.randomUUID(),
@@ -217,21 +246,53 @@ export function writeAutoJournal(): void {
   }
 }
 
+// ── Priority event helpers ────────────────────────────────────────────────────
+// Convenience wrappers for events that should always produce a journal entry.
+
 /**
- * Log a provider switch and trigger journal if 3+ switches happened in
- * the current session (indicates active comparison/debugging activity).
+ * Log a successful deploy and trigger a priority journal.
+ * Call after Vercel / Render deploy confirmation, or after git push resolves.
+ */
+export function logDeployCompleted(commit?: string): void {
+  logSystemAction(
+    "deploy",
+    "Deploy completed successfully",
+    commit ? `commit ${commit}` : "app.digidle.com",
+  );
+  writeAutoJournal({ priority: true });
+}
+
+/**
+ * Log that the system has entered a paused or manual-intervention state
+ * and trigger a priority journal so the state is captured immediately.
+ */
+export function logSystemPaused(reason?: string): void {
+  logSystemAction(
+    "error",
+    "System entered paused / manual intervention state",
+    reason ?? "master controller flagged manual_intervention_required",
+  );
+  writeAutoJournal({ priority: true });
+}
+
+// ── Provider switch tracking ──────────────────────────────────────────────────
+
+/**
+ * Log a provider switch and trigger a normal journal if 3+ switches happened
+ * in the current session (indicates active comparison/debugging activity).
  */
 export function logProviderSwitch(provider: string, path: string): void {
   logSystemAction("config", `Switched to ${provider} provider`, path);
   _sessionSwitchCount++;
-  // A burst of 3+ switches in one session = noteworthy system activity
   if (_sessionSwitchCount >= 3) {
-    writeAutoJournal();
+    writeAutoJournal(); // burst — normal path, threshold still applies
   }
 }
 
+// ── Summary ───────────────────────────────────────────────────────────────────
+
 /**
- * Generate a one-line summary of recent system actions for the journal.
+ * Return a one-line summary of recent system actions.
  * Returns null if no recent actions exist.
  */
 export function getRecentActionsSummary(withinHours = 24): string | null {

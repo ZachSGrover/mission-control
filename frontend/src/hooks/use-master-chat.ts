@@ -6,6 +6,7 @@ import { useAuth } from "@/auth/clerk";
 import { getApiBaseUrl } from "@/lib/api-base";
 import { buildMemoryContext, loadMemory } from "@/lib/memory-store";
 import { logSystemAction, writeAutoJournal } from "@/lib/action-logger";
+import { runAutoFix } from "@/lib/auto-fix";
 import { requestManager } from "@/lib/request-manager";
 import { openClawSend, subscribeToClaudeStatus } from "@/lib/openclaw-singleton";
 import {
@@ -360,7 +361,9 @@ export function useMasterChat(): MasterChatState {
           const hasAny = ALL_PROVIDERS.some((pr) => (responses[pr]?.length ?? 0) > 0);
           if (!hasAny) {
             logSystemAction("error", "All AI providers failed to respond", "Claude, ChatGPT, Gemini — check API keys and connectivity");
-            writeAutoJournal({ priority: true }); // all-fail = priority event
+            void runAutoFix("all_providers_failed", { token }).then((fix) =>
+              writeAutoJournal({ priority: true, fixResult: fix }),
+            );
             setTurns((prev) => {
               const next = (prev ?? []).map((t) =>
                 t.id === turnId

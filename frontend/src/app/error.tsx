@@ -5,6 +5,7 @@
 
 import { useEffect } from "react";
 import { logSystemAction, writeAutoJournal } from "@/lib/action-logger";
+import { runAutoFix } from "@/lib/auto-fix";
 
 export default function Error({
   error,
@@ -13,14 +14,17 @@ export default function Error({
   error: Error & { digest?: string };
   reset: () => void;
 }) {
-  // Log every render error to memory so it shows up in journal
+  // Log the crash, attempt a fix, then journal with the result
   useEffect(() => {
     logSystemAction(
       "error",
       "App render error caught by boundary",
       error.message || error.digest || "Unknown render error",
     );
-    writeAutoJournal({ priority: true }); // render crashes always journal immediately
+    void (async () => {
+      const fix = await runAutoFix("app_render_crash");
+      writeAutoJournal({ priority: true, fixResult: fix });
+    })();
   }, [error]);
 
   return (

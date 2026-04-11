@@ -11,6 +11,7 @@ import { clearChatHistory, loadChatHistory, saveChatHistory } from "@/lib/chat-s
 import { buildMemoryContext, loadMemory } from "@/lib/memory-store";
 import { getCachedStatus, setCachedStatus } from "@/lib/provider-status-cache";
 import { logSystemAction, writeAutoJournal } from "@/lib/action-logger";
+import { runAutoFix } from "@/lib/auto-fix";
 import { requestManager } from "@/lib/request-manager";
 
 const DEFAULT_OPENAI_MODEL = "gpt-4o-mini";
@@ -61,7 +62,7 @@ async function executeOpenAiStream(opts: {
       const errMsg = body?.detail ?? `HTTP ${response.status}`;
       requestManager.fail(provider, errMsg);
       logSystemAction("error", "ChatGPT stream failed", errMsg);
-      writeAutoJournal();
+      void runAutoFix("all_providers_failed", { token }).then((fix) => writeAutoJournal({ fixResult: fix }));
       const errMessages = [...preRequestMessages, userMsg,
         { id: assistantMsgId, role: "assistant" as const, text: "", streaming: false, error: errMsg }];
       saveChatHistory(provider, errMessages);
@@ -97,7 +98,7 @@ async function executeOpenAiStream(opts: {
     const msg = err instanceof Error ? err.message : "Request failed";
     requestManager.fail(provider, msg);
     logSystemAction("error", "ChatGPT request error", msg);
-    writeAutoJournal();
+    void runAutoFix("all_providers_failed", { token }).then((fix) => writeAutoJournal({ fixResult: fix }));
     const errMessages = [...preRequestMessages, userMsg,
       { id: assistantMsgId, role: "assistant" as const, text: "", streaming: false, error: msg, createdAt: new Date().toISOString() }];
     saveChatHistory(provider, errMessages);
@@ -174,7 +175,8 @@ export function useOpenAiChat(model?: string, provider = "chatgpt"): ChatState &
             if (prevStatus === false) {
               // Was explicitly cached as failing — this is a recovery
               logSystemAction("bug_fix", "OpenAI provider recovered", "API key now active after previous failure");
-              writeAutoJournal({ priority: true }); // recovery = priority event
+              const fix = await runAutoFix("provider_recovery", { token: await getTokenRef.current(), provider: "openai" });
+              writeAutoJournal({ priority: true, fixResult: fix });
             } else {
               logSystemAction("config", "OpenAI API key active", "ChatGPT provider ready");
             }

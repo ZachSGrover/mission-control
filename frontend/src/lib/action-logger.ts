@@ -150,6 +150,22 @@ export function logSystemAction(
 
 // ── Auto-journal ──────────────────────────────────────────────────────────────
 
+/**
+ * Result returned by an auto-fix handler.
+ * Attached to a priority journal so the journal captures what was tried
+ * and whether it worked.
+ */
+export interface FixResult {
+  /** Human-readable label for what was attempted. */
+  attempted: string;
+  /** True if the fix fully resolved the problem. */
+  success: boolean;
+  /** True if the fix helped but did not fully resolve. */
+  partial: boolean;
+  /** Extra context: what changed, why it failed, next step. */
+  detail: string;
+}
+
 export interface AutoJournalOptions {
   /**
    * When true, this event bypasses the meaningful-log threshold and uses a
@@ -159,6 +175,13 @@ export interface AutoJournalOptions {
    * completed, system paused / manual-intervention required.
    */
   priority?: boolean;
+
+  /**
+   * Result from runAutoFix(). When present, a "🔧 Auto-fix" section is
+   * prepended to the journal entry so the journal reflects what was tried
+   * and whether it worked.
+   */
+  fixResult?: FixResult;
 }
 
 /**
@@ -179,6 +202,7 @@ export function writeAutoJournal(opts?: AutoJournalOptions): void {
   if (typeof window === "undefined") return;
   try {
     const isPriority = opts?.priority === true;
+    const fixResult  = opts?.fixResult;
     const entries = loadMemory();
 
     // ── Rate limit ──────────────────────────────────────────────────────────
@@ -222,7 +246,16 @@ export function writeAutoJournal(opts?: AutoJournalOptions): void {
         ? `${label}\n${items.map((e) => `  • ${e.content.split("\n")[0]}`).join("\n")}`
         : null;
 
+    // ── Auto-fix result block (priority journals only) ────────────────────
+    let fixBlock: string | null = null;
+    if (fixResult) {
+      const icon = fixResult.success ? "✅" : fixResult.partial ? "⚠️" : "❌";
+      const status = fixResult.success ? "Success" : fixResult.partial ? "Partial" : "Failed";
+      fixBlock = `🔧 Auto-fix: ${fixResult.attempted}\n  ${icon} ${status} — ${fixResult.detail}`;
+    }
+
     const sections = [
+      fixBlock,
       section("🚨 Errors", errors),
       section("🐛 Fixes & Deploys", fixes),
       section("🔑 Config changes", configChange),
@@ -250,29 +283,36 @@ export function writeAutoJournal(opts?: AutoJournalOptions): void {
 // Convenience wrappers for events that should always produce a journal entry.
 
 /**
- * Log a successful deploy and trigger a priority journal.
+ * Log a successful deploy, run the deploy fix handler (health check), then
+ * write a priority journal with the result.
  * Call after Vercel / Render deploy confirmation, or after git push resolves.
  */
-export function logDeployCompleted(commit?: string): void {
+export async function logDeployCompleted(commit?: string, token?: string | null): Promise<void> {
   logSystemAction(
     "deploy",
     "Deploy completed successfully",
     commit ? `commit ${commit}` : "app.digidle.com",
   );
-  writeAutoJournal({ priority: true });
+  // Lazy import to avoid circular dep — auto-fix imports logSystemAction from here
+  const { runAutoFix } = await import("@/lib/auto-fix");
+  const fix = await runAutoFix("deploy_completed", { token });
+  writeAutoJournal({ priority: true, fixResult: fix });
 }
 
 /**
- * Log that the system has entered a paused or manual-intervention state
- * and trigger a priority journal so the state is captured immediately.
+ * Log that the system has entered a paused or manual-intervention state,
+ * run the system-paused fix handler (marks intervention required), then
+ * write a priority journal with the result.
  */
-export function logSystemPaused(reason?: string): void {
+export async function logSystemPaused(reason?: string): Promise<void> {
   logSystemAction(
     "error",
     "System entered paused / manual intervention state",
     reason ?? "master controller flagged manual_intervention_required",
   );
-  writeAutoJournal({ priority: true });
+  const { runAutoFix } = await import("@/lib/auto-fix");
+  const fix = await runAutoFix("system_paused", { reason });
+  writeAutoJournal({ priority: true, fixResult: fix });
 }
 
 // ── Provider switch tracking ──────────────────────────────────────────────────

@@ -1,0 +1,263 @@
+{
+  "name": "Mission Control — Master Controller",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": { "interval": [{ "field": "cronExpression", "expression": "* * * * *" }] }
+      },
+      "id": "cron-60s",
+      "name": "Every 60 seconds",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1,
+      "position": [200, 300],
+      "notes": "Change to */2 for 2-minute intervals if needed"
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "mc-master",
+        "responseMode": "responseNode"
+      },
+      "id": "webhook-trigger",
+      "name": "Manual Trigger",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [200, 500],
+      "webhookId": "mc-master"
+    },
+    {
+      "parameters": {
+        "url": "={{ $env.MC_BACKEND_URL || 'https://mission-control-jbx8.onrender.com' }}/api/v1/workflows/system/status",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [{ "name": "Authorization", "value": "Bearer {{ $env.MC_OWNER_TOKEN }}" }]
+        },
+        "options": { "timeout": 15000 }
+      },
+      "id": "check-state",
+      "name": "Check System State",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [450, 400]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "conditions": [
+            {
+              "leftValue": "={{ $json.state }}",
+              "rightValue": "paused",
+              "operator": { "type": "string", "operation": "notEquals" }
+            },
+            {
+              "leftValue": "={{ $json.state }}",
+              "rightValue": "stopped",
+              "operator": { "type": "string", "operation": "notEquals" }
+            }
+          ],
+          "combinator": "and"
+        }
+      },
+      "id": "is-active",
+      "name": "System Active?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [700, 400]
+    },
+    {
+      "parameters": {
+        "url": "={{ $env.MC_BACKEND_URL || 'https://mission-control-jbx8.onrender.com' }}/api/v1/workflows/health-check",
+        "method": "POST",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "Authorization", "value": "Bearer {{ $env.MC_OWNER_TOKEN }}" },
+            { "name": "Content-Type", "value": "application/json" }
+          ]
+        },
+        "body": "{}",
+        "options": { "timeout": 30000 }
+      },
+      "id": "health-check",
+      "name": "Health Check",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [950, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "conditions": [{
+            "leftValue": "={{ $json.overall }}",
+            "rightValue": "healthy",
+            "operator": { "type": "string", "operation": "equals" }
+          }]
+        }
+      },
+      "id": "is-healthy",
+      "name": "Healthy?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [1200, 300]
+    },
+    {
+      "parameters": {
+        "url": "={{ $env.MC_BACKEND_URL || 'https://mission-control-jbx8.onrender.com' }}/api/v1/workflows/error-detect",
+        "method": "POST",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "Authorization", "value": "Bearer {{ $env.MC_OWNER_TOKEN }}" },
+            { "name": "Content-Type", "value": "application/json" }
+          ]
+        },
+        "body": "{}",
+        "options": { "timeout": 30000 }
+      },
+      "id": "error-detect",
+      "name": "Error Detection",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [1450, 400]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "conditions": [{
+            "leftValue": "={{ $json.fix_suggestions.length }}",
+            "rightValue": 0,
+            "operator": { "type": "number", "operation": "larger" }
+          }]
+        }
+      },
+      "id": "is-fixable",
+      "name": "Auto-Fixable?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [1700, 400]
+    },
+    {
+      "parameters": {
+        "url": "={{ $env.MC_BACKEND_URL || 'https://mission-control-jbx8.onrender.com' }}/api/v1/workflows/auto-fix",
+        "method": "POST",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "Authorization", "value": "Bearer {{ $env.MC_OWNER_TOKEN }}" },
+            { "name": "Content-Type", "value": "application/json" }
+          ]
+        },
+        "body": "={{ JSON.stringify({ suggestions: $('error-detect').item.json.fix_suggestions }) }}",
+        "options": { "timeout": 30000 }
+      },
+      "id": "auto-fix",
+      "name": "Apply Auto-Fix",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [1950, 300]
+    },
+    {
+      "parameters": {
+        "url": "={{ $env.MC_BACKEND_URL || 'https://mission-control-jbx8.onrender.com' }}/api/v1/workflows/deploy",
+        "method": "POST",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "Authorization", "value": "Bearer {{ $env.MC_OWNER_TOKEN }}" },
+            { "name": "Content-Type", "value": "application/json" }
+          ]
+        },
+        "body": "{\"clear_cache\": false, \"message\": \"Auto-deploy triggered by n8n master controller\"}",
+        "options": { "timeout": 30000 }
+      },
+      "id": "deploy",
+      "name": "Trigger Deploy",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [2200, 300]
+    },
+    {
+      "parameters": {
+        "url": "={{ $env.MC_BACKEND_URL || 'https://mission-control-jbx8.onrender.com' }}/api/v1/workflows/health-check",
+        "method": "POST",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "Authorization", "value": "Bearer {{ $env.MC_OWNER_TOKEN }}" },
+            { "name": "Content-Type", "value": "application/json" }
+          ]
+        },
+        "body": "{}",
+        "options": { "timeout": 30000 }
+      },
+      "id": "verify-fix",
+      "name": "Verify Fix",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [2450, 300]
+    },
+    {
+      "parameters": {
+        "url": "={{ $env.MC_BACKEND_URL || 'https://mission-control-jbx8.onrender.com' }}/api/v1/workflows/master/pause",
+        "method": "POST",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "Authorization", "value": "Bearer {{ $env.MC_OWNER_TOKEN }}" },
+            { "name": "Content-Type", "value": "application/json" }
+          ]
+        },
+        "body": "{}",
+        "options": {}
+      },
+      "id": "flag-manual",
+      "name": "Flag: Manual Required",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [1950, 500],
+      "notes": "Pauses the system and sets state=manual_intervention_required"
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ { status: 'ok', health: $('health-check').item.json.overall, cycle_ts: new Date().toISOString() } }}"
+      },
+      "id": "respond-ok",
+      "name": "Respond OK",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [1450, 200]
+    }
+  ],
+  "connections": {
+    "Every 60 seconds":   { "main": [[{ "node": "Check System State", "type": "main", "index": 0 }]] },
+    "Manual Trigger":     { "main": [[{ "node": "Check System State", "type": "main", "index": 0 }]] },
+    "Check System State": { "main": [[{ "node": "System Active?", "type": "main", "index": 0 }]] },
+    "System Active?": {
+      "main": [
+        [{ "node": "Health Check", "type": "main", "index": 0 }],
+        []
+      ]
+    },
+    "Health Check": { "main": [[{ "node": "Healthy?", "type": "main", "index": 0 }]] },
+    "Healthy?": {
+      "main": [
+        [{ "node": "Respond OK", "type": "main", "index": 0 }],
+        [{ "node": "Error Detection", "type": "main", "index": 0 }]
+      ]
+    },
+    "Error Detection": { "main": [[{ "node": "Auto-Fixable?", "type": "main", "index": 0 }]] },
+    "Auto-Fixable?": {
+      "main": [
+        [{ "node": "Apply Auto-Fix", "type": "main", "index": 0 }],
+        [{ "node": "Flag: Manual Required", "type": "main", "index": 0 }]
+      ]
+    },
+    "Apply Auto-Fix":   { "main": [[{ "node": "Trigger Deploy", "type": "main", "index": 0 }]] },
+    "Trigger Deploy":   { "main": [[{ "node": "Verify Fix", "type": "main", "index": 0 }]] }
+  },
+  "settings": { "executionOrder": "v1" },
+  "meta": {
+    "description": "Autonomous master controller. Runs every 60s. Health check → error detect → auto-fix → deploy → verify. Env vars: MC_OWNER_TOKEN, MC_BACKEND_URL. Import into n8n via Workflows → Import."
+  }
+}

@@ -1,0 +1,59 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!-- macOS launchd service — keeps master-controller running 24/7
+     Install:
+       cp scripts/mc-launchd.plist ~/Library/LaunchAgents/com.digidle.mc.plist
+       # Edit the plist to set your env vars and correct script path
+       launchctl load ~/Library/LaunchAgents/com.digidle.mc.plist
+     Uninstall:
+       launchctl unload ~/Library/LaunchAgents/com.digidle.mc.plist
+     Logs:
+       tail -f /tmp/mc-system/launchd.log
+-->
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.digidle.mc</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>/bin/bash</string>
+        <string>/Users/zachary/mission-control/scripts/master-controller.sh</string>
+    </array>
+
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>OWNER_TOKEN</key>
+        <string>REPLACE_WITH_OWNER_TOKEN</string>
+        <key>RENDER_API_KEY</key>
+        <string>REPLACE_WITH_RENDER_API_KEY</string>
+        <key>BACKEND_URL</key>
+        <string>https://mission-control-jbx8.onrender.com</string>
+        <key>FRONTEND_URL</key>
+        <string>https://app.digidle.com</string>
+        <key>RENDER_SERVICE_ID</key>
+        <string>srv-d7cq41q8qa3s73bbke00</string>
+        <key>CYCLE_INTERVAL</key>
+        <string>60</string>
+        <key>MC_STATE_DIR</key>
+        <string>/tmp/mc-system</string>
+        <key>PATH</key>
+        <string>/usr/local/bin:/usr/bin:/bin:/opt/homebrew/bin</string>
+    </dict>
+
+    <key>RunAtLoad</key>
+    <true/>
+
+    <key>KeepAlive</key>
+    <true/>
+
+    <key>StandardOutPath</key>
+    <string>/tmp/mc-system/launchd.log</string>
+
+    <key>StandardErrorPath</key>
+    <string>/tmp/mc-system/launchd.err</string>
+
+    <key>ThrottleInterval</key>
+    <integer>10</integer>
+</dict>
+</plist>

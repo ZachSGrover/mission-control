@@ -1,0 +1,37 @@
+# Linux systemd service — keeps master-controller running 24/7
+# Install (Linux/VPS):
+#   sudo cp scripts/mc-systemd.service /etc/systemd/system/mc.service
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable mc
+#   sudo systemctl start mc
+# Status:
+#   sudo systemctl status mc
+#   journalctl -u mc -f
+
+[Unit]
+Description=Mission Control Master Controller
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=ubuntu
+WorkingDirectory=/home/ubuntu/mission-control
+ExecStart=/bin/bash /home/ubuntu/mission-control/scripts/master-controller.sh
+Restart=always
+RestartSec=10
+
+Environment=OWNER_TOKEN=REPLACE_WITH_OWNER_TOKEN
+Environment=RENDER_API_KEY=REPLACE_WITH_RENDER_API_KEY
+Environment=BACKEND_URL=https://mission-control-jbx8.onrender.com
+Environment=FRONTEND_URL=https://app.digidle.com
+Environment=RENDER_SERVICE_ID=srv-d7cq41q8qa3s73bbke00
+Environment=CYCLE_INTERVAL=60
+Environment=MC_STATE_DIR=/var/lib/mission-control
+
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=mc-controller
+
+[Install]
+WantedBy=multi-user.target

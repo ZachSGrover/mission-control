@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 
-import { getLocalAuthToken } from "@/auth/localAuth";
+import { useAuth } from "@/auth/clerk";
 import { getApiBaseUrl } from "@/lib/api-base";
 import { buildMemoryContext, loadMemory } from "@/lib/memory-store";
 import { requestManager } from "@/lib/request-manager";
@@ -48,10 +48,10 @@ async function runOrchestratorOpenAiStream(
   provider: string,
   apiMessages: { role: string; content: string }[],
   model: string,
+  token: string | null,
 ): Promise<void> {
   try {
     const baseUrl = getApiBaseUrl();
-    const token = getLocalAuthToken();
     const headers: Record<string, string> = { "Content-Type": "application/json" };
     if (token) headers["Authorization"] = `Bearer ${token}`;
 
@@ -94,10 +94,10 @@ async function runOrchestratorGeminiStream(
   provider: string,
   apiMessages: { role: string; content: string }[],
   model: string,
+  token: string | null,
 ): Promise<void> {
   try {
     const baseUrl = getApiBaseUrl();
-    const token = getLocalAuthToken();
     const headers: Record<string, string> = { "Content-Type": "application/json" };
     if (token) headers["Authorization"] = `Bearer ${token}`;
 
@@ -142,9 +142,9 @@ async function callJudge(
   question: string,
   responses: Record<OrchestratorProvider, string>,
   memoryContext: string,
+  token: string | null,
 ): Promise<BestAnswer> {
   const baseUrl = getApiBaseUrl();
-  const token = getLocalAuthToken();
   const headers: Record<string, string> = { "Content-Type": "application/json" };
   if (token) headers["Authorization"] = `Bearer ${token}`;
 
@@ -183,9 +183,9 @@ async function callSynthesizer(
   question: string,
   responses: Record<OrchestratorProvider, string>,
   memoryContext: string,
+  token: string | null,
 ): Promise<SynthesizedAnswer> {
   const baseUrl = getApiBaseUrl();
-  const token = getLocalAuthToken();
   const headers: Record<string, string> = { "Content-Type": "application/json" };
   if (token) headers["Authorization"] = `Bearer ${token}`;
 
@@ -223,6 +223,10 @@ export interface MasterChatState {
 }
 
 export function useMasterChat(): MasterChatState {
+  const { getToken } = useAuth();
+  const getTokenRef = useRef(getToken);
+  useEffect(() => { getTokenRef.current = getToken; }, [getToken]);
+
   // ── IMPORTANT: Start with empty state so server and client initial renders match.
   // Load from localStorage in useEffect (client-only) to avoid hydration mismatch.
   const [turns, setTurns] = useState<OrchestratorTurn[]>([]);
@@ -289,6 +293,7 @@ export function useMasterChat(): MasterChatState {
     async (userText: string): Promise<boolean> => {
       if (isSending) return false;
 
+      const token = await getTokenRef.current();
       const turnId = crypto.randomUUID();
       const now = new Date().toISOString();
 
@@ -378,7 +383,7 @@ export function useMasterChat(): MasterChatState {
           );
 
           // ── Judge ──────────────────────────────────────────────────────────
-          void callJudge(userText, responses, memCtx)
+          void callJudge(userText, responses, memCtx, token)
             .then((bestAnswer) => {
               console.log("[Orchestrator] Judge result:", bestAnswer.provider);
               setTurns((prev) => {
@@ -405,7 +410,7 @@ export function useMasterChat(): MasterChatState {
           // Skip if only one provider responded (callSynthesizer handles it but
           // the loading state would be misleading — just silently skip the UI spinner)
           if (respondedCount > 0) {
-            void callSynthesizer(userText, responses, memCtx)
+            void callSynthesizer(userText, responses, memCtx, token)
               .then((synthesizedAnswer) => {
                 console.log("[Orchestrator] Synthesis complete via:", synthesizedAnswer.modelUsed);
                 setTurns((prev) => {
@@ -457,11 +462,11 @@ export function useMasterChat(): MasterChatState {
 
       const chatgptId = crypto.randomUUID();
       requestManager.start("master:chatgpt", chatgptId);
-      void runOrchestratorOpenAiStream("master:chatgpt", apiMessages, DEFAULT_OPENAI_MODEL);
+      void runOrchestratorOpenAiStream("master:chatgpt", apiMessages, DEFAULT_OPENAI_MODEL, token);
 
       const geminiId = crypto.randomUUID();
       requestManager.start("master:gemini", geminiId);
-      void runOrchestratorGeminiStream("master:gemini", apiMessages, DEFAULT_GEMINI_MODEL);
+      void runOrchestratorGeminiStream("master:gemini", apiMessages, DEFAULT_GEMINI_MODEL, token);
 
       return true;
     },

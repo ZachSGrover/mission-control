@@ -10,12 +10,16 @@ from pathlib import Path
 
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel
+from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.core.auth import AuthContext, get_auth_context
 from app.core.config import settings
+from app.core.secrets_store import GITHUB_KEYS, get_secret
+from app.db.session import get_session
 
 router = APIRouter(prefix="/git", tags=["git"])
 AUTH_DEP = Depends(get_auth_context)
+SESSION_DEP = Depends(get_session)
 logger = logging.getLogger(__name__)
 
 # Repo root is 3 levels up from this file:
@@ -52,29 +56,31 @@ def _git(*args: str, env: dict | None = None) -> tuple[int, str, str]:
     return _run(["git", *args], env=env)
 
 
-def _push_url() -> str:
-    """Build the push URL. Uses PAT from settings if configured."""
-    pat = (settings.github_pat or "").strip()
-    username = (settings.github_username or "").strip()
-    repo = (settings.github_repo or "").strip()
-
+def _push_url(pat: str, username: str, repo: str) -> str:
+    """Build the push URL from resolved credentials."""
     if pat and username and repo:
         return f"https://{username}:{pat}@github.com/{repo}.git"
-    # Fall back to origin — credential helper must be configured
     return "origin"
 
 
 # ── Endpoint ──────────────────────────────────────────────────────────────────
 
 @router.post("/save", response_model=SaveResponse)
-async def git_save(_auth: AuthContext = AUTH_DEP) -> SaveResponse:
+async def git_save(
+    _auth: AuthContext = AUTH_DEP,
+    session: AsyncSession = SESSION_DEP,
+) -> SaveResponse:
     """Stage all safe changes, commit with timestamp, and push to origin/main."""
+    # Resolve credentials: DB takes priority over .env
+    pat      = await get_secret(session, GITHUB_KEYS["github_pat"],      fallback=settings.github_pat)
+    username = await get_secret(session, GITHUB_KEYS["github_username"], fallback=settings.github_username)
+    repo     = await get_secret(session, GITHUB_KEYS["github_repo"],     fallback=settings.github_repo)
 
     loop = asyncio.get_event_loop()
-    return await loop.run_in_executor(None, _do_save)
+    return await loop.run_in_executor(None, _do_save, pat.strip(), username.strip(), repo.strip())
 
 
-def _do_save() -> SaveResponse:
+def _do_save(pat: str, username: str, repo: str) -> SaveResponse:
     # ── 1. Verify git is available ────────────────────────────────────────────
     rc, _, _ = _git("--version")
     if rc != 0:
@@ -122,7 +128,7 @@ def _do_save() -> SaveResponse:
     _, commit_hash, _ = _git("rev-parse", "--short", "HEAD")
 
     # ── 6. Push ───────────────────────────────────────────────────────────────
-    push_target = _push_url()
+    push_target = _push_url(pat, username, repo)
     push_args = [push_target, "main"] if push_target != "origin" else ["origin", "main"]
 
     rc, push_out, push_err = _git("push", *push_args)

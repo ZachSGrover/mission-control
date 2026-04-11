@@ -105,6 +105,11 @@ class Settings(BaseSettings):
     github_username: str = ""
     github_repo: str = ""
 
+    # Mission Control RBAC — optional env-pinned owner.
+    # When set, the clerk_user_id matching this value is always treated as owner
+    # regardless of DB state.  Leave blank to use auto-seed (first caller) logic.
+    owner_user_id: str = ""
+
     # Logging
     log_level: str = "INFO"
     log_format: str = "text"

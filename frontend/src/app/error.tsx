@@ -3,6 +3,9 @@
 // Next.js route-level error boundary.
 // Catches render errors in the /app directory tree.
 
+import { useEffect } from "react";
+import { logSystemAction } from "@/lib/action-logger";
+
 export default function Error({
   error,
   reset,
@@ -10,6 +13,15 @@ export default function Error({
   error: Error & { digest?: string };
   reset: () => void;
 }) {
+  // Log every render error to memory so it shows up in journal
+  useEffect(() => {
+    logSystemAction(
+      "error",
+      "App render error caught by boundary",
+      error.message || error.digest || "Unknown render error",
+    );
+  }, [error]);
+
   return (
     <div
       style={{

@@ -12,6 +12,7 @@ import { SignedOutPanel } from "@/components/auth/SignedOutPanel";
 import { DashboardSidebar } from "@/components/organisms/DashboardSidebar";
 import { DashboardShell } from "@/components/templates/DashboardShell";
 import { useAuthFetch } from "@/hooks/use-auth-fetch";
+import { logSystemAction, writeAutoJournal } from "@/lib/action-logger";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -119,8 +120,12 @@ function FieldRow({
       await onSave(trimmed);
       setValue("");
       fb(true, "Saved.");
+      logSystemAction("env_var", `${label} saved`, `Settings → ${label}`);
+      writeAutoJournal();
     } catch (err) {
-      fb(false, err instanceof Error ? err.message : "Failed to save.");
+      const msg = err instanceof Error ? err.message : "Failed to save.";
+      fb(false, msg);
+      logSystemAction("error", `Failed to save ${label}`, msg);
     } finally {
       setSaving(false);
     }
@@ -132,8 +137,11 @@ function FieldRow({
       await onClear();
       setValue("");
       fb(true, "Removed.");
-    } catch {
-      fb(false, "Failed to remove.");
+      logSystemAction("env_var", `${label} cleared`, `Settings → ${label}`);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "Failed to remove.";
+      fb(false, msg);
+      logSystemAction("error", `Failed to clear ${label}`, msg);
     } finally {
       setSaving(false);
     }
@@ -277,7 +285,9 @@ export default function SettingsPage() {
       })
       .catch((err) => {
         setInitialLoadDone(true);
-        setLoadError(err instanceof Error ? err.message : "Failed to load.");
+        const msg = err instanceof Error ? err.message : "Failed to load.";
+        setLoadError(msg);
+        logSystemAction("error", "Settings page failed to load", msg);
       });
   }, [fetchWithAuth]);
 

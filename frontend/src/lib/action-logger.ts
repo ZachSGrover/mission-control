@@ -27,7 +27,8 @@ export type ActionCategory =
   | "env_var"
   | "permission"
   | "account"
-  | "spending";
+  | "spending"
+  | "error";
 
 const CATEGORY_EMOJI: Record<ActionCategory, string> = {
   deploy:       "🚀",
@@ -41,6 +42,7 @@ const CATEGORY_EMOJI: Record<ActionCategory, string> = {
   permission:   "🛡️",
   account:      "👤",
   spending:     "💰",
+  error:        "🚨",
 };
 
 /**
@@ -61,11 +63,12 @@ export function logSystemAction(
       : `${emoji} [${category.toUpperCase()}] ${description}`;
 
     const existing = loadMemory();
-    const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000).toISOString();
+    // Deduplicate within 10 minutes — prevents spam while still capturing genuine repeats
+    const tenMinAgo = new Date(Date.now() - 10 * 60 * 1000).toISOString();
 
-    // Skip if identical content was logged in the last hour
+    // Skip if identical content was logged in the last 10 minutes
     const isDuplicate = existing.some(
-      (e) => e.content === content && e.createdAt > oneHourAgo,
+      (e) => e.content === content && e.createdAt > tenMinAgo,
     );
     if (isDuplicate) return;
 
@@ -82,6 +85,50 @@ export function logSystemAction(
     saveMemory([entry, ...existing]);
   } catch {
     // Non-fatal — logging must never throw
+  }
+}
+
+/**
+ * Compile the last 20 system actions into a journal entry and store it.
+ * Safe to call after deploys, major config changes, or bug fixes.
+ * Won't write more than one auto-journal per hour.
+ */
+export function writeAutoJournal(): void {
+  if (typeof window === "undefined") return;
+  try {
+    const entries = loadMemory();
+    const systemEntries = entries
+      .filter((e) => e.source === "system" && e.type === "note")
+      .slice(0, 20);
+    if (systemEntries.length === 0) return;
+
+    // Don't write more than one auto-journal per hour
+    const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000).toISOString();
+    const hasRecentJournal = entries.some(
+      (e) => e.type === "journal" && e.source === "system" && e.createdAt > oneHourAgo,
+    );
+    if (hasRecentJournal) return;
+
+    const dateLabel = new Date().toLocaleDateString("en-US", {
+      month: "short", day: "numeric", year: "numeric", hour: "2-digit", minute: "2-digit",
+    });
+    const lines = systemEntries
+      .map((e) => `• ${e.content.split("\n")[0]}`)
+      .join("\n");
+    const content = `📓 Auto Journal — ${dateLabel}\n\nRecent system actions:\n${lines}`;
+
+    const journalEntry: MemoryEntry = {
+      id:        crypto.randomUUID(),
+      type:      "journal",
+      content,
+      source:    "system",
+      createdAt: new Date().toISOString(),
+      project:   "Mission Control",
+      area:      "Operations",
+    };
+    saveMemory([journalEntry, ...entries]);
+  } catch {
+    // Non-fatal
   }
 }
 

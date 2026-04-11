@@ -5,6 +5,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useAuth } from "@/auth/clerk";
 import { getApiBaseUrl } from "@/lib/api-base";
 import { buildMemoryContext, loadMemory } from "@/lib/memory-store";
+import { logSystemAction } from "@/lib/action-logger";
 import { requestManager } from "@/lib/request-manager";
 import { openClawSend, subscribeToClaudeStatus } from "@/lib/openclaw-singleton";
 import {
@@ -358,6 +359,7 @@ export function useMasterChat(): MasterChatState {
 
           const hasAny = ALL_PROVIDERS.some((pr) => (responses[pr]?.length ?? 0) > 0);
           if (!hasAny) {
+            logSystemAction("error", "All AI providers failed to respond", "Claude, ChatGPT, Gemini — check API keys and connectivity");
             setTurns((prev) => {
               const next = (prev ?? []).map((t) =>
                 t.id === turnId
@@ -386,6 +388,7 @@ export function useMasterChat(): MasterChatState {
           void callJudge(userText, responses, memCtx, token)
             .then((bestAnswer) => {
               console.log("[Orchestrator] Judge result:", bestAnswer.provider);
+              logSystemAction("config", `Orchestrator selected best answer: ${bestAnswer.provider}`, `scores — claude:${bestAnswer.scores.claude} chatgpt:${bestAnswer.scores.chatgpt} gemini:${bestAnswer.scores.gemini}`);
               setTurns((prev) => {
                 const next = (prev ?? []).map((t) =>
                   t.id !== turnId ? t : { ...t, judging: false, bestAnswer },
@@ -397,6 +400,7 @@ export function useMasterChat(): MasterChatState {
             .catch((err) => {
               const msg = err instanceof Error ? err.message : "Judge evaluation failed";
               console.error("[Orchestrator] Judge error:", msg);
+              logSystemAction("error", "Orchestrator judge failed", msg);
               setTurns((prev) => {
                 const next = (prev ?? []).map((t) =>
                   t.id !== turnId ? t : { ...t, judging: false, judgeError: msg },
@@ -424,6 +428,7 @@ export function useMasterChat(): MasterChatState {
               .catch((err) => {
                 const msg = err instanceof Error ? err.message : "Synthesis failed";
                 console.error("[Orchestrator] Synthesis error:", msg);
+                logSystemAction("error", "Orchestrator synthesis failed", msg);
                 setTurns((prev) => {
                   const next = (prev ?? []).map((t) =>
                     t.id !== turnId ? t : { ...t, synthesizing: false, synthesisError: msg },

@@ -10,6 +10,7 @@ import type { ConnectionStatus } from "@/lib/openclaw-client";
 import { clearChatHistory, loadChatHistory, saveChatHistory } from "@/lib/chat-store";
 import { buildMemoryContext, loadMemory } from "@/lib/memory-store";
 import { getCachedStatus, setCachedStatus } from "@/lib/provider-status-cache";
+import { logSystemAction } from "@/lib/action-logger";
 import { requestManager } from "@/lib/request-manager";
 
 const DEFAULT_OPENAI_MODEL = "gpt-4o-mini";
@@ -57,9 +58,11 @@ async function executeOpenAiStream(opts: {
 
     if (!response.ok) {
       const body = await response.json().catch(() => null) as { detail?: string } | null;
-      requestManager.fail(provider, body?.detail ?? `HTTP ${response.status}`);
+      const errMsg = body?.detail ?? `HTTP ${response.status}`;
+      requestManager.fail(provider, errMsg);
+      logSystemAction("error", "ChatGPT stream failed", errMsg);
       const errMessages = [...preRequestMessages, userMsg,
-        { id: assistantMsgId, role: "assistant" as const, text: "", streaming: false, error: body?.detail ?? `HTTP ${response.status}` }];
+        { id: assistantMsgId, role: "assistant" as const, text: "", streaming: false, error: errMsg }];
       saveChatHistory(provider, errMessages);
       return;
     }
@@ -92,6 +95,7 @@ async function executeOpenAiStream(opts: {
   } catch (err) {
     const msg = err instanceof Error ? err.message : "Request failed";
     requestManager.fail(provider, msg);
+    logSystemAction("error", "ChatGPT request error", msg);
     const errMessages = [...preRequestMessages, userMsg,
       { id: assistantMsgId, role: "assistant" as const, text: "", streaming: false, error: msg, createdAt: new Date().toISOString() }];
     saveChatHistory(provider, errMessages);
@@ -162,8 +166,14 @@ export function useOpenAiChat(model?: string, provider = "chatgpt"): ChatState &
           setCachedStatus("openai", body.configured);
           setIsConfigured(body.configured);
           setStatus(body.configured ? "connected" : "error");
+          if (body.configured) {
+            logSystemAction("config", "OpenAI API key active", "ChatGPT provider ready");
+          } else {
+            logSystemAction("error", "OpenAI API key not configured", "ChatGPT unavailable — add key in Settings");
+          }
         } else {
           setStatus("error");
+          logSystemAction("error", "OpenAI status check failed", `HTTP ${res.status}`);
         }
       } catch {
         if (!cancelled) setStatus("error");

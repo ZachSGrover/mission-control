@@ -1,12 +1,13 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { Menu, X } from "lucide-react";
 
 import { SignedIn, useAuth } from "@/auth/clerk";
 import { ApiError } from "@/api/mutator";
+import { logSystemAction } from "@/lib/action-logger";
 import {
   type getMeApiV1UsersMeGetResponse,
   useGetMeApiV1UsersMeGet,
@@ -19,6 +20,15 @@ export function DashboardShell({ children }: { children: ReactNode }) {
   const router = useRouter();
   const pathname = usePathname();
   const { isSignedIn } = useAuth();
+
+  // Log sign-in once per session (ref prevents duplicate logs across re-renders)
+  const hasLoggedSignIn = useRef(false);
+  useEffect(() => {
+    if (isSignedIn && !hasLoggedSignIn.current) {
+      hasLoggedSignIn.current = true;
+      logSystemAction("auth", "User signed in to Mission Control");
+    }
+  }, [isSignedIn]);
   const isOnboardingPath = pathname === "/onboarding";
 
   const [sidebarState, setSidebarState] = useState({ open: false, path: pathname });

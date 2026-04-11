@@ -9,6 +9,7 @@ import { getApiBaseUrl } from "@/lib/api-base";
 import type { ConnectionStatus } from "@/lib/openclaw-client";
 import { clearChatHistory, loadChatHistory, saveChatHistory } from "@/lib/chat-store";
 import { buildMemoryContext, loadMemory } from "@/lib/memory-store";
+import { getCachedStatus, setCachedStatus } from "@/lib/provider-status-cache";
 import { requestManager } from "@/lib/request-manager";
 
 const DEFAULT_OPENAI_MODEL = "gpt-4o-mini";
@@ -109,9 +110,11 @@ export function useOpenAiChat(model?: string, provider = "chatgpt"): ChatState &
 
   // Start with [] so server and client initial renders match (avoids SSR hydration mismatch).
   const [messages, setMessages] = useState<ChatMessage[]>([]);
-  const [status, setStatus] = useState<ConnectionStatus>("connecting");
+  // Use cached value instantly if available — prevents "Connecting…" flash on tab switch.
+  const cached = getCachedStatus("openai");
+  const [status, setStatus] = useState<ConnectionStatus>(cached !== null ? (cached ? "connected" : "error") : "connecting");
   const [isSending, setIsSending] = useState(false);
-  const [isConfigured, setIsConfigured] = useState(false);
+  const [isConfigured, setIsConfigured] = useState(cached ?? false);
   const [isReconnected, setIsReconnected] = useState(false);
 
   const historyRef = useRef<ChatMessage[]>([]);
@@ -137,8 +140,14 @@ export function useOpenAiChat(model?: string, provider = "chatgpt"): ChatState &
     saveChatHistory(provider, messages);
   }, [messages, provider]);
 
-  // Check API key on mount
+  // Check API key — skip fetch if cache is fresh (prevents re-fetch on every tab switch)
   useEffect(() => {
+    const fresh = getCachedStatus("openai");
+    if (fresh !== null) {
+      setIsConfigured(fresh);
+      setStatus(fresh ? "connected" : "error");
+      return; // cache hit — no fetch needed
+    }
     let cancelled = false;
     (async () => {
       try {
@@ -150,6 +159,7 @@ export function useOpenAiChat(model?: string, provider = "chatgpt"): ChatState &
         if (cancelled) return;
         if (res.ok) {
           const body = await res.json() as { configured: boolean };
+          setCachedStatus("openai", body.configured);
           setIsConfigured(body.configured);
           setStatus(body.configured ? "connected" : "error");
         } else {

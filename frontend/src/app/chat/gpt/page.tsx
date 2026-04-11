@@ -34,8 +34,9 @@ export default function ChatGptPage() {
 
   const chat = useOpenAiChat(model);
 
-  const banner = !chat.isConfigured
-    ? "ChatGPT requires an OpenAI API key. Add OPENAI_API_KEY to backend/.env and restart the backend."
+  // Only show banner after status resolves — prevents flash during the status check
+  const banner = chat.status !== "connecting" && !chat.isConfigured
+    ? "ChatGPT requires an OpenAI API key. Add it in Settings → API Keys."
     : undefined;
 
   return (

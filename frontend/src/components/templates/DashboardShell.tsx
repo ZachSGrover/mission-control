@@ -31,7 +31,9 @@ export function DashboardShell({ children }: { children: ReactNode }) {
     query: {
       enabled: Boolean(isSignedIn) && !isOnboardingPath,
       retry: false,
-      refetchOnMount: "always",
+      // "always" caused header/avatar to flash on every route change.
+      // true = refetch only when stale (respects 2-min staleTime in QueryProvider).
+      refetchOnMount: true,
     },
   });
   const profile = meQuery.data?.status === 200 ? meQuery.data.data : null;

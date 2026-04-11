@@ -9,6 +9,7 @@ import { getApiBaseUrl } from "@/lib/api-base";
 import type { ConnectionStatus } from "@/lib/openclaw-client";
 import { clearChatHistory, loadChatHistory, saveChatHistory } from "@/lib/chat-store";
 import { buildMemoryContext, loadMemory } from "@/lib/memory-store";
+import { getCachedStatus, setCachedStatus } from "@/lib/provider-status-cache";
 import { requestManager } from "@/lib/request-manager";
 
 const DEFAULT_GEMINI_MODEL = "gemini-2.5-flash";
@@ -105,9 +106,11 @@ export function useGeminiChat(model?: string, provider = "gemini"): ChatState & 
 
   // Start with [] so server and client initial renders match (avoids SSR hydration mismatch).
   const [messages, setMessages] = useState<ChatMessage[]>([]);
-  const [status, setStatus] = useState<ConnectionStatus>("connecting");
+  // Use cached value instantly if available — prevents "Connecting…" flash on tab switch.
+  const cached = getCachedStatus("gemini");
+  const [status, setStatus] = useState<ConnectionStatus>(cached !== null ? (cached ? "connected" : "error") : "connecting");
   const [isSending, setIsSending] = useState(false);
-  const [isConfigured, setIsConfigured] = useState(false);
+  const [isConfigured, setIsConfigured] = useState(cached ?? false);
   const [isReconnected, setIsReconnected] = useState(false);
 
   const historyRef = useRef<ChatMessage[]>([]);
@@ -133,7 +136,14 @@ export function useGeminiChat(model?: string, provider = "gemini"): ChatState & 
     saveChatHistory(provider, messages);
   }, [messages, provider]);
 
+  // Check API key — skip fetch if cache is fresh (prevents re-fetch on every tab switch)
   useEffect(() => {
+    const fresh = getCachedStatus("gemini");
+    if (fresh !== null) {
+      setIsConfigured(fresh);
+      setStatus(fresh ? "connected" : "error");
+      return; // cache hit — no fetch needed
+    }
     let cancelled = false;
     (async () => {
       try {
@@ -145,6 +155,7 @@ export function useGeminiChat(model?: string, provider = "gemini"): ChatState & 
         if (cancelled) return;
         if (res.ok) {
           const body = await res.json() as { configured: boolean };
+          setCachedStatus("gemini", body.configured);
           setIsConfigured(body.configured);
           setStatus(body.configured ? "connected" : "error");
         } else {

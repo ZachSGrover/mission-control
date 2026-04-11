@@ -262,6 +262,8 @@ export default function SettingsPage() {
   const [keyStatuses, setKeyStatuses] = useState<AllKeyStatuses | null>(null);
   const [ghStatuses, setGhStatuses] = useState<GitHubStatuses | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
+  // Tracks whether the first load is complete — suppresses error display until then
+  const [initialLoadDone, setInitialLoadDone] = useState(false);
 
   const { fetchWithAuth } = useAuthFetch();
 
@@ -271,8 +273,12 @@ export default function SettingsPage() {
         setKeyStatuses(keys);
         setGhStatuses(gh);
         setLoadError(null);
+        setInitialLoadDone(true);
       })
-      .catch((err) => setLoadError(err instanceof Error ? err.message : "Failed to load."));
+      .catch((err) => {
+        setInitialLoadDone(true);
+        setLoadError(err instanceof Error ? err.message : "Failed to load.");
+      });
   }, [fetchWithAuth]);
 
   const updateKey = (provider: Provider, s: FieldStatus) =>
@@ -307,7 +313,7 @@ export default function SettingsPage() {
               </p>
             </div>
 
-            {loadError && (
+            {loadError && initialLoadDone && (
               <div
                 className="rounded-xl px-4 py-3 text-sm"
                 style={{ background: "rgba(239,68,68,0.1)", color: "#ef4444", border: "1px solid rgba(239,68,68,0.2)" }}
@@ -370,6 +376,43 @@ export default function SettingsPage() {
                 ))}
               </section>
             </RoleGuard>
+
+            {/* ── Integration Foundations ─────────────────────────────────── */}
+            {/* These sections are placeholders for future integrations.       */}
+            {/* Keys will be stored encrypted in the DB via the API Keys flow. */}
+            <section className="space-y-3 opacity-60">
+              <div className="flex items-center gap-2">
+                <p className="text-xs font-semibold uppercase tracking-widest" style={{ color: "var(--text-muted)" }}>
+                  Integrations
+                </p>
+                <span className="rounded-full px-2 py-0.5 text-[10px] font-medium" style={{ background: "rgba(99,102,241,0.15)", color: "#818cf8" }}>
+                  Coming soon
+                </span>
+              </div>
+              {[
+                { name: "n8n", desc: "Workflow automation — connect webhooks and automate tasks", icon: "⚡" },
+                { name: "ElevenLabs", desc: "AI voice synthesis — text-to-speech for agents", icon: "🔊" },
+                { name: "Higgsfield", desc: "AI video generation — create video content from prompts", icon: "🎬" },
+                { name: "Artlist", desc: "Music licensing — royalty-free audio for content", icon: "🎵" },
+              ].map(({ name, desc, icon }) => (
+                <div
+                  key={name}
+                  className="flex items-center justify-between rounded-xl px-4 py-3 border"
+                  style={{ borderColor: "var(--border)", background: "var(--surface)" }}
+                >
+                  <div className="flex items-center gap-3">
+                    <span className="text-lg">{icon}</span>
+                    <div>
+                      <p className="text-sm font-medium" style={{ color: "var(--text)" }}>{name}</p>
+                      <p className="text-xs mt-0.5" style={{ color: "var(--text-muted)" }}>{desc}</p>
+                    </div>
+                  </div>
+                  <span className="text-xs rounded-full px-2.5 py-1" style={{ background: "var(--surface-muted)", color: "var(--text-quiet)" }}>
+                    Not connected
+                  </span>
+                </div>
+              ))}
+            </section>
 
           </div>
         </main>

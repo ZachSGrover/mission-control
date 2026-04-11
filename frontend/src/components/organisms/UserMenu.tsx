@@ -1,6 +1,16 @@
 "use client";
 
+/**
+ * UserMenu — avatar button + dropdown.
+ *
+ * Profile image priority:
+ *   1. Clerk profile photo (automatic, set at clerk.com dashboard)
+ *   2. /public/avatar.png — drop any image here: frontend/public/avatar.png (64×64px)
+ *   3. Initial letter fallback (default when no image available)
+ */
+
 import { useState } from "react";
+import Image from "next/image";
 import Link from "next/link";
 import { LogOut, Settings } from "lucide-react";
 
@@ -13,6 +23,30 @@ type UserMenuProps = {
   displayEmail?: string;
 };
 
+function Avatar({ name, imageUrl }: { name: string; imageUrl?: string | null }) {
+  const [imgError, setImgError] = useState(false);
+  const initial = name.slice(0, 1).toUpperCase();
+  const showImage = Boolean(imageUrl) && !imgError;
+  return (
+    <span
+      className="h-8 w-8 rounded-full overflow-hidden flex items-center justify-center text-xs font-semibold text-white shrink-0"
+      style={!showImage ? { background: "var(--accent)" } : undefined}
+    >
+      {showImage && imageUrl ? (
+        <Image
+          src={imageUrl}
+          alt={name}
+          width={32}
+          height={32}
+          className="object-cover w-full h-full"
+          onError={() => setImgError(true)}
+          unoptimized
+        />
+      ) : initial}
+    </span>
+  );
+}
+
 export function UserMenu({ displayName, displayEmail }: UserMenuProps) {
   const [open, setOpen] = useState(false);
   const { user } = useUser();
@@ -21,8 +55,11 @@ export function UserMenu({ displayName, displayEmail }: UserMenuProps) {
   if (!user && !localMode) return null;
 
   const name = displayName ?? (localMode ? "Local User" : "Account");
-  const email = displayEmail ?? (localMode ? "" : "");
-  const initial = name.slice(0, 1).toUpperCase();
+  const email = displayEmail ?? "";
+  // Clerk provides imageUrl automatically; local mode looks for /public/avatar.png
+  const imageUrl: string | null =
+    (user as { imageUrl?: string } | null)?.imageUrl ??
+    (localMode ? "/avatar.png" : null);
 
   return (
     <Popover open={open} onOpenChange={setOpen}>
@@ -30,10 +67,9 @@ export function UserMenu({ displayName, displayEmail }: UserMenuProps) {
         <button
           type="button"
           aria-label="Account menu"
-          className="h-8 w-8 rounded-full flex items-center justify-center text-xs font-semibold text-white transition-opacity hover:opacity-80 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
-          style={{ background: "var(--accent)" }}
+          className="rounded-full transition-opacity hover:opacity-80 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
         >
-          {initial}
+          <Avatar name={name} imageUrl={imageUrl} />
         </button>
       </PopoverTrigger>
 

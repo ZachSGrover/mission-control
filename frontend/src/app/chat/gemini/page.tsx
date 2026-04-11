@@ -34,8 +34,9 @@ export default function GeminiPage() {
 
   const chat = useGeminiChat(model);
 
-  const banner = !chat.isConfigured
-    ? "Gemini requires a Google API key. Add GEMINI_API_KEY to backend/.env and restart the backend."
+  // Only show banner after status resolves — prevents flash during the status check
+  const banner = chat.status !== "connecting" && !chat.isConfigured
+    ? "Gemini requires a Google API key. Add it in Settings → API Keys."
     : undefined;
 
   return (

@@ -29,7 +29,16 @@ const STATUS_LABEL: Record<string, string> = {
 };
 
 export function SystemStatusDot() {
-  const { status, lastCheck, consecutiveFailures, detail } = useSystemHealth();
+  const {
+    status,
+    lastCheck,
+    consecutiveFailures,
+    cleanTicksSinceFailure,
+    lastErrorTimestamps,
+    weightedErrorScore,
+    lastRecoveryTimestamp,
+    detail,
+  } = useSystemHealth();
 
   // Hide until the first check has completed
   if (status === "unknown") return null;
@@ -37,14 +46,34 @@ export function SystemStatusDot() {
   const color = STATUS_COLOR[status] ?? "#94a3b8";
   const label = STATUS_LABEL[status] ?? status;
 
-  const lastCheckLabel = lastCheck
-    ? new Date(lastCheck).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
-    : "Not yet checked";
+  const fmt = (iso: string) =>
+    new Date(iso).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+
+  const lastCheckLabel = lastCheck ? fmt(lastCheck) : "Not yet checked";
+
+  const lastErrorLabel =
+    lastErrorTimestamps.length > 0
+      ? `Last error: ${fmt(lastErrorTimestamps[0])}`
+      : null;
+
+  const recoveryLabel =
+    status === "degraded" && cleanTicksSinceFailure > 0
+      ? `Stabilizing (${cleanTicksSinceFailure}/2 clean ticks)`
+      : null;
+
+  const recoveredLabel =
+    lastRecoveryTimestamp && status === "healthy"
+      ? `Last recovery: ${fmt(lastRecoveryTimestamp)}`
+      : null;
 
   const tooltip = [
     label,
     `Last check: ${lastCheckLabel}`,
+    weightedErrorScore > 0 ? `Error score: ${weightedErrorScore.toFixed(1)}` : null,
     consecutiveFailures > 0 ? `${consecutiveFailures} consecutive failure(s)` : null,
+    lastErrorLabel,
+    recoveryLabel,
+    recoveredLabel,
     detail,
   ]
     .filter(Boolean)

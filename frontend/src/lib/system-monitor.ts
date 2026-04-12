@@ -83,7 +83,8 @@ export interface MonitorState {
 
   /**
    * Up to MAX_ERROR_TIMESTAMPS recent [ERROR] entry timestamps (newest first).
-   * Source: memory store — only hook-logged errors, not monitor's own entries.
+   * Pruned to the last 10 minutes before every score calculation.
+   * Source: memory store — hook-logged errors only, never monitor diagnostics.
    */
   lastErrorTimestamps: readonly string[];
 
@@ -93,7 +94,18 @@ export interface MonitorState {
    */
   weightedErrorScore: number;
 
-  /** Human-readable detail for tooltip display. */
+  /**
+   * True when the last 3 weighted scores are strictly increasing.
+   * Early warning overlay — does NOT change status or dot colour.
+   * Shown in tooltip only.
+   */
+  risingRisk: boolean;
+
+  /** Per-provider availability from the last tick. */
+  openaiOk: boolean;
+  geminiOk: boolean;
+
+  /** Human-readable detail string (legacy — tooltip uses structured fields above). */
   detail: string;
 }
 
@@ -167,6 +179,9 @@ class SystemMonitor {
     checkCount:              0,
     lastErrorTimestamps:     [],
     weightedErrorScore:      0,
+    risingRisk:              false,
+    openaiOk:                false,
+    geminiOk:                false,
     detail:                  "Monitor not yet started.",
   };
 
@@ -174,6 +189,12 @@ class SystemMonitor {
   private _firstCheckId: ReturnType<typeof setTimeout>   | null = null;
   private _subscribers = new Set<Subscriber>();
   private _getToken: (() => Promise<string | null>) | null = null;
+
+  /**
+   * Ring buffer of the last 3 weighted scores (oldest→newest).
+   * Used to compute rising_risk without any additional O(n) work.
+   */
+  private _scoreHistory: number[] = [];
 
   // ── Lifecycle ───────────────────────────────────────────────────────────────
 
@@ -189,7 +210,8 @@ class SystemMonitor {
   stop(): void {
     if (this._intervalId   !== null) { clearInterval(this._intervalId);  this._intervalId   = null; }
     if (this._firstCheckId !== null) { clearTimeout(this._firstCheckId); this._firstCheckId = null; }
-    this._getToken = null;
+    this._getToken    = null;
+    this._scoreHistory = [];
     this._mutate({
       status:                  "unknown",
       lastCheck:               null,
@@ -199,6 +221,9 @@ class SystemMonitor {
       checkCount:              0,
       lastErrorTimestamps:     [],
       weightedErrorScore:      0,
+      risingRisk:              false,
+      openaiOk:                false,
+      geminiOk:                false,
       detail:                  "Monitor stopped.",
     });
   }
@@ -234,15 +259,25 @@ class SystemMonitor {
       const token  = await this._getToken();
       const result = await this._performCheck(token);
 
+      // ── Score history (ring buffer, max 3 entries) ────────────────────────
+      // O(1) push + slice — never grows beyond 3 entries.
+      this._scoreHistory = [...this._scoreHistory, result.weightedScore].slice(-3);
+
+      // Rising risk: all 3 scores strictly increasing (oldest→newest)
+      const h = this._scoreHistory;
+      const risingRisk =
+        h.length === 3 && h[0] < h[1] && h[1] < h[2] && h[2] > 0;
+
       // ── Apply recovery gate ───────────────────────────────────────────────
       if (result.rawStatus === "healthy") {
-        await this._handleCleanTick(result, now, token);
+        await this._handleCleanTick(result, now, token, risingRisk);
       } else {
-        this._handleUnhealthyTick(result, now, token);
+        this._handleUnhealthyTick(result, now, token, risingRisk);
       }
 
     } catch (err) {
-      // Check itself threw — treat as one degraded tick
+      // Check itself threw — treat as one degraded tick; reset score history
+      this._scoreHistory = [];
       const consecutive = this._state.consecutiveFailures + 1;
       const msg = err instanceof Error ? err.message : "Check error";
       this._mutate({
@@ -252,6 +287,7 @@ class SystemMonitor {
         consecutiveFailures:     consecutive,
         cleanTicksSinceFailure:  0,
         checkCount:              this._state.checkCount + 1,
+        risingRisk:              false,
         detail:                  `Tick threw: ${msg}`,
       });
     }
@@ -263,12 +299,12 @@ class SystemMonitor {
     result: CheckResult,
     now: string,
     token: string | null,
+    risingRisk: boolean,
   ): Promise<void> {
     const prevStatus = this._state.status;
     const cleanTicks = this._state.cleanTicksSinceFailure + 1;
 
     if (prevStatus === "healthy" || prevStatus === "unknown") {
-      // Already healthy — stay healthy, reset clean counter
       this._mutate({
         status:                  "healthy",
         lastCheck:               now,
@@ -277,22 +313,28 @@ class SystemMonitor {
         checkCount:              this._state.checkCount + 1,
         lastErrorTimestamps:     result.errorTimestamps,
         weightedErrorScore:      result.weightedScore,
+        risingRisk,
+        openaiOk:                result.openaiOk,
+        geminiOk:                result.geminiOk,
         detail:                  result.detail,
       });
       return;
     }
 
-    // Coming from degraded/failing — wait for the gate
+    // Coming from degraded/failing — wait for the recovery gate
     if (cleanTicks < RECOVERY_CLEAN_TICKS) {
       this._mutate({
-        status:                  "degraded",   // stay degraded while stabilizing
+        status:                  "degraded",
         lastCheck:               now,
         consecutiveFailures:     0,
         cleanTicksSinceFailure:  cleanTicks,
         checkCount:              this._state.checkCount + 1,
         lastErrorTimestamps:     result.errorTimestamps,
         weightedErrorScore:      result.weightedScore,
-        detail:                  `Stabilizing (${cleanTicks}/${RECOVERY_CLEAN_TICKS} clean ticks) — ${result.detail}`,
+        risingRisk,
+        openaiOk:                result.openaiOk,
+        geminiOk:                result.geminiOk,
+        detail:                  result.detail,
       });
       return;
     }
@@ -303,7 +345,7 @@ class SystemMonitor {
       `System recovered (was ${prevStatus})`,
       `Score: ${result.weightedScore.toFixed(1)}  ${result.detail}`,
     );
-    writeAutoJournal();   // normal path — let threshold guard decide
+    writeAutoJournal();
 
     this._mutate({
       status:                  "healthy",
@@ -314,6 +356,9 @@ class SystemMonitor {
       checkCount:              this._state.checkCount + 1,
       lastErrorTimestamps:     result.errorTimestamps,
       weightedErrorScore:      result.weightedScore,
+      risingRisk,
+      openaiOk:                result.openaiOk,
+      geminiOk:                result.geminiOk,
       detail:                  result.detail,
     });
   }
@@ -322,6 +367,7 @@ class SystemMonitor {
     result: CheckResult,
     now: string,
     token: string | null,
+    risingRisk: boolean,
   ): void {
     const consecutive = this._state.consecutiveFailures + 1;
 
@@ -330,14 +376,16 @@ class SystemMonitor {
       lastCheck:               now,
       lastFailure:             now,
       consecutiveFailures:     consecutive,
-      cleanTicksSinceFailure:  0,    // reset recovery progress
+      cleanTicksSinceFailure:  0,
       checkCount:              this._state.checkCount + 1,
       lastErrorTimestamps:     result.errorTimestamps,
       weightedErrorScore:      result.weightedScore,
+      risingRisk,
+      openaiOk:                result.openaiOk,
+      geminiOk:                result.geminiOk,
       detail:                  result.detail,
     });
 
-    // Log first detection
     if (consecutive === 1) {
       logSystemAction(
         "error",
@@ -346,7 +394,6 @@ class SystemMonitor {
       );
     }
 
-    // Escalate at threshold
     if (consecutive === ESCALATION_THRESHOLD) {
       logSystemAction(
         "error",
@@ -389,9 +436,9 @@ class SystemMonitor {
     const geminiConfigured = geminiOk ?? false;
 
     // ── Rolling error window (pure localStorage read) ─────────────────────
-    // Collect error timestamps from hook-logged [ERROR] entries only.
-    // Exclude the monitor's own diagnostic logs to avoid feedback loops.
-    const windowCutoff = new Date(Date.now() - ERROR_WINDOW_MS).toISOString();
+    // Collect error timestamps, pruned to window and capped before scoring.
+    // Excludes monitor's own diagnostic entries to prevent feedback loops.
+    const now10m = new Date(Date.now() - ERROR_WINDOW_MS).toISOString();
     let errorTimestamps: string[] = [];
 
     try {
@@ -400,15 +447,15 @@ class SystemMonitor {
           (e) =>
             e.source    === "system" &&
             e.type      === "note"   &&
-            e.createdAt >  windowCutoff &&
+            e.createdAt >  now10m   &&     // ← prune: last 10 min only
             e.content.includes("[ERROR]") &&
-            !e.content.includes(" (monitor)"),  // exclude monitor's own entries
+            !e.content.includes(" (monitor)"),
         )
         .map((e) => e.createdAt)
-        .slice(0, MAX_ERROR_TIMESTAMPS);
-    } catch { /* memory unavailable — proceed with empty window */ }
+        .slice(0, MAX_ERROR_TIMESTAMPS);   // ← cap: max 20 entries
+    } catch { /* memory unavailable */ }
 
-    // ── Weighted score ────────────────────────────────────────────────────
+    // ── Weighted score (computed from pruned+capped array) ────────────────
     const weightedScore = computeWeightedScore(errorTimestamps);
 
     // ── Classify ──────────────────────────────────────────────────────────

@@ -4,6 +4,7 @@ export const dynamic = "force-dynamic";
 
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { Wrench } from "lucide-react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 
 import { useAuth } from "@/auth/clerk";
@@ -209,6 +210,8 @@ export default function SkillsMarketplacePage() {
       enabled: Boolean(isSignedIn && isAdmin),
       refetchOnMount: "always",
       refetchInterval: 30_000,
+      staleTime: 5 * 60 * 1000,
+      refetchOnWindowFocus: false,
     },
   });
 
@@ -282,6 +285,8 @@ export default function SkillsMarketplacePage() {
       enabled: Boolean(isSignedIn && isAdmin && resolvedGatewayId),
       refetchOnMount: "always",
       refetchInterval: 15_000,
+      staleTime: 5 * 60 * 1000,
+      refetchOnWindowFocus: false,
     },
   });
 
@@ -298,6 +303,8 @@ export default function SkillsMarketplacePage() {
         enabled: Boolean(isSignedIn && isAdmin && resolvedGatewayId),
         refetchOnMount: "always",
         refetchInterval: 15_000,
+        staleTime: 5 * 60 * 1000,
+        refetchOnWindowFocus: false,
       },
     });
   const filterOptionSkills = useMemo<MarketplaceSkillCardRead[]>(
@@ -315,6 +322,8 @@ export default function SkillsMarketplacePage() {
     query: {
       enabled: Boolean(isSignedIn && isAdmin),
       refetchOnMount: "always",
+      staleTime: 5 * 60 * 1000,
+      refetchOnWindowFocus: false,
     },
   });
 
@@ -788,19 +797,46 @@ export default function SkillsMarketplacePage() {
       >
         <div className="space-y-6">
           {gateways.length === 0 ? (
-            <div className="rounded-xl border border-slate-200 bg-white p-6 text-sm text-slate-600 shadow-sm">
-              <p className="font-medium text-slate-900">
-                No gateways available yet.
+            <div className="rounded-xl border p-8 space-y-6" style={{ background: "var(--surface)", borderColor: "var(--border)" }}>
+              <div className="flex items-start gap-4">
+                <div className="rounded-lg p-2.5" style={{ background: "var(--surface-strong)" }}>
+                  <Wrench className="h-5 w-5" style={{ color: "var(--accent)" }} />
+                </div>
+                <div>
+                  <h2 className="text-base font-semibold" style={{ color: "var(--text)" }}>Skills require a Gateway</h2>
+                  <p className="mt-1 text-sm leading-relaxed" style={{ color: "var(--text-muted)" }}>
+                    A <strong>Gateway</strong> is a local or server-side runtime that your agents connect to. Skills are tools (like <code>run_python</code>, <code>read_file</code>, <code>web_search</code>) that get installed onto a Gateway and become available to agents running on it.
+                  </p>
+                </div>
+              </div>
+
+              <div className="grid gap-3 sm:grid-cols-3">
+                <div className="rounded-lg p-4" style={{ background: "var(--surface-strong)", border: "1px solid var(--border)" }}>
+                  <p className="text-sm font-medium" style={{ color: "var(--text)" }}>1. Create a Gateway</p>
+                  <p className="text-xs mt-1" style={{ color: "var(--text-muted)" }}>A Gateway is a connection to your local machine or a server. It&apos;s the runtime where your agents live.</p>
+                </div>
+                <div className="rounded-lg p-4" style={{ background: "var(--surface-strong)", border: "1px solid var(--border)" }}>
+                  <p className="text-sm font-medium" style={{ color: "var(--text)" }}>2. Install Skills</p>
+                  <p className="text-xs mt-1" style={{ color: "var(--text-muted)" }}>Skills are tools synced from packs (GitHub repos). Install them on your Gateway to make them available.</p>
+                </div>
+                <div className="rounded-lg p-4" style={{ background: "var(--surface-strong)", border: "1px solid var(--border)" }}>
+                  <p className="text-sm font-medium" style={{ color: "var(--text)" }}>3. Use with Agents</p>
+                  <p className="text-xs mt-1" style={{ color: "var(--text-muted)" }}>Agents connected to your Gateway can then call those skills to run code, browse the web, read files, and more.</p>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-3 pt-2">
+                <Link href="/gateways/new" className={buttonVariants({ variant: "primary", size: "md" })}>
+                  Create your first Gateway
+                </Link>
+                <Link href="/skills/packs" className={buttonVariants({ variant: "outline", size: "md" })}>
+                  Browse Skill Packs
+                </Link>
+              </div>
+
+              <p className="text-xs" style={{ color: "var(--text-quiet)" }}>
+                💡 You can browse the marketplace and manage Skill Packs without a Gateway. A Gateway is only required to install skills for active use.
               </p>
-              <p className="mt-2">
-                Create a gateway first, then return here to manage installs.
-              </p>
-              <Link
-                href="/gateways/new"
-                className={`${buttonVariants({ variant: "primary", size: "md" })} mt-4`}
-              >
-                Create gateway
-              </Link>
             </div>
           ) : (
             <>

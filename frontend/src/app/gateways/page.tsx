@@ -48,6 +48,8 @@ export default function GatewaysPage() {
       enabled: Boolean(isSignedIn && isAdmin),
       refetchInterval: 30_000,
       refetchOnMount: "always",
+      staleTime: 5 * 60 * 1000,
+      refetchOnWindowFocus: false,
     },
   });
 
@@ -113,6 +115,20 @@ export default function GatewaysPage() {
         adminOnlyMessage="Only organization owners and admins can access gateways."
         stickyHeader
       >
+        {/* What are Gateways — shown only when there are no gateways */}
+        {!gatewaysQuery.isLoading && gateways.length === 0 && (
+          <div className="mb-5 rounded-xl p-5 space-y-3" style={{ background: "var(--surface-strong)", border: "1px solid var(--border)" }}>
+            <h2 className="text-sm font-semibold" style={{ color: "var(--text)" }}>What are Gateways?</h2>
+            <p className="text-xs" style={{ color: "var(--text-muted)" }}>
+              A Gateway is a connection to a machine (local or remote) where your agents run code and Skills are installed.
+              You only need a Gateway if you want to run Skills or active Agents — not for chat, memory, or workflows.
+            </p>
+            <p className="text-xs" style={{ color: "var(--text-quiet)" }}>
+              For local use, run the OpenClaw gateway process and point the URL to <span className="font-mono" style={{ color: "var(--text)" }}>http://localhost:8080</span>.
+            </p>
+          </div>
+        )}
+
         <div className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
           <GatewaysTable
             gateways={gateways}
@@ -125,7 +141,7 @@ export default function GatewaysPage() {
             emptyState={{
               title: "No gateways yet",
               description:
-                "Create your first gateway to connect boards and start managing your OpenClaw connections.",
+                "Create your first gateway to connect an execution environment. Gateways are where your Skills and Agents actually run.",
               actionHref: "/gateways/new",
               actionLabel: "Create your first gateway",
             }}

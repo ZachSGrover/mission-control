@@ -64,6 +64,8 @@ export default function AgentsPage() {
       enabled: Boolean(isSignedIn && isAdmin),
       refetchInterval: 30_000,
       refetchOnMount: "always",
+      staleTime: 5 * 60 * 1000,
+      refetchOnWindowFocus: false,
     },
   });
 
@@ -75,6 +77,8 @@ export default function AgentsPage() {
       enabled: Boolean(isSignedIn && isAdmin),
       refetchInterval: 15_000,
       refetchOnMount: "always",
+      staleTime: 5 * 60 * 1000,
+      refetchOnWindowFocus: false,
     },
   });
 
@@ -155,12 +159,18 @@ export default function AgentsPage() {
             emptyState={{
               title: "No agents yet",
               description:
-                "Create your first agent to start executing tasks on this board.",
-              actionHref: "/agents/new",
-              actionLabel: "Create your first agent",
+                "Agents are AI workers connected to a Gateway. They can run skills, respond to webhooks, and execute automated tasks. Create your first agent to get started.",
+              actionHref: "/gateways",
+              actionLabel: "Learn about Gateways",
             }}
           />
         </div>
+
+        {boards.length === 0 && !boardsQuery.isLoading ? (
+          <p className="mt-3 text-sm text-slate-500">
+            <strong>Note:</strong> Agents can optionally be scoped to a Board. If you haven&apos;t created any Boards yet, that&apos;s fine — Board assignment is optional.
+          </p>
+        ) : null}
 
         {agentsQuery.error ? (
           <p className="mt-4 text-sm text-red-500">

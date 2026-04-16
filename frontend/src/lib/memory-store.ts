@@ -22,8 +22,48 @@ const PROJECT_RULES: [RegExp, string][] = [
   [/youtube|instagram|tiktok|podcast|reel|video/i, "Modern Athlete"],
 ];
 
+/** Storage key for user-created projects list. */
+const PROJECTS_KEY = "mc_projects_v1";
+
+interface StoredProject {
+  name: string;
+  [key: string]: unknown;
+}
+
+function isStoredProject(p: unknown): p is StoredProject {
+  return typeof p === "object" && p !== null && typeof (p as Record<string, unknown>).name === "string";
+}
+
+/**
+ * Check whether any user-created project name appears as a substring in
+ * `text` (case-insensitive). Returns the first matching project name, or
+ * null if none match or the projects list is unavailable.
+ */
+export function inferProjectFromExplicitList(text: string): string | null {
+  if (typeof window === "undefined") return null;
+  try {
+    const raw = localStorage.getItem(PROJECTS_KEY);
+    if (!raw) return null;
+    const parsed: unknown = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return null;
+    const lowerText = text.toLowerCase();
+    for (const item of parsed) {
+      if (isStoredProject(item) && item.name && lowerText.includes(item.name.toLowerCase())) {
+        return item.name;
+      }
+    }
+  } catch {
+    // Non-fatal — fall through to regex-based inference
+  }
+  return null;
+}
+
 /** Infer project name from free-form text (objective, goal, or source). */
 export function inferProject(text: string): string {
+  // Prefer explicit user-created project names over regex patterns
+  const explicit = inferProjectFromExplicitList(text);
+  if (explicit) return explicit;
+
   for (const [pattern, project] of PROJECT_RULES) {
     if (pattern.test(text)) return project;
   }

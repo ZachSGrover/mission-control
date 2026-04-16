@@ -84,12 +84,51 @@ const ROUTINE_PATTERNS = [
   "User signed in",
 ];
 
+/**
+ * Substring patterns that mark an entry as noise regardless of category.
+ * Entries matching any of these are excluded from journal sections and
+ * do not count toward the meaningful-log threshold.
+ */
+const NOISE_DESCRIPTIONS = [
+  "Provider status check",
+  "Tab activated",
+  "Monitor tick",
+  "User signed in",
+];
+
+/** Minimum description length (characters) to be considered meaningful. */
+const MIN_DESCRIPTION_LENGTH = 10;
+
 // ── Session-level provider switch tracking ────────────────────────────────────
 // Module-scope so it survives React remounts within a page-load session.
 
 let _sessionSwitchCount = 0;
 
 // ── Internal helpers ──────────────────────────────────────────────────────────
+
+/**
+ * Returns true if a MemoryEntry is meaningful enough to count toward the
+ * journal threshold and to appear in journal sections.
+ *
+ * Filters out:
+ *  - Entries matching ROUTINE_PATTERNS (provider switches, etc.)
+ *  - Entries matching NOISE_DESCRIPTIONS (status checks, tab events, etc.)
+ *  - Entries whose first-line description is under MIN_DESCRIPTION_LENGTH chars
+ */
+export function isMeaningfulLog(entry: MemoryEntry): boolean {
+  const firstLine = entry.content.split("\n")[0];
+
+  // Too short to be meaningful
+  if (firstLine.length < MIN_DESCRIPTION_LENGTH) return false;
+
+  // Legacy routine patterns
+  if (ROUTINE_PATTERNS.some((p) => firstLine.includes(p))) return false;
+
+  // Extended noise patterns
+  if (NOISE_DESCRIPTIONS.some((p) => firstLine.includes(p))) return false;
+
+  return true;
+}
 
 function isMeaningfulContent(content: string): boolean {
   return !ROUTINE_PATTERNS.some((p) => content.includes(p));
@@ -101,7 +140,7 @@ function countMeaningfulSince(entries: MemoryEntry[], since: string): number {
       e.source === "system" &&
       e.type === "note" &&
       e.createdAt > since &&
-      isMeaningfulContent(e.content),
+      isMeaningfulLog(e),
   ).length;
 }
 
@@ -236,12 +275,20 @@ export function writeAutoJournal(opts?: AutoJournalOptions): void {
     });
     const priorityBadge = isPriority ? " ⚡ PRIORITY" : "";
 
-    const errors       = sinceLastJournal.filter((e) => e.content.includes("[ERROR]"));
-    const fixes        = sinceLastJournal.filter((e) => e.content.includes("[BUG_FIX]") || e.content.includes("[DEPLOY]"));
-    const configChange = sinceLastJournal.filter((e) => e.content.includes("[ENV_VAR]") || e.content.includes("[CONFIG] Orchestrator") || e.content.includes("[INTEGRATION]"));
-    const routine      = sinceLastJournal.filter(
-      (e) => !errors.includes(e) && !fixes.includes(e) && !configChange.includes(e),
-    );
+    const errors         = sinceLastJournal.filter((e) => e.content.includes("[ERROR]"));
+    const fixes          = sinceLastJournal.filter((e) => e.content.includes("[BUG_FIX]") || e.content.includes("[DEPLOY]"));
+    const configChange   = sinceLastJournal.filter((e) => e.content.includes("[ENV_VAR]") || e.content.includes("[CONFIG] Orchestrator") || e.content.includes("[INTEGRATION]"));
+    const projectChanges = sinceLastJournal.filter((e) => e.content.includes("project_created") || e.content.includes("project_updated"));
+    const workflowEvents = sinceLastJournal.filter((e) => e.content.includes("workflow_"));
+    const agentEvents    = sinceLastJournal.filter((e) => e.content.includes("agent_created") || e.content.includes("agent_updated"));
+    const remoteCommands = sinceLastJournal.filter((e) => e.content.includes("telegram") || e.content.includes("remote_command"));
+
+    // Collect already-categorised entries so routine doesn't repeat them
+    const categorised = new Set([
+      ...errors, ...fixes, ...configChange,
+      ...projectChanges, ...workflowEvents, ...agentEvents, ...remoteCommands,
+    ]);
+    const routine = sinceLastJournal.filter((e) => !categorised.has(e));
 
     const section = (label: string, items: MemoryEntry[]) =>
       items.length
@@ -261,6 +308,10 @@ export function writeAutoJournal(opts?: AutoJournalOptions): void {
       section("🚨 Errors", errors),
       section("🐛 Fixes & Deploys", fixes),
       section("🔑 Config changes", configChange),
+      section("🗂️ Project Changes", projectChanges),
+      section("⚡ Workflow Events", workflowEvents),
+      section("🤖 Agent Events", agentEvents),
+      section("📡 Remote Commands", remoteCommands),
       section("⚙️ Activity", routine),
     ].filter(Boolean).join("\n\n");
 
@@ -329,6 +380,72 @@ export function logProviderSwitch(provider: string, path: string): void {
   if (_sessionSwitchCount >= 3) {
     writeAutoJournal(); // burst — normal path, threshold still applies
   }
+}
+
+// ── Remote command logging ────────────────────────────────────────────────────
+
+/**
+ * Log a command received or tested via a remote integration (e.g. Telegram bot).
+ *
+ * @param source  - The remote source ("telegram" | "webhook")
+ * @param command - The command string that was invoked (e.g. "/status")
+ * @param result  - Whether the command succeeded or produced an error
+ */
+export function logRemoteCommand(
+  source: "telegram" | "webhook",
+  command: string,
+  result: "ok" | "error",
+): void {
+  const category: ActionCategory = result === "error" ? "error" : "integration";
+  const label = source === "telegram" ? "Telegram" : "Webhook";
+  logSystemAction(
+    category,
+    `Remote command via ${label}: ${command}`,
+    result === "ok" ? "Executed successfully" : "Execution failed",
+  );
+}
+
+// ── Project / workflow / agent helpers ───────────────────────────────────────
+
+/**
+ * Log that a new project was created.
+ * Appears in the 🗂️ Project Changes journal section.
+ */
+export function logProjectCreated(name: string): void {
+  logSystemAction("config", `project_created: ${name}`);
+}
+
+/**
+ * Log that an existing project was updated.
+ * Appears in the 🗂️ Project Changes journal section.
+ */
+export function logProjectUpdated(name: string, changes?: string): void {
+  logSystemAction("config", `project_updated: ${name}`, changes);
+}
+
+/**
+ * Log a workflow execution result.
+ * Appears in the ⚡ Workflow Events journal section.
+ */
+export function logWorkflowRun(name: string, status: "success" | "error"): void {
+  const category: ActionCategory = status === "error" ? "error" : "deploy";
+  logSystemAction(category, `workflow_run: ${name}`, status);
+}
+
+/**
+ * Log that a new agent was created.
+ * Appears in the 🤖 Agent Events journal section.
+ */
+export function logAgentCreated(name: string): void {
+  logSystemAction("config", `agent_created: ${name}`);
+}
+
+/**
+ * Log that an existing agent was updated.
+ * Appears in the 🤖 Agent Events journal section.
+ */
+export function logAgentUpdated(name: string): void {
+  logSystemAction("config", `agent_updated: ${name}`);
 }
 
 // ── Summary ───────────────────────────────────────────────────────────────────

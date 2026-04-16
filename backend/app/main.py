@@ -17,6 +17,7 @@ from app.api.mc_roles import router as mc_roles_router
 from app.api.mc_allowed_users import router as mc_allowed_users_router
 from app.api.workflows import router as workflows_router
 from app.api.master import router as master_router
+from app.api.telegram import router as telegram_router
 from app.api.gemini_chat import router as gemini_chat_router
 from app.api.journal import router as journal_router
 from app.api.judge import router as judge_router
@@ -606,6 +607,7 @@ api_v1.include_router(mc_roles_router)
 api_v1.include_router(mc_allowed_users_router)
 api_v1.include_router(workflows_router)
 api_v1.include_router(master_router)
+api_v1.include_router(telegram_router)
 app.include_router(api_v1)
 
 add_pagination(app)

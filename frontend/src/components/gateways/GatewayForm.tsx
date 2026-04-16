@@ -92,7 +92,11 @@ export function GatewayForm({
             <p className="text-xs text-red-500">{gatewayUrlError}</p>
           ) : gatewayCheckStatus === "error" && gatewayCheckMessage ? (
             <p className="text-xs text-red-500">{gatewayCheckMessage}</p>
-          ) : null}
+          ) : (
+            <p className="text-xs text-slate-500">
+              For local development: <span className="font-mono">http://localhost:8080</span> — For production: your deployed OpenClaw instance URL
+            </p>
+          )}
         </div>
         <div className="space-y-2">
           <label className="text-sm font-medium text-slate-900">

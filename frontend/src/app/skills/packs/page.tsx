@@ -65,6 +65,8 @@ export default function SkillsPacksPage() {
       enabled: Boolean(isSignedIn && isAdmin),
       refetchOnMount: "always",
       refetchInterval: 15_000,
+      staleTime: 5 * 60 * 1000,
+      refetchOnWindowFocus: false,
     },
   });
 

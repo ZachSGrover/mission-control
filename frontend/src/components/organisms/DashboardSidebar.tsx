@@ -12,6 +12,7 @@ import {
   Code2,
   FolderOpen,
   GitBranch,
+  Layout,
   Loader2,
   MessageSquare,
   MessagesSquare,
@@ -169,8 +170,8 @@ export function DashboardSidebar() {
       {/* ── Scrollable nav ───────────────────────────────────────────── */}
       <div className="flex-1 overflow-y-auto px-3 py-5 space-y-5">
 
-        {/* AI */}
-        <NavSection label="AI">
+        {/* Chat */}
+        <NavSection label="Chat">
           <NavLink href="/chat"             label="Claude"      Icon={MessageSquare} exact />
           <NavLink href="/chat/gpt"         label="ChatGPT"     Icon={Zap} />
           <NavLink href="/chat/gemini"      label="Gemini"      Icon={Sparkles} />
@@ -187,6 +188,7 @@ export function DashboardSidebar() {
 
         {/* Automation */}
         <NavSection label="Automation">
+          <NavLink href="/boards"    label="Boards"    Icon={Layout} />
           <NavLink href="/agents"    label="Agents"    Icon={Bot} />
           <NavLink href="/workflows" label="Workflows" Icon={GitBranch} />
           <NavLink href="/skills"    label="Skills"    Icon={Wrench} />

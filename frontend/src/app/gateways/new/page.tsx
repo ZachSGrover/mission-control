@@ -120,6 +120,28 @@ export default function NewGatewayPage() {
       isAdmin={isAdmin}
       adminOnlyMessage="Only organization owners and admins can create gateways."
     >
+      {/* What is a Gateway explanation panel */}
+      <div className="mb-6 rounded-xl p-5 space-y-4" style={{ background: "var(--surface-strong)", border: "1px solid var(--border)" }}>
+        <h2 className="text-sm font-semibold" style={{ color: "var(--text)" }}>What is a Gateway?</h2>
+        <div className="grid gap-3 sm:grid-cols-3 text-xs" style={{ color: "var(--text-muted)" }}>
+          <div>
+            <p className="font-medium mb-1" style={{ color: "var(--text)" }}>Runtime environment</p>
+            <p>A Gateway is a connection to a machine (local or server) where your agents actually run code. It&apos;s the execution layer.</p>
+          </div>
+          <div>
+            <p className="font-medium mb-1" style={{ color: "var(--text)" }}>Skills host</p>
+            <p>Skills (tools like run_python, web_search) are installed onto a Gateway. Agents on that Gateway can then call them.</p>
+          </div>
+          <div>
+            <p className="font-medium mb-1" style={{ color: "var(--text)" }}>Local-first</p>
+            <p>For local use, run the OpenClaw gateway process on your machine and point the URL here (typically http://localhost:8080).</p>
+          </div>
+        </div>
+        <p className="text-xs" style={{ color: "var(--text-quiet)" }}>
+          💡 You don&apos;t need a Gateway for chat, memory, projects, or workflows. It&apos;s only required for running Skills and active Agents.
+        </p>
+      </div>
+
       <GatewayForm
         name={name}
         gatewayUrl={gatewayUrl}

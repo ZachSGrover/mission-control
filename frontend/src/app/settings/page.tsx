@@ -12,7 +12,7 @@ import { SignedOutPanel } from "@/components/auth/SignedOutPanel";
 import { DashboardSidebar } from "@/components/organisms/DashboardSidebar";
 import { DashboardShell } from "@/components/templates/DashboardShell";
 import { useAuthFetch } from "@/hooks/use-auth-fetch";
-import { logSystemAction, writeAutoJournal } from "@/lib/action-logger";
+import { logRemoteCommand, logSystemAction, writeAutoJournal } from "@/lib/action-logger";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -81,6 +81,50 @@ async function saveGitHubField(field: GitHubField, value: string, fetchFn: Fetch
 
 async function clearGitHubField(field: GitHubField, fetchFn: FetchFn): Promise<void> {
   await fetchFn(`${getApiBaseUrl()}/api/v1/settings/github/${field}`, { method: "DELETE" });
+}
+
+// ── Telegram types and API helpers ────────────────────────────────────────────
+
+type TelegramConfig = {
+  has_token: boolean;
+  bot_username: string | null;
+  source: string;
+};
+
+async function fetchTelegramConfig(fetchFn: FetchFn): Promise<TelegramConfig> {
+  const res = await fetchFn(`${getApiBaseUrl()}/api/v1/telegram/config`);
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  return res.json() as Promise<TelegramConfig>;
+}
+
+async function saveTelegramToken(token: string, fetchFn: FetchFn): Promise<TelegramConfig> {
+  const res = await fetchFn(`${getApiBaseUrl()}/api/v1/telegram/config`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ token }),
+  });
+  if (!res.ok) {
+    const body = await res.json().catch(() => null) as { detail?: string } | null;
+    throw new Error(body?.detail ?? `HTTP ${res.status}`);
+  }
+  return res.json() as Promise<TelegramConfig>;
+}
+
+async function deleteTelegramToken(fetchFn: FetchFn): Promise<void> {
+  const res = await fetchFn(`${getApiBaseUrl()}/api/v1/telegram/config`, { method: "DELETE" });
+  if (!res.ok && res.status !== 204) throw new Error(`HTTP ${res.status}`);
+}
+
+async function sendTelegramTest(chatId: string, fetchFn: FetchFn): Promise<void> {
+  const res = await fetchFn(`${getApiBaseUrl()}/api/v1/telegram/test`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ chat_id: chatId }),
+  });
+  if (!res.ok) {
+    const body = await res.json().catch(() => null) as { detail?: string } | null;
+    throw new Error(body?.detail ?? `HTTP ${res.status}`);
+  }
 }
 
 // ── Shared field row ──────────────────────────────────────────────────────────
@@ -264,6 +308,307 @@ function FieldRow({
   );
 }
 
+// ── Telegram Remote Access section ───────────────────────────────────────────
+
+function TelegramSection({ fetchFn }: { fetchFn: FetchFn }) {
+  const [config, setConfig] = useState<TelegramConfig | null>(null);
+  const [tokenInput, setTokenInput] = useState("");
+  const [tokenShown, setTokenShown] = useState(false);
+  const [chatIdInput, setChatIdInput] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [testing, setTesting] = useState(false);
+  const [feedback, setFeedback] = useState<{ ok: boolean; msg: string } | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
+
+  const fb = useCallback((ok: boolean, msg: string) => {
+    setFeedback({ ok, msg });
+    setTimeout(() => setFeedback(null), 4000);
+  }, []);
+
+  useEffect(() => {
+    fetchTelegramConfig(fetchFn)
+      .then(setConfig)
+      .catch((err) => setLoadError(err instanceof Error ? err.message : "Failed to load Telegram config."));
+  }, [fetchFn]);
+
+  const webhookUrl = typeof window !== "undefined"
+    ? `${getApiBaseUrl()}/api/v1/telegram/webhook`
+    : `${process.env.NEXT_PUBLIC_API_URL ?? "https://your-backend.onrender.com"}/api/v1/telegram/webhook`;
+
+  const handleSaveToken = async () => {
+    const trimmed = tokenInput.trim();
+    if (!trimmed) { fb(false, "Enter a bot token first."); return; }
+    setSaving(true);
+    try {
+      const updated = await saveTelegramToken(trimmed, fetchFn);
+      setConfig(updated);
+      setTokenInput("");
+      fb(true, updated.bot_username ? `Connected as @${updated.bot_username}` : "Token saved.");
+      logSystemAction("integration", "Telegram bot token saved", updated.bot_username ? `@${updated.bot_username}` : undefined);
+      writeAutoJournal();
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "Failed to save token.";
+      fb(false, msg);
+      logSystemAction("error", "Failed to save Telegram token", msg);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleRemoveToken = async () => {
+    setSaving(true);
+    try {
+      await deleteTelegramToken(fetchFn);
+      setConfig({ has_token: false, bot_username: null, source: "none" });
+      fb(true, "Token removed.");
+      logSystemAction("integration", "Telegram bot token removed", "Settings → Remote Access");
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "Failed to remove token.";
+      fb(false, msg);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleTest = async () => {
+    const chatId = chatIdInput.trim();
+    if (!chatId) { fb(false, "Enter a chat ID to send the test message to."); return; }
+    setTesting(true);
+    try {
+      await sendTelegramTest(chatId, fetchFn);
+      fb(true, "Test message sent! Check your Telegram.");
+      logRemoteCommand("telegram", "/test", "ok");
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "Failed to send test message.";
+      fb(false, msg);
+      logRemoteCommand("telegram", "/test", "error");
+    } finally {
+      setTesting(false);
+    }
+  };
+
+  return (
+    <section className="space-y-4">
+      <div className="flex items-center gap-2">
+        <h2 className="text-xs font-semibold uppercase tracking-widest" style={{ color: "var(--text-quiet)" }}>
+          Remote Access
+        </h2>
+        <span
+          className="rounded-full px-2 py-0.5 text-[10px] font-medium"
+          style={{ background: "rgba(34,197,94,0.12)", color: "#22c55e" }}
+        >
+          Telegram Bot
+        </span>
+      </div>
+
+      <p className="text-xs" style={{ color: "var(--text-quiet)" }}>
+        Control Mission Control remotely via a Telegram bot. Get your token from{" "}
+        <span className="font-mono" style={{ color: "var(--text)" }}>@BotFather</span> on Telegram.
+      </p>
+
+      {loadError && (
+        <div
+          className="rounded-xl px-4 py-3 text-sm"
+          style={{ background: "rgba(239,68,68,0.08)", color: "#ef4444", border: "1px solid rgba(239,68,68,0.2)" }}
+        >
+          {loadError}
+        </div>
+      )}
+
+      {/* Status */}
+      <div
+        className="rounded-xl p-4 space-y-3"
+        style={{ background: "var(--surface-strong)", border: "1px solid var(--border)" }}
+      >
+        <div className="flex items-center justify-between">
+          <div>
+            <p className="text-sm font-medium" style={{ color: "var(--text)" }}>Bot Token</p>
+            <p className="text-xs mt-0.5" style={{ color: "var(--text-quiet)" }}>
+              Obtained from @BotFather — stored encrypted in the database
+            </p>
+          </div>
+          {config ? (
+            config.has_token ? (
+              <span className="flex items-center gap-1.5 text-xs font-medium" style={{ color: "#22c55e" }}>
+                <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
+                {config.bot_username ? `@${config.bot_username}` : "Connected"}
+                {config.source && config.source !== "none" && (
+                  <span
+                    className="rounded px-1.5 py-0.5 text-xs font-semibold uppercase tracking-wide"
+                    style={{
+                      background: config.source === "db" ? "rgba(99,102,241,0.15)" : "rgba(234,179,8,0.15)",
+                      color: config.source === "db" ? "#818cf8" : "#ca8a04",
+                    }}
+                  >
+                    {config.source === "db" ? "DB" : "ENV"}
+                  </span>
+                )}
+              </span>
+            ) : (
+              <span className="flex items-center gap-1.5 text-xs" style={{ color: "var(--text-quiet)" }}>
+                <span className="h-1.5 w-1.5 rounded-full" style={{ background: "var(--border-strong)" }} />
+                Not configured
+              </span>
+            )
+          ) : (
+            <span className="text-xs" style={{ color: "var(--text-quiet)" }}>Loading…</span>
+          )}
+        </div>
+
+        {/* Token input */}
+        <div className="flex gap-2">
+          <div className="relative flex-1">
+            <input
+              type={tokenShown ? "text" : "password"}
+              value={tokenInput}
+              onChange={(e) => setTokenInput(e.target.value)}
+              onKeyDown={(e) => { if (e.key === "Enter") void handleSaveToken(); }}
+              placeholder={config?.has_token ? "Replace existing token…" : "123456:ABC-DEF…"}
+              disabled={saving}
+              className="w-full rounded-lg pr-9 pl-3 py-2 text-sm font-mono focus:outline-none disabled:opacity-50"
+              style={{
+                background: "var(--surface-muted)",
+                border: "1px solid var(--border-strong)",
+                color: "var(--text)",
+              }}
+            />
+            <button
+              type="button"
+              tabIndex={-1}
+              onClick={() => setTokenShown((s) => !s)}
+              className="absolute right-2.5 top-1/2 -translate-y-1/2 transition-opacity hover:opacity-70"
+              style={{ color: "var(--text-quiet)" }}
+            >
+              {tokenShown ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
+            </button>
+          </div>
+          <button
+            type="button"
+            onClick={() => void handleSaveToken()}
+            disabled={saving || !tokenInput.trim()}
+            className="rounded-lg px-4 py-2 text-sm font-medium text-white transition-opacity disabled:opacity-40"
+            style={{ background: "var(--accent)" }}
+          >
+            {saving ? "…" : "Save"}
+          </button>
+          {config?.has_token && (
+            <button
+              type="button"
+              onClick={() => void handleRemoveToken()}
+              disabled={saving}
+              className="rounded-lg p-2 transition-colors disabled:opacity-40"
+              style={{
+                background: "var(--surface-muted)",
+                border: "1px solid var(--border-strong)",
+                color: "var(--text-quiet)",
+              }}
+              title="Remove token"
+            >
+              <X className="h-3.5 w-3.5" />
+            </button>
+          )}
+        </div>
+
+        {feedback && (
+          <p className="text-xs" style={{ color: feedback.ok ? "#22c55e" : "var(--danger)" }}>
+            {feedback.msg}
+          </p>
+        )}
+      </div>
+
+      {/* Test message */}
+      {config?.has_token && (
+        <div
+          className="rounded-xl p-4 space-y-3"
+          style={{ background: "var(--surface-strong)", border: "1px solid var(--border)" }}
+        >
+          <div>
+            <p className="text-sm font-medium" style={{ color: "var(--text)" }}>Send Test Message</p>
+            <p className="text-xs mt-0.5" style={{ color: "var(--text-quiet)" }}>
+              Enter your Telegram chat ID (open @userinfobot on Telegram to find it)
+            </p>
+          </div>
+          <div className="flex gap-2">
+            <input
+              type="text"
+              value={chatIdInput}
+              onChange={(e) => setChatIdInput(e.target.value)}
+              onKeyDown={(e) => { if (e.key === "Enter") void handleTest(); }}
+              placeholder="Your chat ID, e.g. 123456789"
+              disabled={testing}
+              className="flex-1 rounded-lg px-3 py-2 text-sm font-mono focus:outline-none disabled:opacity-50"
+              style={{
+                background: "var(--surface-muted)",
+                border: "1px solid var(--border-strong)",
+                color: "var(--text)",
+              }}
+            />
+            <button
+              type="button"
+              onClick={() => void handleTest()}
+              disabled={testing || !chatIdInput.trim()}
+              className="rounded-lg px-4 py-2 text-sm font-medium text-white transition-opacity disabled:opacity-40"
+              style={{ background: "var(--accent)" }}
+            >
+              {testing ? "…" : "Test"}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Webhook URL + Setup instructions */}
+      <div
+        className="rounded-xl p-4 space-y-3"
+        style={{ background: "var(--surface-strong)", border: "1px solid var(--border)" }}
+      >
+        <p className="text-sm font-medium" style={{ color: "var(--text)" }}>Setup Instructions</p>
+        <ol className="space-y-2 text-xs" style={{ color: "var(--text-quiet)" }}>
+          <li>1. Open Telegram and message <span className="font-mono" style={{ color: "var(--text)" }}>@BotFather</span></li>
+          <li>2. Send <span className="font-mono" style={{ color: "var(--text)" }}>/newbot</span> and follow the prompts</li>
+          <li>3. Copy the bot token and paste it above, then click Save</li>
+          <li>
+            4. Register the webhook URL with Telegram:
+            <div
+              className="mt-1.5 rounded-lg px-3 py-2 font-mono text-[11px] select-all break-all"
+              style={{ background: "var(--surface-muted)", color: "var(--text)", border: "1px solid var(--border-strong)" }}
+            >
+              {webhookUrl}
+            </div>
+          </li>
+          <li className="mt-1">
+            5. Run this once (replace TOKEN):
+            <div
+              className="mt-1.5 rounded-lg px-3 py-2 font-mono text-[11px] select-all break-all"
+              style={{ background: "var(--surface-muted)", color: "var(--text)", border: "1px solid var(--border-strong)" }}
+            >
+              {`curl -X POST "https://api.telegram.org/botTOKEN/setWebhook" -d "url=${webhookUrl}"`}
+            </div>
+          </li>
+        </ol>
+
+        <div className="pt-1">
+          <p className="text-xs font-medium mb-2" style={{ color: "var(--text-quiet)" }}>Available commands:</p>
+          <div className="grid grid-cols-2 gap-1">
+            {[
+              ["/status", "System health summary"],
+              ["/health", "Detailed health check"],
+              ["/projects", "List projects"],
+              ["/agents", "Active agents"],
+              ["/logs", "Log access info"],
+              ["/deploy", "Trigger Render deploy"],
+            ].map(([cmd, desc]) => (
+              <div key={cmd} className="flex items-start gap-1.5">
+                <span className="font-mono text-[11px] shrink-0" style={{ color: "var(--text)" }}>{cmd}</span>
+                <span className="text-[11px]" style={{ color: "var(--text-quiet)" }}>{desc}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+    </section>
+  );
+}
+
 // ── Settings page ─────────────────────────────────────────────────────────────
 
 export default function SettingsPage() {
@@ -385,6 +730,8 @@ export default function SettingsPage() {
                   />
                 ))}
               </section>
+              {/* Remote Access — Telegram */}
+              <TelegramSection fetchFn={fetchWithAuth} />
             </RoleGuard>
 
             {/* ── Integration Foundations ─────────────────────────────────── */}

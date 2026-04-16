@@ -19,6 +19,7 @@ import {
   Sparkles,
   TriangleAlert,
   Users,
+  Wrench,
   Zap,
 } from "lucide-react";
 
@@ -188,6 +189,7 @@ export function DashboardSidebar() {
         <NavSection label="Automation">
           <NavLink href="/agents"    label="Agents"    Icon={Bot} />
           <NavLink href="/workflows" label="Workflows" Icon={GitBranch} />
+          <NavLink href="/skills"    label="Skills"    Icon={Wrench} />
           <NavLink href="/activity"  label="Logs"      Icon={Activity} />
         </NavSection>
 

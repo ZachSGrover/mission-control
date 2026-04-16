@@ -35,7 +35,8 @@ export type ActionCategory =
   | "permission"
   | "account"
   | "spending"
-  | "error";
+  | "error"
+  | "alert";
 
 const CATEGORY_EMOJI: Record<ActionCategory, string> = {
   deploy:       "🚀",
@@ -50,6 +51,7 @@ const CATEGORY_EMOJI: Record<ActionCategory, string> = {
   account:      "👤",
   spending:     "💰",
   error:        "🚨",
+  alert:        "🔔",
 };
 
 // ── Journal rate-limit constants ──────────────────────────────────────────────

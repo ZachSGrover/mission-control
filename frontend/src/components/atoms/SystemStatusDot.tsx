@@ -48,6 +48,8 @@ interface TooltipProps {
   weightedErrorScore: number;
   errorCount: number;
   risingRisk: boolean;
+  consecutiveRisingRisk: number;
+  consecutiveDegraded: number;
   cleanTicksSinceFailure: number;
   lastRecoveryTimestamp: string | null;
 }
@@ -60,6 +62,8 @@ function TooltipPanel({
   weightedErrorScore,
   errorCount,
   risingRisk,
+  consecutiveRisingRisk,
+  consecutiveDegraded,
   cleanTicksSinceFailure,
   lastRecoveryTimestamp,
 }: TooltipProps) {
@@ -70,7 +74,9 @@ function TooltipPanel({
     : "Failing";
 
   const statusColor = DOT_COLOR[status] ?? "#94a3b8";
-  const isRecovering = status === "degraded" && cleanTicksSinceFailure > 0;
+  const isRecovering      = status === "degraded" && cleanTicksSinceFailure > 0;
+  const isDegradedAlert   = consecutiveDegraded   >= 3;
+  const isRisingAlert     = consecutiveRisingRisk >= 3;
 
   return (
     <div
@@ -132,12 +138,18 @@ function TooltipPanel({
       </div>
 
       {/* Alerts */}
-      {(risingRisk || isRecovering || lastRecoveryTimestamp) && (
+      {(risingRisk || isRisingAlert || isDegradedAlert || isRecovering || lastRecoveryTimestamp) && (
         <>
           <div style={{ height: 1, background: "rgba(255,255,255,0.06)", margin: "8px 0" }} />
           <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-            {risingRisk && (
-              <AlertRow icon="⚠️" text="Rising risk detected" color="#f59e0b" />
+            {isRisingAlert && (
+              <AlertRow icon="🔔" text={`Alert: rising risk (${consecutiveRisingRisk} ticks)`} color="#ef4444" />
+            )}
+            {risingRisk && !isRisingAlert && (
+              <AlertRow icon="⚠️" text={`Rising risk (${consecutiveRisingRisk}/3 ticks)`} color="#f59e0b" />
+            )}
+            {isDegradedAlert && (
+              <AlertRow icon="🔔" text={`Alert: degraded ${consecutiveDegraded} ticks`} color="#f59e0b" />
             )}
             {isRecovering && (
               <AlertRow
@@ -206,6 +218,8 @@ export function SystemStatusDot() {
     weightedErrorScore,
     lastErrorTimestamps,
     risingRisk,
+    consecutiveRisingRisk,
+    consecutiveDegraded,
     cleanTicksSinceFailure,
     lastRecoveryTimestamp,
   } = useSystemHealth();
@@ -274,6 +288,8 @@ export function SystemStatusDot() {
           weightedErrorScore={weightedErrorScore}
           errorCount={lastErrorTimestamps.length}
           risingRisk={risingRisk}
+          consecutiveRisingRisk={consecutiveRisingRisk}
+          consecutiveDegraded={consecutiveDegraded}
           cleanTicksSinceFailure={cleanTicksSinceFailure}
           lastRecoveryTimestamp={lastRecoveryTimestamp}
         />

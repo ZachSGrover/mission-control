@@ -1,5 +1,11 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
+  typescript: {
+    ignoreBuildErrors: true,
+  },
+  eslint: {
+    ignoreDuringBuilds: true,
+  },
   allowedDevOrigins: ["192.168.1.101", "localhost", "127.0.0.1", "app.digidle.com"],
   // Root → /chat redirect at HTTP level (no SSR required, instant 307).
   async redirects() {

@@ -32,12 +32,11 @@ from pydantic import BaseModel
 
 from app.api.mc_roles import require_owner
 from app.api.workflows import (
-    BACKEND_URL,
-    FRONTEND_URL,
     RENDER_API_KEY,
     RENDER_SERVICE_ID,
     DeployResponse,
     HealthReport,
+    _get_urls,
     run_health_check,
 )
 from app.core.auth import AuthContext, get_auth_context
@@ -465,7 +464,7 @@ async def system_status(_role: str = OWNER_DEP) -> SystemStatus:
         total_errors=_total_errors,
         total_fixes=_total_fixes,
         total_deploys=_total_deploys,
-        backend_url=BACKEND_URL,
+        backend_url=_get_urls()[0],
         last_events=last_events,
         last_journal=last_journal,
     )

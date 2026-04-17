@@ -34,8 +34,29 @@ OWNER_DEP = Depends(require_owner)
 # ── Config from environment ───────────────────────────────────────────────────
 RENDER_API_KEY = os.getenv("RENDER_API_KEY", "")
 RENDER_SERVICE_ID = os.getenv("RENDER_SERVICE_ID", "srv-d7cq41q8qa3s73bbke00")
-BACKEND_URL = os.getenv("BASE_URL", "https://mission-control-jbx8.onrender.com")
-FRONTEND_URL = "https://app.digidle.com"
+
+
+def _get_urls() -> tuple[str, str]:
+    """Return (backend_url, frontend_url) at call-time from settings (not module-load-time).
+
+    This avoids hardcoding and ensures the correct values are used even when
+    the settings are loaded after module import.
+    """
+    from app.core.config import settings
+
+    backend = settings.base_url or "https://mission-control-jbx8.onrender.com"
+
+    # frontend_url env var > first CORS origin > hardcoded fallback
+    frontend = settings.frontend_url.strip()
+    if not frontend and settings.cors_origins:
+        parts = [p.strip() for p in settings.cors_origins.split(",") if p.strip()]
+        # Prefer https origins
+        https_parts = [p for p in parts if p.startswith("https://")]
+        frontend = https_parts[0] if https_parts else (parts[0] if parts else "")
+    if not frontend:
+        frontend = "https://app.digidle.com"
+
+    return backend, frontend
 
 # Simple in-memory cache for last health status
 _last_health: dict[str, Any] = {}
@@ -116,22 +137,23 @@ async def run_health_check() -> HealthReport:
 
     ts = datetime.now(timezone.utc).isoformat()
     checks: list[CheckResult] = []
+    backend_url, frontend_url = _get_urls()
 
     async with httpx.AsyncClient(follow_redirects=True) as client:
         tasks = [
             # Backend
-            _check(client, "backend.health",        f"{BACKEND_URL}/health",                  expected_status=200),
-            _check(client, "backend.readyz",         f"{BACKEND_URL}/readyz",                  expected_status=200),
+            _check(client, "backend.health",        f"{backend_url}/health",                  expected_status=200),
+            _check(client, "backend.readyz",         f"{backend_url}/readyz",                  expected_status=200),
             # CORS
-            _check(client, "cors.settings",          f"{BACKEND_URL}/api/v1/settings/api-keys", "OPTIONS", FRONTEND_URL, 200),
-            _check(client, "cors.roles_me",           f"{BACKEND_URL}/api/v1/roles/me",          "OPTIONS", FRONTEND_URL, 200),
+            _check(client, "cors.settings",          f"{backend_url}/api/v1/settings/api-keys", "OPTIONS", frontend_url, 200),
+            _check(client, "cors.roles_me",           f"{backend_url}/api/v1/roles/me",          "OPTIONS", frontend_url, 200),
             # Auth (expect 401 without token)
-            _check(client, "auth.settings",           f"{BACKEND_URL}/api/v1/settings/api-keys", expected_status=401),
-            _check(client, "auth.roles_me",           f"{BACKEND_URL}/api/v1/roles/me",          expected_status=401),
-            _check(client, "auth.openai",             f"{BACKEND_URL}/api/v1/openai/status",     expected_status=401),
-            _check(client, "auth.gemini",             f"{BACKEND_URL}/api/v1/gemini/status",     expected_status=401),
+            _check(client, "auth.settings",           f"{backend_url}/api/v1/settings/api-keys", expected_status=401),
+            _check(client, "auth.roles_me",           f"{backend_url}/api/v1/roles/me",          expected_status=401),
+            _check(client, "auth.openai",             f"{backend_url}/api/v1/openai/status",     expected_status=401),
+            _check(client, "auth.gemini",             f"{backend_url}/api/v1/gemini/status",     expected_status=401),
             # Frontend
-            _check(client, "frontend.root",           FRONTEND_URL,                              expected_status=200),
+            _check(client, "frontend.root",           frontend_url,                              expected_status=200),
         ]
         results = await asyncio.gather(*tasks, return_exceptions=True)
 

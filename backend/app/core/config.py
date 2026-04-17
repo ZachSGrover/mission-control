@@ -50,7 +50,19 @@ class Settings(BaseSettings):
     clerk_leeway: float = 10.0
 
     cors_origins: str = ""
+    # Extra CORS origins to allow in addition to cors_origins (comma-separated).
+    # Use this to add new domains (e.g. hq.digidle.com) without overwriting the
+    # base CORS_ORIGINS env var.
+    extra_cors_origins: str = ""
     base_url: str = ""
+    # Frontend URL used for health-check CORS pings and Telegram webhook instructions.
+    # Defaults to the first entry in cors_origins if not explicitly set.
+    frontend_url: str = ""
+
+    # Dedicated encryption key for API key storage — decouples secret persistence
+    # from auth credentials.  If unset, falls back to LOCAL_AUTH_TOKEN / CLERK_SECRET_KEY.
+    # Generate: python3 -c "import secrets; print(secrets.token_hex(32))"
+    settings_encryption_key: str = ""
 
     # OpenAI integration (optional)
     openai_api_key: str = ""

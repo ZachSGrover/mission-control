@@ -495,7 +495,10 @@ app = MissionControlFastAPI(
     openapi_tags=OPENAPI_TAGS,
 )
 
-origins = [o.strip() for o in settings.cors_origins.split(",") if o.strip()]
+# Merge base CORS origins with any extra ones (EXTRA_CORS_ORIGINS env var)
+_base_origins = [o.strip() for o in settings.cors_origins.split(",") if o.strip()]
+_extra_origins = [o.strip() for o in settings.extra_cors_origins.split(",") if o.strip()]
+origins = list(dict.fromkeys(_base_origins + _extra_origins))  # deduplicate, preserve order
 if origins:
     app.add_middleware(
         CORSMiddleware,

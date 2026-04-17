@@ -226,6 +226,19 @@ function FieldRow({
                 </span>
               )}
             </span>
+          ) : status.source === "db" ? (
+            // Key is in DB but decryption failed (auth credential may have rotated)
+            <span className="flex items-center gap-1.5 text-xs font-medium" style={{ color: "#f59e0b" }}>
+              <span className="h-1.5 w-1.5 rounded-full bg-amber-400" />
+              Re-save required
+              <span
+                className="rounded px-1.5 py-0.5 text-xs font-semibold uppercase tracking-wide"
+                style={{ background: "rgba(234,179,8,0.15)", color: "#ca8a04" }}
+                title="Key is stored but cannot be decrypted — the server's auth credential may have changed. Re-save the key to fix."
+              >
+                DB ⚠
+              </span>
+            </span>
           ) : (
             <span className="flex items-center gap-1.5 text-xs" style={{ color: "var(--text-quiet)" }}>
               <span className="h-1.5 w-1.5 rounded-full" style={{ background: "var(--border-strong)" }} />

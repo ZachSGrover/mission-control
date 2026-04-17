@@ -1,14 +1,17 @@
 """Runtime secrets store: encrypted API keys persisted in the database.
 
-Keys are encrypted with Fernet symmetric encryption.  The encryption key is
-derived deterministically from LOCAL_AUTH_TOKEN (or CLERK_SECRET_KEY as
-fallback) so no additional env var is required.  DB values take priority over
-.env; .env acts as a seed/fallback.
+Keys are encrypted with Fernet symmetric encryption.
 
-Decryption failure diagnostic:
-  If CLERK_SECRET_KEY or LOCAL_AUTH_TOKEN changes between when keys were saved
-  and when they are read, decryption will fail silently (returns "").  The fix
-  is to re-save keys through Settings → API Keys after any credential rotation.
+Encryption key priority (most stable to least stable):
+  1. SETTINGS_ENCRYPTION_KEY env var — a dedicated 32+ char hex string you set
+     once and never rotate. This is the safest option. Generate with:
+       python3 -c "import secrets; print(secrets.token_hex(32))"
+  2. LOCAL_AUTH_TOKEN — used as fallback when SETTINGS_ENCRYPTION_KEY is absent.
+  3. CLERK_SECRET_KEY — last resort when neither above is set.
+
+IMPORTANT: If you change option 2 or 3 without setting option 1, previously
+stored keys become unreadable. Re-save them in Settings → API Keys.
+Set SETTINGS_ENCRYPTION_KEY once to decouple encryption from auth credentials.
 """
 
 from __future__ import annotations
@@ -45,10 +48,23 @@ _fernet: Fernet | None = None
 def _get_fernet() -> Fernet:
     global _fernet
     if _fernet is None:
+        import os
         from app.core.config import settings
 
-        # Derive a stable 32-byte key from the auth token.
-        source = (settings.local_auth_token or settings.clerk_secret_key).encode()
+        # Priority 1: dedicated encryption key — immune to auth credential rotation.
+        dedicated = os.environ.get("SETTINGS_ENCRYPTION_KEY", "").strip()
+        if dedicated:
+            source = dedicated.encode()
+        else:
+            # Priority 2/3: derive from auth credential (rotation-sensitive).
+            source = (settings.local_auth_token or settings.clerk_secret_key).encode()
+
+        if not source:
+            raise RuntimeError(
+                "secrets_store: no encryption seed available. "
+                "Set SETTINGS_ENCRYPTION_KEY, LOCAL_AUTH_TOKEN, or CLERK_SECRET_KEY."
+            )
+
         key_bytes = hashlib.sha256(source).digest()
         fernet_key = base64.urlsafe_b64encode(key_bytes)
         _fernet = Fernet(fernet_key)

@@ -40,8 +40,14 @@ export function DashboardShell({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     if (!isSignedIn) return;
-    systemMonitor.start(() => getTokenRef.current());
-    return () => systemMonitor.stop();
+    // Defer monitor start so provider health pings don't compete with page load.
+    const timer = setTimeout(() => {
+      systemMonitor.start(() => getTokenRef.current());
+    }, 3000);
+    return () => {
+      clearTimeout(timer);
+      systemMonitor.stop();
+    };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isSignedIn]); // only re-run when sign-in state changes
 
@@ -57,9 +63,10 @@ export function DashboardShell({ children }: { children: ReactNode }) {
     query: {
       enabled: Boolean(isSignedIn) && !isOnboardingPath,
       retry: false,
-      // "always" caused header/avatar to flash on every route change.
-      // true = refetch only when stale (respects 2-min staleTime in QueryProvider).
       refetchOnMount: true,
+      // 5-min stale time — profile doesn't change frequently; no need to hit
+      // the backend on every route change.
+      staleTime: 5 * 60 * 1000,
     },
   });
   const profile = meQuery.data?.status === 200 ? meQuery.data.data : null;
@@ -143,16 +150,16 @@ export function DashboardShell({ children }: { children: ReactNode }) {
         {/* Drag spacer */}
         <div className="flex-1" />
 
-        {/* System status + account menu */}
-        <SignedIn>
-          <div
-            className="flex items-center gap-4 pr-5"
-            style={{ WebkitAppRegion: "no-drag" } as React.CSSProperties}
-          >
+        {/* System status + account menu — always reserve space to prevent layout shift */}
+        <div
+          className="flex items-center gap-4 pr-5"
+          style={{ WebkitAppRegion: "no-drag" } as React.CSSProperties}
+        >
+          <SignedIn>
             <SystemStatusDot />
             <UserMenu displayName={displayName} displayEmail={displayEmail} />
-          </div>
-        </SignedIn>
+          </SignedIn>
+        </div>
       </header>
 
       {/* ── Mobile overlay ──────────────────────────────────────────────── */}

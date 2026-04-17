@@ -4,6 +4,7 @@ import type { ReactNode } from "react";
 import { useEffect, useState } from "react";
 
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { getApiBaseUrl } from "@/lib/api-base";
 
 /**
  * Keepalive component: pings /health every 4 minutes to prevent backend
@@ -14,21 +15,20 @@ function BackendKeepalive() {
   useEffect(() => {
     const ping = () => {
       try {
-        const base = (process.env.NEXT_PUBLIC_API_URL ?? "").replace(/\/+$/, "");
-        const url = base
-          ? `${base}/health`
-          : typeof window !== "undefined"
-          ? `${window.location.protocol}//${window.location.hostname}:8000/health`
-          : null;
-        if (url) fetch(url, { cache: "no-store" }).catch(() => {});
+        const base = getApiBaseUrl();
+        fetch(`${base}/health`, { cache: "no-store" }).catch(() => {});
       } catch {
         // noop — keepalive must never throw
       }
     };
 
-    ping(); // warm the backend on first page load
+    // Delay the first ping so it doesn't compete with the initial page render.
+    const warmup = setTimeout(ping, 5000);
     const id = setInterval(ping, 4 * 60 * 1000);
-    return () => clearInterval(id);
+    return () => {
+      clearTimeout(warmup);
+      clearInterval(id);
+    };
   }, []);
 
   return null;

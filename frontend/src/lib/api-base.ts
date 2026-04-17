@@ -2,18 +2,21 @@
  * Returns the base URL for all backend API calls.
  *
  * Priority:
- *   1. NEXT_PUBLIC_API_URL env var — set this in Vercel / .env.local.
- *      Example: https://your-backend.onrender.com
- *   2. Auto-resolve: same hostname as the browser, port 8000.
+ *   1. NEXT_PUBLIC_API_URL env var (set in Render / .env.local).
+ *      Example: https://mission-control-jbx8.onrender.com
+ *   2. Known production host mapping — covers deployed frontend hosts even
+ *      when NEXT_PUBLIC_API_URL was not set at build time.
+ *   3. Auto-resolve: same hostname as the browser, port 8000.
  *      Works for local dev (http://localhost:8000).
- *      Will NOT work on app.digidle.com unless the backend runs there.
- *
- * IMPORTANT for production (Vercel / app.digidle.com):
- *   You MUST set NEXT_PUBLIC_API_URL in your Vercel project settings:
- *   Vercel Dashboard → Project → Settings → Environment Variables
- *   Key:   NEXT_PUBLIC_API_URL
- *   Value: https://your-backend-domain.com   ← wherever FastAPI is deployed
  */
+
+/** Known frontend host → backend URL. Update if service URLs change. */
+const KNOWN_PRODUCTION_HOSTS: Record<string, string> = {
+  "hq.digidle.com":                              "https://mission-control-jbx8.onrender.com",
+  "app.digidle.com":                             "https://mission-control-jbx8.onrender.com",
+  "mission-control-frontend-iyoj.onrender.com":  "https://mission-control-jbx8.onrender.com",
+};
+
 export function getApiBaseUrl(): string {
   const raw = process.env.NEXT_PUBLIC_API_URL?.trim();
   if (raw && raw.toLowerCase() !== "auto") {
@@ -25,26 +28,29 @@ export function getApiBaseUrl(): string {
   }
 
   if (typeof window !== "undefined") {
-    const protocol = window.location.protocol === "https:" ? "https" : "http";
     const host = window.location.hostname;
+
+    // Known production host → hardcoded backend URL (no env var needed)
+    if (host && KNOWN_PRODUCTION_HOSTS[host]) {
+      return KNOWN_PRODUCTION_HOSTS[host];
+    }
+
+    const protocol = window.location.protocol === "https:" ? "https" : "http";
     if (host) {
-      const url = `${protocol}://${host}:8000`;
-      // Warn in production: auto-resolve only works if the backend is on the
-      // same domain as the frontend (unusual for Vercel deployments).
-      if (protocol === "https" && host !== "localhost") {
-        console.warn(
-          `[api-base] NEXT_PUBLIC_API_URL is not set. ` +
-          `Auto-resolving to ${url} — this will fail unless the backend ` +
-          `is reachable at that address. ` +
-          `Set NEXT_PUBLIC_API_URL in Vercel environment variables.`,
-        );
+      // Local dev: auto-resolve to same host on port 8000
+      if (host === "localhost" || host === "127.0.0.1") {
+        return `${protocol}://${host}:8000`;
       }
-      return url;
+      // Unknown production host — warn and fall through to error
+      console.warn(
+        `[api-base] NEXT_PUBLIC_API_URL is not set and "${host}" is not in KNOWN_PRODUCTION_HOSTS. ` +
+        `Add this host to api-base.ts or set NEXT_PUBLIC_API_URL in Render environment variables.`,
+      );
     }
   }
 
   throw new Error(
-    "NEXT_PUBLIC_API_URL is not set and cannot be auto-resolved outside the browser. " +
-    "Set NEXT_PUBLIC_API_URL in your environment (Vercel project settings).",
+    "NEXT_PUBLIC_API_URL is not set and cannot be auto-resolved. " +
+    "Set NEXT_PUBLIC_API_URL in Render environment variables, or add your host to KNOWN_PRODUCTION_HOSTS in api-base.ts.",
   );
 }

@@ -79,8 +79,8 @@ export interface AlertPayload {
   status:             SystemStatus;
   weightedErrorScore: number;
   errorCount:         number;
-  openaiOk:           boolean;
-  geminiOk:           boolean;
+  openaiOk:           boolean | null;
+  geminiOk:           boolean | null;
   risingRisk:         boolean;
   consecutiveFailures: number;
   timestamp:          string;
@@ -106,16 +106,18 @@ export interface MonitorState {
   lastErrorTimestamps:     readonly string[];
   weightedErrorScore:      number;
   risingRisk:              boolean;
-  openaiOk:                boolean;
-  geminiOk:                boolean;
+  /** true = configured+ok, false = configured+failing, null = not configured */
+  openaiOk:                boolean | null;
+  /** true = configured+ok, false = configured+failing, null = not configured */
+  geminiOk:                boolean | null;
   detail:                  string;
 }
 
 type Subscriber = (state: Readonly<MonitorState>) => void;
 
 interface CheckResult {
-  openaiOk:        boolean;
-  geminiOk:        boolean;
+  openaiOk:        boolean | null;
+  geminiOk:        boolean | null;
   errorTimestamps: string[];
   weightedScore:   number;
   rawStatus:       "healthy" | "degraded" | "failing";
@@ -160,13 +162,17 @@ function computeWeightedScore(timestamps: readonly string[]): number {
 }
 
 function classify(
-  openaiOk: boolean,
-  geminiOk: boolean,
+  openaiOk: boolean | null,
+  geminiOk: boolean | null,
   score: number,
 ): "healthy" | "degraded" | "failing" {
-  const bothDown = !openaiOk && !geminiOk;
-  const oneDown  = !openaiOk || !geminiOk;
-  if (bothDown || score >= SCORE_FAILING)  return "failing";
+  // null = not configured — skip from health classification entirely.
+  // Only providers that are configured (non-null) can trigger degraded/failing.
+  const configured = [openaiOk, geminiOk].filter((v): v is boolean => v !== null);
+  const downCount  = configured.filter((v) => !v).length;
+  const allDown    = configured.length > 0 && downCount === configured.length;
+  const oneDown    = downCount > 0;
+  if (allDown || score >= SCORE_FAILING)  return "failing";
   if (oneDown  || score >= SCORE_DEGRADED) return "degraded";
   return "healthy";
 }
@@ -187,8 +193,8 @@ class SystemMonitor {
     lastErrorTimestamps:     [],
     weightedErrorScore:      0,
     risingRisk:              false,
-    openaiOk:                false,
-    geminiOk:                false,
+    openaiOk:                null,
+    geminiOk:                null,
     detail:                  "Monitor not yet started.",
   };
 
@@ -250,8 +256,8 @@ class SystemMonitor {
       lastErrorTimestamps:     [],
       weightedErrorScore:      0,
       risingRisk:              false,
-      openaiOk:                false,
-      geminiOk:                false,
+      openaiOk:                null,
+      geminiOk:                null,
       detail:                  "Monitor stopped.",
     });
   }
@@ -439,7 +445,7 @@ class SystemMonitor {
     if (s.status === "failing") {
       this._maybeFireAlert("failing", token, {
         description: "System status: FAILING",
-        detail:      `Score: ${s.weightedErrorScore.toFixed(1)}  OpenAI: ${s.openaiOk}  Gemini: ${s.geminiOk}`,
+        detail:      `Score: ${s.weightedErrorScore.toFixed(1)}  OpenAI: ${s.openaiOk ?? "disabled"}  Gemini: ${s.geminiOk ?? "disabled"}`,
         action: async (tk) => {
           // Invalidate both provider caches + attempt auto-fix
           invalidateStatus("openai");
@@ -454,7 +460,7 @@ class SystemMonitor {
     if (s.consecutiveDegraded >= DEGRADED_ALERT_TICKS) {
       this._maybeFireAlert("degraded_sustained", token, {
         description: `System degraded for ${s.consecutiveDegraded} consecutive ticks`,
-        detail:      `Score: ${s.weightedErrorScore.toFixed(1)}  OpenAI: ${s.openaiOk}  Gemini: ${s.geminiOk}`,
+        detail:      `Score: ${s.weightedErrorScore.toFixed(1)}  OpenAI: ${s.openaiOk ?? "disabled"}  Gemini: ${s.geminiOk ?? "disabled"}`,
         action: async () => {
           // Gentle nudge — invalidate caches so hooks re-check on next render
           invalidateStatus("openai");
@@ -552,30 +558,32 @@ class SystemMonitor {
   // ── Health check ─────────────────────────────────────────────────────────
 
   private async _performCheck(token: string | null): Promise<CheckResult> {
-    let openaiOk = getCachedStatus("openai");
-    let geminiOk = getCachedStatus("gemini");
+    // getCachedStatus returns boolean | null where null = cache miss (needs fetch).
+    // After fetching, _pingProvider returns boolean | null where null = not configured.
+    // We only cache boolean results — not-configured providers are re-checked each tick
+    // so they start being monitored as soon as an API key is added in Settings.
+    let openaiOk: boolean | null = getCachedStatus("openai");
+    let geminiOk: boolean | null = getCachedStatus("gemini");
 
     const staleFetches: Promise<void>[] = [];
     if (openaiOk === null) {
       staleFetches.push(
-        this._pingProvider("openai", token).then((ok) => {
-          openaiOk = ok;
-          setCachedStatus("openai", ok);
+        this._pingProvider("openai", token).then((result) => {
+          openaiOk = result;
+          // Only cache boolean results — null (not configured) is re-fetched each tick
+          if (result !== null) setCachedStatus("openai", result);
         }),
       );
     }
     if (geminiOk === null) {
       staleFetches.push(
-        this._pingProvider("gemini", token).then((ok) => {
-          geminiOk = ok;
-          setCachedStatus("gemini", ok);
+        this._pingProvider("gemini", token).then((result) => {
+          geminiOk = result;
+          if (result !== null) setCachedStatus("gemini", result);
         }),
       );
     }
     if (staleFetches.length > 0) await Promise.all(staleFetches);
-
-    const openaiConfigured = openaiOk ?? false;
-    const geminiConfigured = geminiOk ?? false;
 
     // Rolling error window — prune to 10 min, cap at 20, exclude monitor entries
     const now10m = new Date(Date.now() - ERROR_WINDOW_MS).toISOString();
@@ -595,32 +603,41 @@ class SystemMonitor {
     } catch { /* memory unavailable */ }
 
     const weightedScore = computeWeightedScore(errorTimestamps);
-    const rawStatus     = classify(openaiConfigured, geminiConfigured, weightedScore);
+    const rawStatus     = classify(openaiOk, geminiOk, weightedScore);
 
     const recentCount = errorTimestamps.filter(
       (ts) => Date.now() - new Date(ts).getTime() < 2 * 60_000,
     ).length;
 
+    const providerLabel = (ok: boolean | null) => ok === null ? "—" : ok ? "✓" : "✗";
     const detail = [
-      `OpenAI ${openaiConfigured ? "✓" : "✗"}`,
-      `Gemini ${geminiConfigured ? "✓" : "✗"}`,
+      `OpenAI ${providerLabel(openaiOk)}`,
+      `Gemini ${providerLabel(geminiOk)}`,
       `Score: ${weightedScore.toFixed(1)}`,
       errorTimestamps.length > 0
         ? `Errors: ${errorTimestamps.length} (${recentCount} recent)`
         : "Errors: 0",
     ].join("  ");
 
-    return { openaiOk: openaiConfigured, geminiOk: geminiConfigured, errorTimestamps, weightedScore, rawStatus, detail };
+    return { openaiOk, geminiOk, errorTimestamps, weightedScore, rawStatus, detail };
   }
 
-  private async _pingProvider(provider: "openai" | "gemini", token: string | null): Promise<boolean> {
+  /**
+   * Ping a provider status endpoint.
+   * Returns:
+   *   true  — provider is configured and backend is reachable
+   *   false — provider is configured but backend is failing / unreachable
+   *   null  — provider is not configured (API key not set); not a health failure
+   */
+  private async _pingProvider(provider: "openai" | "gemini", token: string | null): Promise<boolean | null> {
     try {
       const headers: Record<string, string> = {};
       if (token) headers["Authorization"] = `Bearer ${token}`;
       const res  = await fetch(`${getApiBaseUrl()}/api/v1/${provider}/status`, { headers });
       if (!res.ok) return false;
       const body = await res.json() as { configured: boolean };
-      return body.configured;
+      // configured: false means the API key is simply not set — treat as "disabled", not "down"
+      return body.configured ? true : null;
     } catch {
       return false;
     }

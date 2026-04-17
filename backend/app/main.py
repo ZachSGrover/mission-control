@@ -12,6 +12,7 @@ from fastapi_pagination import add_pagination
 
 from app.api.activity import router as activity_router
 from app.api.app_settings import router as app_settings_router
+from app.api.integrations import router as integrations_router
 from app.api.git_save import router as git_save_router
 from app.api.mc_roles import router as mc_roles_router
 from app.api.mc_allowed_users import router as mc_allowed_users_router
@@ -495,10 +496,20 @@ app = MissionControlFastAPI(
     openapi_tags=OPENAPI_TAGS,
 )
 
-# Merge base CORS origins with any extra ones (EXTRA_CORS_ORIGINS env var)
-_base_origins = [o.strip() for o in settings.cors_origins.split(",") if o.strip()]
+# Known production frontend origins — always allowed even if not in CORS_ORIGINS env var.
+# Update this list when adding new custom domains or Render service URLs.
+_KNOWN_FRONTEND_ORIGINS = [
+    "https://hq.digidle.com",
+    "https://app.digidle.com",
+    "https://mission-control-frontend-iyoj.onrender.com",
+]
+
+# Merge base CORS origins, extra ones (EXTRA_CORS_ORIGINS env var), and known hosts
+_base_origins  = [o.strip() for o in settings.cors_origins.split(",")       if o.strip()]
 _extra_origins = [o.strip() for o in settings.extra_cors_origins.split(",") if o.strip()]
-origins = list(dict.fromkeys(_base_origins + _extra_origins))  # deduplicate, preserve order
+origins = list(dict.fromkeys(
+    _base_origins + _extra_origins + _KNOWN_FRONTEND_ORIGINS,
+))  # deduplicate, preserve order
 if origins:
     app.add_middleware(
         CORSMiddleware,
@@ -605,6 +616,7 @@ api_v1.include_router(judge_router)
 api_v1.include_router(synthesize_router)
 api_v1.include_router(operator_router)
 api_v1.include_router(app_settings_router)
+api_v1.include_router(integrations_router)
 api_v1.include_router(git_save_router)
 api_v1.include_router(mc_roles_router)
 api_v1.include_router(mc_allowed_users_router)

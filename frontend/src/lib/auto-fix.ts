@@ -108,30 +108,49 @@ async function fixAllProvidersFailed(token: string | null): Promise<FixResult> {
   const headers: Record<string, string> = {};
   if (token) headers["Authorization"] = `Bearer ${token}`;
 
-  const [openaiResult, geminiResult] = await Promise.allSettled([
-    fetch(`${baseUrl}/api/v1/openai/status`, { headers })
-      .then(async (r) => r.ok ? (await r.json() as { configured: boolean }).configured : false)
-      .catch(() => false),
-    fetch(`${baseUrl}/api/v1/gemini/status`, { headers })
-      .then(async (r) => r.ok ? (await r.json() as { configured: boolean }).configured : false)
-      .catch(() => false),
+  // null = not configured (no API key set — not a failure); false = configured but unreachable
+  const pingProvider = async (provider: "openai" | "gemini"): Promise<boolean | null> => {
+    try {
+      const r = await fetch(`${baseUrl}/api/v1/${provider}/status`, { headers });
+      if (!r.ok) return false;
+      const body = await r.json() as { configured: boolean };
+      return body.configured ? true : null;
+    } catch {
+      return false;
+    }
+  };
+
+  const [openaiOk, geminiOk] = await Promise.all([
+    pingProvider("openai"),
+    pingProvider("gemini"),
   ]);
 
-  const openaiOk = openaiResult.status === "fulfilled" && openaiResult.value;
-  const geminiOk = geminiResult.status === "fulfilled" && geminiResult.value;
+  // Only cache boolean results — null (not configured) will be re-fetched next tick
+  if (openaiOk !== null) setCachedStatus("openai", openaiOk);
+  if (geminiOk !== null) setCachedStatus("gemini", geminiOk);
 
-  // Write fresh results back into cache
-  setCachedStatus("openai", openaiOk);
-  setCachedStatus("gemini", geminiOk);
+  const configured = [openaiOk, geminiOk].filter((v): v is boolean => v !== null);
+  const anyConfigured = configured.length > 0;
+  const anyRecovered  = configured.some((v) => v === true);
 
-  if (openaiOk || geminiOk) {
-    const recovered = [openaiOk && "OpenAI", geminiOk && "Gemini"].filter(Boolean).join(", ");
+  if (!anyConfigured) {
+    return {
+      attempted,
+      success: true,
+      partial: false,
+      detail: "No providers configured — add API keys in Settings to enable AI providers.",
+    };
+  }
+
+  if (anyRecovered) {
+    const recovered = [openaiOk === true && "OpenAI", geminiOk === true && "Gemini"].filter(Boolean).join(", ");
+    const stillDown  = [openaiOk === false && "OpenAI", geminiOk === false && "Gemini"].filter(Boolean).join(", ");
     logSystemAction("bug_fix", `Provider(s) back online after all-fail: ${recovered}`, "auto-fix");
     return {
       attempted,
-      success: openaiOk && geminiOk,
-      partial: openaiOk !== geminiOk,
-      detail: `Recovered: ${recovered}. ${!openaiOk ? "OpenAI still down. " : ""}${!geminiOk ? "Gemini still down." : ""}`.trim(),
+      success: configured.every((v) => v === true),
+      partial: anyRecovered && configured.some((v) => v === false),
+      detail: `Recovered: ${recovered}.${stillDown ? ` Still down: ${stillDown}.` : ""}`.trim(),
     };
   }
 
@@ -139,7 +158,7 @@ async function fixAllProvidersFailed(token: string | null): Promise<FixResult> {
     attempted,
     success: false,
     partial: false,
-    detail: "Both OpenAI and Gemini still unreachable — check API keys in Settings.",
+    detail: "Configured providers still unreachable — check API keys in Settings.",
   };
 }
 

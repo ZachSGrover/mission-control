@@ -38,10 +38,18 @@ export default function ClaudeChatPage() {
 
   const chat = useOpenClawChat(SESSION_KEY, model);
 
+  // Show a clear status banner — never let the UI look broken without explanation.
+  const banner = chat.status === "connecting"
+    ? "Connecting to Claude gateway…"
+    : chat.status === "error" || chat.status === "idle"
+    ? "Claude requires the OpenClaw Gateway running locally (ws://localhost:18789). This provider is local-only and is not available in the cloud deployment."
+    : undefined;
+
   return (
     <AiChatPage
       provider="Claude"
       chat={chat}
+      banner={banner}
       models={CLAUDE_MODELS}
       model={model}
       onModelChange={setModel}

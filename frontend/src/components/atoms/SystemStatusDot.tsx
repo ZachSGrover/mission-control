@@ -43,8 +43,8 @@ function fmtTime(iso: string): string {
 interface TooltipProps {
   status: string;
   lastCheck: string | null;
-  openaiOk: boolean;
-  geminiOk: boolean;
+  openaiOk: boolean | null;
+  geminiOk: boolean | null;
   weightedErrorScore: number;
   errorCount: number;
   risingRisk: boolean;
@@ -172,16 +172,14 @@ function TooltipPanel({
   );
 }
 
-function ProviderRow({ name, ok }: { name: string; ok: boolean }) {
+function ProviderRow({ name, ok }: { name: string; ok: boolean | null }) {
+  const label = ok === null ? "Disabled" : ok ? "OK" : "Down";
+  const color = ok === null ? "#475569" : ok ? "#22c55e" : "#ef4444";
   return (
     <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
       <span style={{ color: "#94a3b8" }}>{name}</span>
-      <span style={{
-        fontWeight:   500,
-        color:        ok ? "#22c55e" : "#ef4444",
-        fontVariantNumeric: "tabular-nums",
-      }}>
-        {ok ? "OK" : "Down"}
+      <span style={{ fontWeight: 500, color, fontVariantNumeric: "tabular-nums" }}>
+        {label}
       </span>
     </div>
   );

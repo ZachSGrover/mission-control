@@ -16,6 +16,7 @@ import {
   Loader2,
   MessageSquare,
   MessagesSquare,
+  Plug,
   Settings,
   Sparkles,
   TriangleAlert,
@@ -295,6 +296,32 @@ export function DashboardSidebar() {
           >
             <Users className="h-4 w-4 shrink-0" />
             Users
+          </Link>
+        )}
+
+        {role === "owner" && (
+          <Link
+            href="/settings/integrations"
+            className={cn(
+              "flex items-center gap-2.5 rounded-lg px-3 py-2 text-sm transition-colors",
+              pathname.startsWith("/settings/integrations") ? "font-medium" : "font-normal",
+            )}
+            style={
+              pathname.startsWith("/settings/integrations")
+                ? { background: "var(--accent-soft)", color: "var(--accent-strong)" }
+                : { color: "var(--text-muted)" }
+            }
+            onMouseEnter={(e) => {
+              if (!pathname.startsWith("/settings/integrations"))
+                (e.currentTarget as HTMLElement).style.color = "var(--text)";
+            }}
+            onMouseLeave={(e) => {
+              if (!pathname.startsWith("/settings/integrations"))
+                (e.currentTarget as HTMLElement).style.color = "var(--text-muted)";
+            }}
+          >
+            <Plug className="h-4 w-4 shrink-0" />
+            Integrations
           </Link>
         )}
 

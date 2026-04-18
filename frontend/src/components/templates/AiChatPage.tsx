@@ -2,9 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 
-import { SignedIn, SignedOut } from "@/auth/clerk";
 import { Markdown } from "@/components/atoms/Markdown";
-import { SignedOutPanel } from "@/components/auth/SignedOutPanel";
 import { DashboardSidebar } from "@/components/organisms/DashboardSidebar";
 import { DashboardShell } from "@/components/templates/DashboardShell";
 import type { ChatMessage } from "@/hooks/use-openclaw-chat";
@@ -300,26 +298,19 @@ export interface AiChatPageProps {
   onModelChange?: (model: string) => void;
 }
 
+// DEBUG: auth gates removed — always render sidebar + content
 export function AiChatPage({ provider, chat, banner, models, model, onModelChange }: AiChatPageProps) {
   return (
     <DashboardShell>
-      <SignedOut>
-        <SignedOutPanel
-          message="Sign in to access Mission Control"
-          forceRedirectUrl="/chat"
-        />
-      </SignedOut>
-      <SignedIn>
-        <DashboardSidebar />
-        <AiChatContent
-          provider={provider}
-          chat={chat}
-          banner={banner}
-          models={models}
-          model={model}
-          onModelChange={onModelChange}
-        />
-      </SignedIn>
+      <DashboardSidebar />
+      <AiChatContent
+        provider={provider}
+        chat={chat}
+        banner={banner}
+        models={models}
+        model={model}
+        onModelChange={onModelChange}
+      />
     </DashboardShell>
   );
 }

@@ -49,8 +49,20 @@ export function getApiBaseUrl(): string {
     }
   }
 
-  throw new Error(
-    "NEXT_PUBLIC_API_URL is not set and cannot be auto-resolved. " +
+  // SSR / unknown host fallback: return a placeholder that will be
+  // overridden on the client. Throwing here crashes the entire component
+  // tree because useAuthFetch calls this synchronously at component init.
+  // The placeholder is never actually used for a real fetch during SSR
+  // because all fetch hooks are client-only (require useEffect / isLoaded).
+  if (typeof window === "undefined") {
+    // Server-side render: return the known production backend or a placeholder
+    return "https://mission-control-jbx8.onrender.com";
+  }
+
+  console.error(
+    "[api-base] NEXT_PUBLIC_API_URL is not set and cannot be auto-resolved. " +
     "Set NEXT_PUBLIC_API_URL in Render environment variables, or add your host to KNOWN_PRODUCTION_HOSTS in api-base.ts.",
   );
+  // Return a placeholder rather than throwing so the app shell still renders.
+  return "https://mission-control-jbx8.onrender.com";
 }

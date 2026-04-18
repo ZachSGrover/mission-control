@@ -258,9 +258,47 @@ function createWindow() {
   mainWindow.loadURL(NEXT_URL)
   mainWindow.once('ready-to-show', () => { mainWindow.show() })
 
+  // Intercept Clerk's dev-browser redirect to accounts.dev — Electron cannot
+  // complete the external Clerk auth flow. Redirect back to the local sign-in
+  // page instead so the user sees a real UI rather than a blank white window.
+  mainWindow.webContents.on('will-navigate', (event, url) => {
+    const parsed = new URL(url)
+    // Allow navigation within localhost
+    if (parsed.hostname === 'localhost' || parsed.hostname === '127.0.0.1') return
+    // Allow Clerk internal paths that come back to localhost
+    if (url.includes('redirect_url=http%3A%2F%2Flocalhost')) {
+      // Clerk is trying to send us to accounts.dev — block and go to /chat directly
+      console.log('[electron] Blocking Clerk external redirect to:', url)
+      event.preventDefault()
+      mainWindow.loadURL(NEXT_URL + '/chat')
+      return
+    }
+    // Any other external link opens in the system browser, not Electron
+    event.preventDefault()
+    shell.openExternal(url)
+  })
+
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
     shell.openExternal(url)
     return { action: 'deny' }
+  })
+
+  // Show a visible error if the renderer crashes instead of a blank window
+  mainWindow.webContents.on('render-process-gone', (event, details) => {
+    console.error('[electron] Renderer process gone:', details.reason)
+    mainWindow.webContents.loadURL(
+      `data:text/html,<body style="background:#0a0a0a;color:#f87171;font-family:system-ui;display:flex;align-items:center;justify-content:center;height:100vh;margin:0;flex-direction:column;gap:12px"><h2 style="margin:0">Mission Control renderer crashed</h2><p style="color:#888;font-size:13px">Reason: ${details.reason}</p><button onclick="location.reload()" style="background:#3b82f6;color:white;border:none;padding:8px 18px;border-radius:8px;cursor:pointer;font-size:13px">Reload</button></body>`
+    )
+  })
+
+  // Show a visible error if the page fails to load
+  mainWindow.webContents.on('did-fail-load', (event, errorCode, errorDesc, url) => {
+    if (errorCode === -3) return // ERR_ABORTED — navigation cancelled (normal for our redirect intercept)
+    console.error('[electron] Page failed to load:', errorCode, errorDesc, url)
+    mainWindow.webContents.loadURL(
+      `data:text/html,<body style="background:#0a0a0a;color:#f87171;font-family:system-ui;display:flex;align-items:center;justify-content:center;height:100vh;margin:0;flex-direction:column;gap:12px"><h2 style="margin:0">Failed to load Mission Control</h2><p style="color:#888;font-size:13px">${errorDesc}</p><p style="color:#555;font-size:12px">Tried: ${url}</p><button onclick="location.href='http://localhost:3000'" style="background:#3b82f6;color:white;border:none;padding:8px 18px;border-radius:8px;cursor:pointer;font-size:13px">Retry</button></body>`
+    )
+    mainWindow.show()
   })
 
   mainWindow.on('closed', () => { mainWindow = null })

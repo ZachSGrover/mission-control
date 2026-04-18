@@ -21,7 +21,7 @@ import { systemMonitor } from "@/lib/system-monitor";
 export function DashboardShell({ children }: { children: ReactNode }) {
   const router = useRouter();
   const pathname = usePathname();
-  const { isSignedIn, getToken } = useAuth();
+  const { isLoaded, isSignedIn, getToken } = useAuth();
 
   // Log sign-in once per session (ref prevents duplicate logs across re-renders)
   const hasLoggedSignIn = useRef(false);
@@ -172,8 +172,17 @@ export function DashboardShell({ children }: { children: ReactNode }) {
       ) : null}
 
       {/* ── Body: isolated scroll context ───────────────────────────────── */}
+      {/* Show children immediately once Clerk has resolved. While Clerk is   */}
+      {/* still initializing (isLoaded=false), show the skeleton sidebar so   */}
+      {/* there is never a blank/black body area after SSR hydration.         */}
       <div className="flex flex-1 overflow-hidden">
-        {children}
+        {!isLoaded ? (
+          /* Clerk initializing — show sidebar skeleton so the screen isn't blank */
+          <aside
+            className="flex-shrink-0 w-[220px] h-full"
+            style={{ background: "var(--surface)", borderRight: "1px solid var(--border)" }}
+          />
+        ) : children}
       </div>
     </div>
   );

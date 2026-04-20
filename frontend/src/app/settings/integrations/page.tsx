@@ -3,7 +3,7 @@
 export const dynamic = "force-dynamic";
 
 import { useCallback, useEffect, useState } from "react";
-import { Eye, EyeOff, ExternalLink, X } from "lucide-react";
+import { Eye, EyeOff, ExternalLink, RefreshCw, X } from "lucide-react";
 
 import { SignedIn, SignedOut } from "@/auth/clerk";
 import { getApiBaseUrl } from "@/lib/api-base";
@@ -14,6 +14,12 @@ import { DashboardShell } from "@/components/templates/DashboardShell";
 import { useAuthFetch } from "@/hooks/use-auth-fetch";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
+
+type BotStatus = {
+  connected: boolean;
+  bot_username: string | null;
+  detail: string;
+};
 
 type Integration = {
   name:        string;
@@ -51,6 +57,87 @@ async function saveCredential(name: string, key: string, fetchFn: FetchFn): Prom
 
 async function clearCredential(name: string, fetchFn: FetchFn): Promise<void> {
   await fetchFn(`${getApiBaseUrl()}/api/v1/integrations/${name}`, { method: "DELETE" });
+}
+
+async function fetchTelegramStatus(fetchFn: FetchFn): Promise<{ has_token: boolean; bot_username: string | null; source: string }> {
+  const res = await fetchFn(`${getApiBaseUrl()}/api/v1/telegram/config`);
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  return res.json() as Promise<{ has_token: boolean; bot_username: string | null; source: string }>;
+}
+
+async function fetchDiscordStatus(fetchFn: FetchFn): Promise<BotStatus> {
+  const res = await fetchFn(`${getApiBaseUrl()}/api/v1/discord/status`);
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  return res.json() as Promise<BotStatus>;
+}
+
+// ── Bot status card (read-only — Telegram / Discord) ─────────────────────────
+
+function BotStatusCard({
+  label,
+  icon,
+  connected,
+  username,
+  detail,
+  loading,
+  onRefresh,
+}: {
+  label: string;
+  icon: React.ReactNode;
+  connected: boolean | null;
+  username: string | null;
+  detail: string;
+  loading: boolean;
+  onRefresh: () => void;
+}) {
+  return (
+    <div className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-3">
+          <div className="flex items-center justify-center w-9 h-9 rounded-lg bg-slate-100 text-slate-600">
+            {icon}
+          </div>
+          <div>
+            <div className="flex items-center gap-2">
+              <h3 className="font-semibold text-slate-900">{label}</h3>
+              {connected === null || loading ? (
+                <span className="text-xs font-medium px-2 py-0.5 rounded-full bg-slate-100 text-slate-400">
+                  Checking…
+                </span>
+              ) : connected ? (
+                <span className="text-xs font-medium px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200">
+                  Connected
+                </span>
+              ) : (
+                <span className="text-xs font-medium px-2 py-0.5 rounded-full bg-red-50 text-red-600 border border-red-200">
+                  Disconnected
+                </span>
+              )}
+            </div>
+            {username && (
+              <p className="text-sm text-slate-500 mt-0.5">@{username}</p>
+            )}
+            {!username && detail && (
+              <p className="text-xs text-slate-400 mt-0.5">{detail}</p>
+            )}
+          </div>
+        </div>
+        <button
+          type="button"
+          onClick={onRefresh}
+          disabled={loading}
+          className="flex items-center gap-1 text-xs text-slate-400 hover:text-slate-600 transition-colors disabled:opacity-40"
+        >
+          <RefreshCw className={`h-3.5 w-3.5 ${loading ? "animate-spin" : ""}`} />
+          Refresh
+        </button>
+      </div>
+      <p className="mt-3 text-xs text-slate-400">
+        Managed via OpenClaw. Configure tokens in{" "}
+        <code className="text-slate-500">~/.openclaw/openclaw.json</code>.
+      </p>
+    </div>
+  );
 }
 
 // ── Integration card ──────────────────────────────────────────────────────────
@@ -187,13 +274,34 @@ function IntegrationsBody() {
   const [loading, setLoading]           = useState(true);
   const [error, setError]               = useState<string | null>(null);
 
+  const [tgStatus, setTgStatus]       = useState<{ connected: boolean; username: string | null } | null>(null);
+  const [tgLoading, setTgLoading]     = useState(true);
+  const [discordStatus, setDiscordStatus] = useState<BotStatus | null>(null);
+  const [discordLoading, setDiscordLoading] = useState(true);
+
+  const loadBotStatuses = useCallback(() => {
+    setTgLoading(true);
+    fetchTelegramStatus(fetchWithAuth)
+      .then((s) => setTgStatus({ connected: s.has_token, username: s.bot_username }))
+      .catch(() => setTgStatus({ connected: false, username: null }))
+      .finally(() => setTgLoading(false));
+
+    setDiscordLoading(true);
+    fetchDiscordStatus(fetchWithAuth)
+      .then(setDiscordStatus)
+      .catch(() => setDiscordStatus({ connected: false, bot_username: null, detail: "error" }))
+      .finally(() => setDiscordLoading(false));
+  }, [fetchWithAuth]);
+
   useEffect(() => {
     setLoading(true);
     fetchIntegrations(fetchWithAuth)
       .then(setIntegrations)
       .catch((err) => setError(err instanceof Error ? err.message : "Failed to load"))
       .finally(() => setLoading(false));
-  }, [fetchWithAuth]);
+
+    loadBotStatuses();
+  }, [fetchWithAuth, loadBotStatuses]);
 
   const handleUpdate = useCallback((updated: Integration) => {
     setIntegrations((prev) => prev.map((i) => (i.name === updated.name ? updated : i)));
@@ -208,16 +316,43 @@ function IntegrationsBody() {
         </p>
       </div>
 
-      {loading && <p className="text-sm text-slate-400">Loading…</p>}
-      {error && <p className="text-sm text-red-500">{error}</p>}
-      {!loading && !error && integrations.map((integration) => (
-        <IntegrationCard
-          key={integration.name}
-          integration={integration}
-          fetchFn={fetchWithAuth}
-          onUpdate={handleUpdate}
+      {/* ── Messaging bots (read-only status) ── */}
+      <div className="space-y-3">
+        <h2 className="text-sm font-semibold text-slate-700 uppercase tracking-wide">Messaging</h2>
+        <BotStatusCard
+          label="Telegram"
+          icon={<span className="text-base leading-none">✈️</span>}
+          connected={tgStatus?.connected ?? null}
+          username={tgStatus?.username ?? null}
+          detail=""
+          loading={tgLoading}
+          onRefresh={loadBotStatuses}
         />
-      ))}
+        <BotStatusCard
+          label="Discord"
+          icon={<span className="text-base leading-none">🎮</span>}
+          connected={discordStatus?.connected ?? null}
+          username={discordStatus?.bot_username ?? null}
+          detail={discordStatus?.detail ?? ""}
+          loading={discordLoading}
+          onRefresh={loadBotStatuses}
+        />
+      </div>
+
+      {/* ── API credential integrations ── */}
+      <div className="space-y-3">
+        <h2 className="text-sm font-semibold text-slate-700 uppercase tracking-wide">Automation Tools</h2>
+        {loading && <p className="text-sm text-slate-400">Loading…</p>}
+        {error && <p className="text-sm text-red-500">{error}</p>}
+        {!loading && !error && integrations.map((integration) => (
+          <IntegrationCard
+            key={integration.name}
+            integration={integration}
+            fetchFn={fetchWithAuth}
+            onUpdate={handleUpdate}
+          />
+        ))}
+      </div>
 
       <div className="rounded-xl border border-slate-200 bg-slate-50 p-5 space-y-3">
         <h2 className="text-sm font-semibold text-slate-700">How These Work</h2>

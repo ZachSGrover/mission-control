@@ -22,8 +22,7 @@ import {
   TriangleAlert,
   Users,
   Wrench,
-  // Zap, — ChatGPT (hidden)
-
+  Zap,
 } from "lucide-react";
 
 import { ApiError } from "@/api/mutator";
@@ -176,8 +175,8 @@ export function DashboardSidebar() {
         <NavSection label="Chat">
           <NavLink href="/chat"             label="Claude"      Icon={MessageSquare} exact />
           <NavLink href="/chat/claude-code" label="Claude Code" Icon={Code2} />
-          {/* Hidden — uncomment to re-enable:
-          <NavLink href="/chat/gpt"    label="ChatGPT" Icon={Zap} />
+          <NavLink href="/chat/gpt"         label="ChatGPT"     Icon={Zap} />
+          {/* Hidden until keys configured:
           <NavLink href="/chat/gemini" label="Gemini"  Icon={Sparkles} />
           <NavLink href="/chat/master" label="Master"  Icon={MessagesSquare} />
           */}

@@ -15,14 +15,15 @@ import {
   Layout,
   Loader2,
   MessageSquare,
-  MessagesSquare,
+  // MessagesSquare, — Master (hidden)
   Plug,
   Settings,
-  Sparkles,
+  // Sparkles, — Gemini (hidden)
   TriangleAlert,
   Users,
   Wrench,
-  Zap,
+  // Zap, — ChatGPT (hidden)
+
 } from "lucide-react";
 
 import { ApiError } from "@/api/mutator";
@@ -174,10 +175,12 @@ export function DashboardSidebar() {
         {/* Chat */}
         <NavSection label="Chat">
           <NavLink href="/chat"             label="Claude"      Icon={MessageSquare} exact />
-          <NavLink href="/chat/gpt"         label="ChatGPT"     Icon={Zap} />
-          <NavLink href="/chat/gemini"      label="Gemini"      Icon={Sparkles} />
           <NavLink href="/chat/claude-code" label="Claude Code" Icon={Code2} />
-          <NavLink href="/chat/master"      label="Master"      Icon={MessagesSquare} />
+          {/* Hidden — uncomment to re-enable:
+          <NavLink href="/chat/gpt"    label="ChatGPT" Icon={Zap} />
+          <NavLink href="/chat/gemini" label="Gemini"  Icon={Sparkles} />
+          <NavLink href="/chat/master" label="Master"  Icon={MessagesSquare} />
+          */}
         </NavSection>
 
         {/* Memory — with Projects, Memory, Calendar as sub-items */}

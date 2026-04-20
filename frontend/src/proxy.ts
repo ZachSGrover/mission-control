@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 
-// DEBUG MODE: middleware is disabled. All routes pass through unconditionally.
-// Auth is handled client-side only. Re-enable after confirming UI loads.
+// Middleware: all routes pass through unconditionally.
+// Clerk auth is handled client-side only (required for Electron desktop environment).
 export default function middleware() {
   return NextResponse.next();
 }

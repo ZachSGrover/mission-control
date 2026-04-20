@@ -298,7 +298,8 @@ export interface AiChatPageProps {
   onModelChange?: (model: string) => void;
 }
 
-// DEBUG: auth gates removed — always render sidebar + content
+// Always renders sidebar + content regardless of auth state.
+// Clerk redirect guards are incompatible with Electron (no external auth flow).
 export function AiChatPage({ provider, chat, banner, models, model, onModelChange }: AiChatPageProps) {
   return (
     <DashboardShell>

@@ -9,13 +9,13 @@ const SESSION_KEY =
   process.env.NEXT_PUBLIC_OPENCLAW_SESSION ?? "agent:main:missioncontrol";
 
 const CLAUDE_MODELS: ModelOption[] = [
-  { value: "claude-haiku-4-5",  label: "Haiku"   },
-  { value: "claude-sonnet-4-6", label: "Sonnet"  },
   { value: "claude-opus-4-6",   label: "Opus"    },
+  { value: "claude-sonnet-4-6", label: "Sonnet"  },
+  { value: "claude-haiku-4-5",  label: "Haiku"   },
 ];
 
 const STORAGE_KEY = "mc_model_claude";
-const DEFAULT_MODEL = CLAUDE_MODELS[0].value;
+const DEFAULT_MODEL = CLAUDE_MODELS[0].value; // Opus
 
 export default function ClaudeChatPage() {
   // Start with DEFAULT_MODEL so server and client initial renders match.

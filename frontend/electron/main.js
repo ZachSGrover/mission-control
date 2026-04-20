@@ -249,14 +249,22 @@ function createWindow() {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
       nodeIntegration: false,
-      sandbox: true,
+      sandbox: false,
     },
     title: 'Mission Control',
     show: false,
   })
 
-  mainWindow.loadURL(NEXT_URL)
-  mainWindow.once('ready-to-show', () => { mainWindow.show() })
+  mainWindow.loadURL(NEXT_URL + '/chat')
+
+  mainWindow.webContents.once('ready-to-show', () => {
+    mainWindow.show()
+  })
+
+  mainWindow.webContents.on('did-finish-load', () => {
+    const url = mainWindow.webContents.getURL()
+    console.log('[electron] did-finish-load:', url)
+  })
 
   // Intercept Clerk's dev-browser redirect to accounts.dev — Electron cannot
   // complete the external Clerk auth flow. Redirect back to the local sign-in

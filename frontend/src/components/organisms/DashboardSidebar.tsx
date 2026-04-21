@@ -15,6 +15,7 @@ import {
   Layout,
   Loader2,
   MessageSquare,
+  Network,
   // MessagesSquare, — Master (hidden)
   Plug,
   Settings,
@@ -193,6 +194,7 @@ export function DashboardSidebar() {
         <NavSection label="Automation">
           <NavLink href="/boards"    label="Boards"    Icon={Layout} />
           <NavLink href="/agents"    label="Agents"    Icon={Bot} />
+          <NavLink href="/control"   label="Control"   Icon={Network} />
           <NavLink href="/workflows" label="Workflows" Icon={GitBranch} />
           <NavLink href="/skills"    label="Skills"    Icon={Wrench} />
           <NavLink href="/activity"  label="Logs"      Icon={Activity} />

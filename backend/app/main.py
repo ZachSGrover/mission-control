@@ -20,6 +20,11 @@ from app.api.workflows import router as workflows_router
 from app.api.master import router as master_router
 from app.api.telegram import router as telegram_router
 from app.api.discord import router as discord_router
+from app.api.messaging import router as messaging_router
+from app.api.control_agents import router as control_agents_router
+from app.api.control_devices import router as control_devices_router
+from app.api.control_tasks import router as control_tasks_router
+from app.api.system_node import router as system_node_router
 from app.api.gemini_chat import router as gemini_chat_router
 from app.api.journal import router as journal_router
 from app.api.judge import router as judge_router
@@ -483,10 +488,33 @@ async def lifespan(_: FastAPI) -> AsyncIterator[None]:
         logger.info("app.lifecycle.rate_limit backend=redis")
     else:
         logger.info("app.lifecycle.rate_limit backend=memory")
+    from app.core import node_identity
+    logger.info("app.node.identity node_id=%s", node_identity.node_id())
+
+    # ── Resilience background tasks ──────────────────────────────────────────
+    import asyncio as _asyncio
+    from app.core import network_monitor as _netmon
+    from app.core import telegram_polling as _tgpoll
+
+    _bg_stop = _asyncio.Event()
+    _bg_tasks: list[_asyncio.Task] = [
+        _asyncio.create_task(_netmon.run_forever(_bg_stop), name="network_monitor"),
+        _asyncio.create_task(_tgpoll.run_supervisor(_bg_stop), name="telegram_polling_supervisor"),
+    ]
+    logger.info("app.lifecycle.background_tasks_started count=%d", len(_bg_tasks))
+
     logger.info("app.lifecycle.started")
     try:
         yield
     finally:
+        _bg_stop.set()
+        for t in _bg_tasks:
+            t.cancel()
+        for t in _bg_tasks:
+            try:
+                await t
+            except (BaseException,):     # swallow cancellations/cleanup errors
+                pass
         logger.info("app.lifecycle.stopped")
 
 
@@ -625,6 +653,11 @@ api_v1.include_router(workflows_router)
 api_v1.include_router(master_router)
 api_v1.include_router(telegram_router)
 api_v1.include_router(discord_router)
+api_v1.include_router(messaging_router)
+api_v1.include_router(control_agents_router)
+api_v1.include_router(control_devices_router)
+api_v1.include_router(control_tasks_router)
+api_v1.include_router(system_node_router)
 app.include_router(api_v1)
 
 add_pagination(app)

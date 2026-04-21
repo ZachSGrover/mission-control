@@ -20,14 +20,19 @@ import logging
 import os
 from typing import Any
 
+import time
+
 import httpx
 from fastapi import APIRouter, Depends, Header, HTTPException, Request, status
 from pydantic import BaseModel
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.api.mc_roles import require_owner
+from app.core import message_dedup, message_metrics, telegram_polling
+from app.core.ai_backend import ask_ai
 from app.core.auth import AuthContext, get_auth_context
 from app.core.secrets_store import delete_secret, get_secret_with_source, mask_key, set_secret
+from app.core.speed_layer import classify
 from app.db.session import get_session
 
 router = APIRouter(prefix="/telegram", tags=["telegram"])
@@ -261,11 +266,30 @@ async def telegram_webhook(
             detail="Invalid JSON payload.",
         )
 
+    # ── Record liveness signal + dedup ────────────────────────────────────────
+    telegram_polling.record_webhook_hit()
+    update_id = payload.get("update_id")
+    if update_id is not None and message_dedup.seen(str(update_id), "telegram.update_id"):
+        logger.info("telegram.webhook.dup update_id=%s", update_id)
+        return {"ok": "duplicate"}
+
     message: dict[str, Any] = payload.get("message") or payload.get("edited_message") or {}
     if not message:
         # Non-message update (e.g. inline query, callback) — acknowledge silently
         return {"ok": "accepted"}
 
+    result = await _process_incoming_message(message, session)
+    return {"ok": result}
+
+
+async def _process_incoming_message(
+    message: dict[str, Any],
+    session: AsyncSession,
+) -> str:
+    """
+    Shared processing path for webhook deliveries and polled updates.
+    Returns a short status label (processed|rejected|no_token|accepted).
+    """
     chat: dict[str, Any] = message.get("chat", {})
     chat_id: int = chat.get("id", 0)
     from_user: dict[str, Any] = message.get("from", {})
@@ -275,46 +299,95 @@ async def telegram_webhook(
     # ── Chat allowlist ────────────────────────────────────────────────────────
     if _ALLOWED_CHAT_IDS and chat_id not in _ALLOWED_CHAT_IDS:
         logger.warning(
-            "telegram.webhook.rejected reason=chat_not_allowed chat_id=%s username=%s",
+            "telegram.rejected reason=chat_not_allowed chat_id=%s username=%s",
             chat_id, username,
         )
-        return {"ok": "rejected"}
+        return "rejected"
 
-    if not text or not text.startswith("/"):
-        # Not a command — ignore silently (avoid replying to every message)
-        return {"ok": "accepted"}
+    if not text:
+        return "accepted"
 
-    logger.info(
-        "telegram.command.received chat_id=%s username=%s command=%r",
-        chat_id, username, text.split()[0],
-    )
+    # Defensive dedup on per-message id (covers webhook-polling overlap if bot
+    # has both active for a moment, or a polling retry after a transient error)
+    msg_id = message.get("message_id")
+    if msg_id is not None and chat_id:
+        if message_dedup.seen(f"{chat_id}:{msg_id}", "telegram.message_id"):
+            logger.info("telegram.dup message_id=%s chat_id=%s", msg_id, chat_id)
+            return "duplicate"
 
-    # ── Retrieve bot token ────────────────────────────────────────────────────
+    # ── Retrieve bot token (needed for every reply path) ──────────────────────
     token = await _get_bot_token(session)
     if not token:
-        logger.error("telegram.webhook.error reason=no_token_configured chat_id=%s", chat_id)
-        return {"ok": "no_token"}
+        logger.error("telegram.error reason=no_token_configured chat_id=%s", chat_id)
+        return "no_token"
 
-    # ── Dispatch command ──────────────────────────────────────────────────────
-    try:
-        response_text = await _handle_command(text, session)
-    except Exception as exc:
-        logger.error("telegram.command.error command=%r error=%s", text, exc)
-        response_text = f"An error occurred processing your command: {exc}"
+    start = time.perf_counter()
+    used_ai = False
+    reason = "command" if text.startswith("/") else "unclassified"
+
+    if text.startswith("/"):
+        # ── Slash command → existing dispatcher (unchanged) ───────────────────
+        logger.info(
+            "telegram.command.received chat_id=%s username=%s command=%r",
+            chat_id, username, text.split()[0],
+        )
+        try:
+            response_text = await _handle_command(text, session)
+        except Exception as exc:
+            logger.error("telegram.command.error command=%r error=%s", text, exc)
+            response_text = f"An error occurred processing your command: {exc}"
+    else:
+        # ── Speed layer: fast reply vs AI ─────────────────────────────────────
+        route = classify(text)
+        reason = route.reason
+        if route.use_ai:
+            used_ai = True
+            logger.info(
+                "telegram.speed_layer source=telegram path=ai reason=%s chat_id=%s",
+                route.reason, chat_id,
+            )
+            response_text, provider = await ask_ai(text, session)
+            logger.info("telegram.ai.replied provider=%s chars=%d", provider, len(response_text))
+        else:
+            response_text = route.fast_reply or "👍"
+            logger.info(
+                "telegram.speed_layer source=telegram path=fast reason=%s chat_id=%s",
+                route.reason, chat_id,
+            )
 
     # ── Send reply ────────────────────────────────────────────────────────────
     try:
         await _send_message(token, chat_id, response_text)
-        logger.info(
-            "telegram.command.replied chat_id=%s command=%r chars=%d",
-            chat_id, text.split()[0], len(response_text),
-        )
     except Exception as exc:
         logger.error(
             "telegram.send_message.error chat_id=%s error=%s", chat_id, exc
         )
 
-    return {"ok": "processed"}
+    elapsed_ms = (time.perf_counter() - start) * 1000.0
+    message_metrics.record(
+        source="telegram",
+        response_ms=elapsed_ms,
+        used_ai=used_ai,
+        reason=reason,
+    )
+    logger.info(
+        "telegram.response source=telegram ms=%.1f used_ai=%s reason=%s chars=%d",
+        elapsed_ms, used_ai, reason, len(response_text),
+    )
+    from app.core import node_identity
+    print(
+        f"[messaging] node={node_identity.node_id()} source=telegram "
+        f"ms={elapsed_ms:.1f} used_ai={used_ai} reason={reason}",
+        flush=True,
+    )
+    return "processed"
+
+
+async def dispatch_message_from_polling(message: dict[str, Any]) -> None:
+    """Entry point used by `telegram_polling._dispatch_update`."""
+    async for session in get_session():
+        await _process_incoming_message(message, session)
+        return
 
 
 @router.get("/config", response_model=TelegramConfigStatus)

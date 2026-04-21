@@ -1,0 +1,72 @@
+# Mission Control — Render deploy blueprint.
+#
+# Defines two services that share the Render Redis / Postgres add-ons:
+#
+#   mission-control-backend  (web service, already deployed — kept here so
+#                             git-tracked changes redeploy automatically)
+#   mission-control-worker   (background worker running queue_worker.run_worker;
+#                             drains the same Redis the backend enqueues into)
+#
+# The backend web service is already provisioned on Render with env vars
+# configured manually (CLERK_SECRET_KEY, OPENAI_API_KEY, TELEGRAM_BOT_TOKEN,
+# DISCORD_BOT_TOKEN, etc.).  Render's Blueprint UI can re-use existing
+# env groups; this file is intentionally minimal.
+
+services:
+  # ── Backend web service ─────────────────────────────────────────────────────
+  - type: web
+    name: mission-control-backend
+    env: python
+    plan: starter
+    rootDir: backend
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /health
+    autoDeploy: true
+    envVars:
+      - key: PYTHON_VERSION
+        value: "3.11.9"
+      - key: MC_AI_PROVIDER_ORDER
+        value: "openai,anthropic"
+      - key: MC_ENABLE_OPENCLAW_PROBE
+        value: "0"
+      # Secrets below are managed via Render dashboard — do not hard-code:
+      #   CLERK_SECRET_KEY, OPENAI_API_KEY, ANTHROPIC_API_KEY (optional),
+      #   TELEGRAM_BOT_TOKEN, TELEGRAM_WEBHOOK_SECRET, DISCORD_BOT_TOKEN,
+      #   DATABASE_URL, RQ_REDIS_URL, RATE_LIMIT_REDIS_URL
+
+  # ── Queue worker ───────────────────────────────────────────────────────────
+  - type: worker
+    name: mission-control-worker
+    env: python
+    plan: starter
+    rootDir: backend
+    buildCommand: pip install -r requirements.txt
+    startCommand: python -c "from app.services.queue_worker import run_worker; run_worker()"
+    autoDeploy: true
+    envVars:
+      - key: PYTHON_VERSION
+        value: "3.11.9"
+      - key: MC_AI_PROVIDER_ORDER
+        value: "openai,anthropic"
+      # Reads the same DATABASE_URL, RQ_REDIS_URL, etc. as the web service.
+      # Set via Render env group or manually in the worker's Environment tab.
+
+  # ── Discord gateway bridge ─────────────────────────────────────────────────
+  # Connects to Discord via discord.js and forwards each message to
+  # /api/v1/discord/message on the backend.  Small Node service, no state.
+  - type: worker
+    name: mission-control-discord-bridge
+    env: node
+    plan: starter
+    rootDir: discord-bridge
+    buildCommand: npm install
+    startCommand: node index.js
+    autoDeploy: true
+    envVars:
+      - key: NODE_VERSION
+        value: "22"
+      # Required secrets (set in Render dashboard):
+      #   DISCORD_BOT_TOKEN       — Clawdia 2 bot token
+      #   MC_BACKEND_URL          — e.g. https://mission-control-jbx8.onrender.com
+      #   MC_BACKEND_AUTH_TOKEN   — shared bearer matching backend LOCAL_AUTH_TOKEN

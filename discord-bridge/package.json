@@ -1,0 +1,17 @@
+{
+  "name": "mission-control-discord-bridge",
+  "version": "1.0.0",
+  "description": "Discord gateway → Mission Control backend forwarder. Listens with discord.js and POSTs each inbound message to /api/v1/discord/message. Stateless; reconnects handled by discord.js. Replay dedup lives server-side via message_id.",
+  "private": true,
+  "type": "module",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "dependencies": {
+    "discord.js": "^14.16.3"
+  }
+}

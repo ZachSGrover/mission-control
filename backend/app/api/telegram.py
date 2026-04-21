@@ -100,11 +100,23 @@ async def _get_bot_token(session: AsyncSession) -> str:
     return token
 
 
-async def _send_message(token: str, chat_id: int | str, text: str) -> None:
-    """Send a plain-text message via Telegram Bot API."""
+async def _send_message(
+    token: str,
+    chat_id: int | str,
+    text: str,
+    message_thread_id: int | None = None,
+) -> None:
+    """Send a plain-text message via Telegram Bot API.
+
+    If the incoming message came from a forum supergroup topic, pass its
+    `message_thread_id` so the reply lands in the same topic instead of General.
+    """
     url = _TG_API.format(token=token, method="sendMessage")
+    payload: dict[str, Any] = {"chat_id": chat_id, "text": text}
+    if message_thread_id is not None:
+        payload["message_thread_id"] = message_thread_id
     async with httpx.AsyncClient(timeout=15.0) as client:
-        resp = await client.post(url, json={"chat_id": chat_id, "text": text})
+        resp = await client.post(url, json=payload)
         resp.raise_for_status()
 
 
@@ -295,6 +307,9 @@ async def _process_incoming_message(
     from_user: dict[str, Any] = message.get("from", {})
     username: str = from_user.get("username", "") or str(from_user.get("id", "unknown"))
     text: str = message.get("text", "").strip()
+    # Forum supergroup topic threading: echo the reply into the same topic.
+    raw_thread = message.get("message_thread_id")
+    message_thread_id: int | None = int(raw_thread) if isinstance(raw_thread, (int, str)) and str(raw_thread).lstrip("-").isdigit() else None
 
     # ── Chat allowlist ────────────────────────────────────────────────────────
     if _ALLOWED_CHAT_IDS and chat_id not in _ALLOWED_CHAT_IDS:
@@ -357,7 +372,7 @@ async def _process_incoming_message(
 
     # ── Send reply ────────────────────────────────────────────────────────────
     try:
-        await _send_message(token, chat_id, response_text)
+        await _send_message(token, chat_id, response_text, message_thread_id=message_thread_id)
     except Exception as exc:
         logger.error(
             "telegram.send_message.error chat_id=%s error=%s", chat_id, exc

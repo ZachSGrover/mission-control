@@ -33,22 +33,22 @@ _lock = Lock()
 
 @dataclass
 class ExecutionRecord:
-    id:           str
-    agent_id:     str
-    agent_name:   str
-    source:       str                  # "telegram" | "discord" | "ui" | "task" | …
-    prompt:       str
-    reply:        str
-    provider:     str                  # "anthropic" | "openai" | "none"
-    status:       str                  # "ok" | "error" | "timeout"
-    error:        str | None
-    response_ms:  float
-    attempts:     int
+    id: str
+    agent_id: str
+    agent_name: str
+    source: str  # "telegram" | "discord" | "ui" | "task" | …
+    prompt: str
+    reply: str
+    provider: str  # "anthropic" | "openai" | "none"
+    status: str  # "ok" | "error" | "timeout"
+    error: str | None
+    response_ms: float
+    attempts: int
     correlation_id: str | None
-    tokens_in:    int | None
-    tokens_out:   int | None
-    timestamp:    float
-    node_id:      str = ""             # which Mission Control node handled it
+    tokens_in: int | None
+    tokens_out: int | None
+    timestamp: float
+    node_id: str = ""  # which Mission Control node handled it
 
 
 def _ensure_path() -> None:
@@ -85,6 +85,7 @@ def record(
     # Lazy import to avoid a hard cycle if node_identity is missing in tests.
     try:
         from app.core.node_identity import node_id as _nid
+
         node = _nid()
     except Exception:
         node = ""

@@ -19,12 +19,12 @@ _lock = RLock()
 
 @dataclass
 class Device:
-    device_id:    str
-    name:         str
+    device_id: str
+    name: str
     capabilities: list[str] = field(default_factory=list)
     current_task: str | None = None
-    last_seen:    float = 0.0
-    meta:         dict = field(default_factory=dict)
+    last_seen: float = 0.0
+    meta: dict = field(default_factory=dict)
 
 
 _devices: dict[str, Device] = {}
@@ -42,8 +42,16 @@ def record_heartbeat(
         dev = Device(
             device_id=device_id,
             name=name or device_id,
-            capabilities=capabilities if capabilities is not None else (existing.capabilities if existing else []),
-            current_task=current_task if current_task is not None else (existing.current_task if existing else None),
+            capabilities=(
+                capabilities
+                if capabilities is not None
+                else (existing.capabilities if existing else [])
+            ),
+            current_task=(
+                current_task
+                if current_task is not None
+                else (existing.current_task if existing else None)
+            ),
             last_seen=time.time(),
             meta=meta if meta is not None else (existing.meta if existing else {}),
         )

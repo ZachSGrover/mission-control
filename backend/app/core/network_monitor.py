@@ -27,18 +27,18 @@ _PROBE_HOST = os.getenv("MC_PROBE_HOST", "1.1.1.1")
 _PROBE_PORT = int(os.getenv("MC_PROBE_PORT", "53"))
 _PROBE_TIMEOUT_S = 3.0
 _PROBE_INTERVAL_S = 15.0
-_FAIL_THRESHOLD = 2           # require N consecutive failures before flipping to offline
+_FAIL_THRESHOLD = 2  # require N consecutive failures before flipping to offline
 
 
 @dataclass
 class NetworkSnapshot:
-    is_online:            bool | None
-    last_online_at:       float | None
-    last_offline_at:      float | None
+    is_online: bool | None
+    last_online_at: float | None
+    last_offline_at: float | None
     consecutive_failures: int
-    consecutive_successes:int
-    last_checked_at:      float | None
-    probe_target:         str
+    consecutive_successes: int
+    last_checked_at: float | None
+    probe_target: str
 
 
 _lock = RLock()
@@ -105,8 +105,11 @@ def mark_offline() -> None:
 
 async def run_forever(stop_event: asyncio.Event | None = None) -> None:
     """Long-running probe loop.  Started from the FastAPI lifespan hook."""
-    logger.info("network_monitor.start target=%s interval=%.0fs",
-                f"{_PROBE_HOST}:{_PROBE_PORT}", _PROBE_INTERVAL_S)
+    logger.info(
+        "network_monitor.start target=%s interval=%.0fs",
+        f"{_PROBE_HOST}:{_PROBE_PORT}",
+        _PROBE_INTERVAL_S,
+    )
     while True:
         if stop_event is not None and stop_event.is_set():
             logger.info("network_monitor.stop")

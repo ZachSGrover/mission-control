@@ -19,20 +19,20 @@ __all__ = ["classify", "fast_response_for", "Route"]
 # ── Greeting / small-talk table ───────────────────────────────────────────────
 
 _GREETINGS: dict[str, str] = {
-    "hi":       "Hey! 👋  I'm live.  Send a question or type a command to dig in.",
-    "hey":      "Hey! 👋  I'm listening — what's up?",
-    "hello":    "Hello!  Mission Control is online.  Ask me anything.",
-    "yo":       "Yo.  Ready when you are.",
-    "sup":      "Not much — operator standing by.",
-    "gm":       "Good morning ☀️",
-    "gn":       "Good night 🌙",
-    "thanks":   "Anytime.",
-    "thank you":"Anytime.",
-    "ty":       "👍",
-    "ok":       "👍",
-    "cool":     "👍",
-    "ping":     "pong",
-    "test":     "✅ receiving you",
+    "hi": "Hey! 👋  I'm live.  Send a question or type a command to dig in.",
+    "hey": "Hey! 👋  I'm listening — what's up?",
+    "hello": "Hello!  Mission Control is online.  Ask me anything.",
+    "yo": "Yo.  Ready when you are.",
+    "sup": "Not much — operator standing by.",
+    "gm": "Good morning ☀️",
+    "gn": "Good night 🌙",
+    "thanks": "Anytime.",
+    "thank you": "Anytime.",
+    "ty": "👍",
+    "ok": "👍",
+    "cool": "👍",
+    "ping": "pong",
+    "test": "✅ receiving you",
 }
 
 _GENERIC_FAST = "👍 got it — if you need a detailed answer, end with '?' or give me more context."
@@ -44,8 +44,8 @@ _WORD_SPLIT = re.compile(r"\s+")
 @dataclass(frozen=True)
 class Route:
     use_ai: bool
-    reason: str                 # "greeting" | "short" | "question" | "long" | "command"
-    fast_reply: str | None      # populated iff use_ai is False
+    reason: str  # "greeting" | "short" | "question" | "long" | "command"
+    fast_reply: str | None  # populated iff use_ai is False
 
 
 def _normalize(text: str) -> str:

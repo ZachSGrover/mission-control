@@ -69,18 +69,18 @@ def _build_judge_prompt(request: JudgeRequest) -> str:
         "3. Practical usefulness (actionable and concrete)\n"
         "4. Clarity (well-structured and concise)\n\n"
         "Respond with ONLY valid JSON matching this exact schema:\n"
-        '{\n'
+        "{\n"
         '  "best": "claude" | "chatgpt" | "gemini",\n'
         '  "reasoning": "<1-2 sentences explaining why this answer is best>",\n'
         '  "scores": {\n'
         '    "claude": <0-10>,\n'
         '    "chatgpt": <0-10>,\n'
         '    "gemini": <0-10>\n'
-        '  }\n'
-        '}\n\n'
-        'If a provider had no response, give it a score of 0.\n'
+        "  }\n"
+        "}\n\n"
+        "If a provider had no response, give it a score of 0.\n"
         'The "best" must be the provider with the highest score.\n'
-        'If scores are tied, prefer whichever response is more complete.'
+        "If scores are tied, prefer whichever response is more complete."
     )
 
     return "\n".join(lines)

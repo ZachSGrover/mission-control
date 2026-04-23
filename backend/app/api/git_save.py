@@ -29,8 +29,9 @@ REPO_ROOT = Path(__file__).resolve().parents[3]
 
 # ── Schemas ───────────────────────────────────────────────────────────────────
 
+
 class SaveResponse(BaseModel):
-    status: str          # "saved" | "no_changes" | "error"
+    status: str  # "saved" | "no_changes" | "error"
     message: str
     files_changed: int = 0
     commit_hash: str = ""
@@ -38,6 +39,7 @@ class SaveResponse(BaseModel):
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
+
 
 def _run(args: list[str], *, env: dict | None = None) -> tuple[int, str, str]:
     """Run a git command synchronously, return (returncode, stdout, stderr)."""
@@ -65,6 +67,7 @@ def _push_url(pat: str, username: str, repo: str) -> str:
 
 # ── Endpoint ──────────────────────────────────────────────────────────────────
 
+
 @router.post("/save", response_model=SaveResponse)
 async def git_save(
     _auth: AuthContext = AUTH_DEP,
@@ -72,9 +75,11 @@ async def git_save(
 ) -> SaveResponse:
     """Stage all safe changes, commit with timestamp, and push to origin/main."""
     # Resolve credentials: DB takes priority over .env
-    pat      = await get_secret(session, GITHUB_KEYS["github_pat"],      fallback=settings.github_pat)
-    username = await get_secret(session, GITHUB_KEYS["github_username"], fallback=settings.github_username)
-    repo     = await get_secret(session, GITHUB_KEYS["github_repo"],     fallback=settings.github_repo)
+    pat = await get_secret(session, GITHUB_KEYS["github_pat"], fallback=settings.github_pat)
+    username = await get_secret(
+        session, GITHUB_KEYS["github_username"], fallback=settings.github_username
+    )
+    repo = await get_secret(session, GITHUB_KEYS["github_repo"], fallback=settings.github_repo)
 
     loop = asyncio.get_event_loop()
     return await loop.run_in_executor(None, _do_save, pat.strip(), username.strip(), repo.strip())
@@ -117,8 +122,10 @@ def _do_save(pat: str, username: str, repo: str) -> SaveResponse:
 
         rc, commit_out, stderr = _git(
             "commit",
-            "-m", commit_msg,
-            "--author", "Zachary Grover <hq@digidle.com>",
+            "-m",
+            commit_msg,
+            "--author",
+            "Zachary Grover <hq@digidle.com>",
         )
         if rc != 0 and "nothing to commit" not in stderr and "nothing to commit" not in commit_out:
             logger.error("[git_save] git commit failed: %s", stderr)

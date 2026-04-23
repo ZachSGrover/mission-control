@@ -22,7 +22,7 @@ from app.core.secrets_store import delete_secret, get_secret_with_source, mask_k
 from app.db.session import get_session
 
 router = APIRouter(prefix="/integrations", tags=["integrations"])
-AUTH_DEP  = Depends(get_auth_context)
+AUTH_DEP = Depends(get_auth_context)
 OWNER_DEP = Depends(require_owner)
 SESSION_DEP = Depends(get_session)
 
@@ -30,37 +30,38 @@ SESSION_DEP = Depends(get_session)
 # Map public name → DB secret key.  Add new integrations here only.
 
 INTEGRATION_KEYS: dict[str, str] = {
-    "adspower":      "adspower_api_key",
+    "adspower": "adspower_api_key",
     "phantombuster": "phantombuster_api_key",
 }
 
 INTEGRATION_META: dict[str, dict[str, str]] = {
     "adspower": {
-        "label":       "AdsPower",
+        "label": "AdsPower",
         "description": "Anti-detect browser automation. API key from AdsPower profile → API.",
         "placeholder": "adspower-...",
-        "docs_url":    "https://www.adspower.com/api-docs",
+        "docs_url": "https://www.adspower.com/api-docs",
     },
     "phantombuster": {
-        "label":       "PhantomBuster",
+        "label": "PhantomBuster",
         "description": "Cloud automation phantoms for LinkedIn, scraping, lead gen.",
         "placeholder": "pb_...",
-        "docs_url":    "https://phantombuster.com/api",
+        "docs_url": "https://phantombuster.com/api",
     },
 }
 
 
 # ── Schemas ───────────────────────────────────────────────────────────────────
 
+
 class IntegrationStatus(BaseModel):
-    name:        str
-    label:       str
+    name: str
+    label: str
     description: str
     placeholder: str
-    docs_url:    str
-    configured:  bool
-    preview:     str | None = None
-    source:      str = "none"   # "db" | "none"
+    docs_url: str
+    configured: bool
+    preview: str | None = None
+    source: str = "none"  # "db" | "none"
 
 
 class SetCredentialRequest(BaseModel):
@@ -68,6 +69,7 @@ class SetCredentialRequest(BaseModel):
 
 
 # ── Endpoints ─────────────────────────────────────────────────────────────────
+
 
 @router.get("", response_model=list[IntegrationStatus])
 async def list_integrations(
@@ -80,16 +82,18 @@ async def list_integrations(
         value, source = await get_secret_with_source(session, db_key)
         configured = bool(value and value.strip())
         meta = INTEGRATION_META[name]
-        result.append(IntegrationStatus(
-            name=name,
-            label=meta["label"],
-            description=meta["description"],
-            placeholder=meta["placeholder"],
-            docs_url=meta["docs_url"],
-            configured=configured,
-            preview=mask_key(value) if configured else None,
-            source=source,
-        ))
+        result.append(
+            IntegrationStatus(
+                name=name,
+                label=meta["label"],
+                description=meta["description"],
+                placeholder=meta["placeholder"],
+                docs_url=meta["docs_url"],
+                configured=configured,
+                preview=mask_key(value) if configured else None,
+                source=source,
+            )
+        )
     return result
 
 

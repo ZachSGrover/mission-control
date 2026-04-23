@@ -46,28 +46,29 @@ logger = logging.getLogger(__name__)
 
 _DATA_DIR = Path(os.getenv("MC_DATA_DIR", str(Path.home() / ".mission-control")))
 _OFFSET_PATH = _DATA_DIR / "telegram_last_update_id"
-_WEBHOOK_STALE_S = 300.0       # 5 min without a webhook hit → try polling
+_WEBHOOK_STALE_S = 300.0  # 5 min without a webhook hit → try polling
 _CHECK_INTERVAL_S = 60.0
-_POLL_TIMEOUT_S = 25           # long-poll: server holds up to 25s
+_POLL_TIMEOUT_S = 25  # long-poll: server holds up to 25s
 _TG_API = "https://api.telegram.org/bot{token}/{method}"
 
 _lock = RLock()
 _last_webhook_hit: float | None = None
-_current_mode: str = "webhook"     # "webhook" | "polling" | "idle"
+_current_mode: str = "webhook"  # "webhook" | "polling" | "idle"
 _last_mode_change_at: float | None = None
 _polling_task: asyncio.Task | None = None
 
 
 @dataclass
 class TelegramModeSnapshot:
-    mode:                  str
-    last_webhook_hit_at:   float | None
-    last_mode_change_at:   float | None
-    last_update_id:        int | None
-    polling_active:        bool
+    mode: str
+    last_webhook_hit_at: float | None
+    last_mode_change_at: float | None
+    last_update_id: int | None
+    polling_active: bool
 
 
 # ── Persisted offset helpers ──────────────────────────────────────────────────
+
 
 def _load_offset() -> int:
     try:
@@ -88,6 +89,7 @@ def _save_offset(update_id: int) -> None:
 
 
 # ── Public API ────────────────────────────────────────────────────────────────
+
 
 def record_webhook_hit() -> None:
     global _last_webhook_hit, _current_mode, _last_mode_change_at
@@ -111,6 +113,7 @@ def mode_snapshot() -> TelegramModeSnapshot:
 
 
 # ── Polling loop ──────────────────────────────────────────────────────────────
+
 
 async def _get_bot_token_once() -> str:
     """Resolve the bot token from the DB / env (one lookup per call)."""
@@ -140,6 +143,7 @@ async def _dispatch_update(update: dict[str, Any]) -> None:
     # Re-use the webhook handler's core path by dispatching directly in-process.
     # Late import to avoid circular at module load.
     from app.api.telegram import dispatch_message_from_polling
+
     try:
         await dispatch_message_from_polling(message)
     except Exception as exc:
@@ -193,7 +197,7 @@ async def _polling_loop(token: str, stop_event: asyncio.Event) -> None:
     while not stop_event.is_set():
         try:
             await _poll_once(token)
-            backoff = 2.0                            # reset on success
+            backoff = 2.0  # reset on success
         except asyncio.CancelledError:
             break
         except Exception as exc:
@@ -239,7 +243,9 @@ async def run_supervisor(stop_event: asyncio.Event | None = None) -> None:
                 inner_stop = asyncio.Event()
                 _polling_task = asyncio.create_task(_polling_loop(token, inner_stop))
             elif not want_polling and task_alive:
-                logger.warning("telegram_polling.mode_change from=polling to=webhook (webhook healthy)")
+                logger.warning(
+                    "telegram_polling.mode_change from=polling to=webhook (webhook healthy)"
+                )
                 inner_stop.set()
                 with _lock:
                     _current_mode = "webhook"

@@ -55,25 +55,26 @@ OWNER_DEP = Depends(require_owner)
 MC_STATE_DIR = os.environ.get("MC_STATE_DIR", "/tmp/mc-system")
 os.makedirs(MC_STATE_DIR, exist_ok=True)
 
-STATE_FILE   = os.path.join(MC_STATE_DIR, "system.state")
-LOG_FILE     = os.path.join(MC_STATE_DIR, "cycle.log")
+STATE_FILE = os.path.join(MC_STATE_DIR, "system.state")
+LOG_FILE = os.path.join(MC_STATE_DIR, "cycle.log")
 JOURNAL_FILE = os.path.join(MC_STATE_DIR, "journal.log")
-PID_FILE     = os.path.join(MC_STATE_DIR, "master.pid")
+PID_FILE = os.path.join(MC_STATE_DIR, "master.pid")
 MANUAL_FLAGS = os.path.join(MC_STATE_DIR, "manual-flags.log")
 
 MAX_FIX_ATTEMPTS = 3
-CYCLE_INTERVAL   = int(os.environ.get("CYCLE_INTERVAL", "60"))
+CYCLE_INTERVAL = int(os.environ.get("CYCLE_INTERVAL", "60"))
 
 # In-process loop state
 _loop_task: asyncio.Task[None] | None = None
-_cycle_count    = 0
-_fix_attempts   = 0
-_total_errors   = 0
-_total_fixes    = 0
-_total_deploys  = 0
+_cycle_count = 0
+_fix_attempts = 0
+_total_errors = 0
+_total_fixes = 0
+_total_deploys = 0
 
 
 # ── State helpers ─────────────────────────────────────────────────────────────
+
 
 def _get_state() -> str:
     try:
@@ -89,12 +90,14 @@ def _set_state(state: str) -> None:
 
 
 def _log_event(action: str, result: str, detail: str = "") -> None:
-    record = json.dumps({
-        "ts":     datetime.now(timezone.utc).isoformat(),
-        "action": action,
-        "result": result,
-        "detail": detail,
-    })
+    record = json.dumps(
+        {
+            "ts": datetime.now(timezone.utc).isoformat(),
+            "action": action,
+            "result": result,
+            "detail": detail,
+        }
+    )
     try:
         with open(LOG_FILE, "a") as f:
             f.write(record + "\n")
@@ -104,12 +107,14 @@ def _log_event(action: str, result: str, detail: str = "") -> None:
 
 
 def _log_journal(cycle: int, headline: str, summary: str) -> None:
-    record = json.dumps({
-        "ts":       datetime.now(timezone.utc).isoformat(),
-        "cycle":    cycle,
-        "headline": headline,
-        "summary":  summary,
-    })
+    record = json.dumps(
+        {
+            "ts": datetime.now(timezone.utc).isoformat(),
+            "cycle": cycle,
+            "headline": headline,
+            "summary": summary,
+        }
+    )
     try:
         with open(JOURNAL_FILE, "a") as f:
             f.write(record + "\n")
@@ -155,7 +160,7 @@ AUTO_FIXABLE = {"fix:cors", "fix:redeploy", "fix:backend_error", "fix:vercel_red
 async def _apply_fixes(suggestions: list[str]) -> dict[str, Any]:
     """Apply known-automatable fixes. Returns {applied, failed}."""
     applied: list[str] = []
-    failed:  list[str] = []
+    failed: list[str] = []
 
     for fix in suggestions:
         if fix not in AUTO_FIXABLE:
@@ -189,23 +194,24 @@ async def _apply_fixes(suggestions: list[str]) -> dict[str, Any]:
 
 # ── One control cycle ─────────────────────────────────────────────────────────
 
+
 async def _run_cycle() -> dict[str, Any]:
     global _cycle_count, _fix_attempts, _total_errors, _total_fixes, _total_deploys
     _cycle_count += 1
     cycle_id = _cycle_count
 
     result: dict[str, Any] = {
-        "cycle":    cycle_id,
-        "ts":       datetime.now(timezone.utc).isoformat(),
-        "health":   "unknown",
-        "action":   "none",
-        "fixed":    [],
+        "cycle": cycle_id,
+        "ts": datetime.now(timezone.utc).isoformat(),
+        "health": "unknown",
+        "action": "none",
+        "fixed": [],
         "deployed": False,
     }
 
     # 1. Health check
     report = await run_health_check()
-    result["health"]     = report.overall
+    result["health"] = report.overall
     result["fail_count"] = report.fail_count
 
     _log_event("health.check", report.overall, f"fail={report.fail_count} cycle={cycle_id}")
@@ -219,6 +225,7 @@ async def _run_cycle() -> dict[str, Any]:
 
     # 2. Error detection
     from app.api.workflows import ErrorReport
+
     errors: list[str] = []
     suggestions: list[str] = []
     for check in report.checks:
@@ -226,7 +233,7 @@ async def _run_cycle() -> dict[str, Any]:
             errors.append(f"{check.name}: {check.detail}")
 
     fix_map = {
-        "fix:cors":     ["cors.settings_preflight", "cors.roles_preflight"],
+        "fix:cors": ["cors.settings_preflight", "cors.roles_preflight"],
         "fix:backend_error": ["backend.health", "backend.readyz"],
         "fix:redeploy": ["backend.health"],
     }
@@ -296,6 +303,7 @@ async def _run_cycle() -> dict[str, Any]:
 
 # ── Background loop ───────────────────────────────────────────────────────────
 
+
 async def _control_loop() -> None:
     _log_event("master.start", "ok", f"interval={CYCLE_INTERVAL}s")
     _set_state("running")
@@ -333,6 +341,7 @@ async def _control_loop() -> None:
 
 
 # ── Schemas ───────────────────────────────────────────────────────────────────
+
 
 class MasterControlResponse(BaseModel):
     ok: bool
@@ -382,6 +391,7 @@ class CycleRequest(BaseModel):
 
 
 # ── Endpoints ─────────────────────────────────────────────────────────────────
+
 
 @router.post("/workflows/master/start", response_model=MasterControlResponse)
 async def start_master(_role: str = OWNER_DEP) -> MasterControlResponse:

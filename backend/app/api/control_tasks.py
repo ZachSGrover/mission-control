@@ -26,19 +26,19 @@ AUTH_DEP = Depends(get_auth_context)
 
 
 class TaskOut(BaseModel):
-    id:          str
-    kind:        str
-    payload:     dict[str, Any]
-    status:      str
-    agent_id:    str | None
-    device_id:   str | None
-    result:      Any
-    error:       str | None
-    created_at:  float
-    started_at:  float | None
+    id: str
+    kind: str
+    payload: dict[str, Any]
+    status: str
+    agent_id: str | None
+    device_id: str | None
+    result: Any
+    error: str | None
+    created_at: float
+    started_at: float | None
     finished_at: float | None
-    tags:        list[str]
-    attempts:    int = 0
+    tags: list[str]
+    attempts: int = 0
 
 
 def _to_out(task: task_queue.Task) -> TaskOut:
@@ -46,21 +46,21 @@ def _to_out(task: task_queue.Task) -> TaskOut:
 
 
 class EnqueueRequest(BaseModel):
-    kind:     str = Field(..., min_length=1, max_length=80)
-    payload:  dict[str, Any] = {}
+    kind: str = Field(..., min_length=1, max_length=80)
+    payload: dict[str, Any] = {}
     agent_id: str | None = None
-    tags:     list[str] = []
+    tags: list[str] = []
 
 
 class ClaimRequest(BaseModel):
     device_id: str = Field(..., min_length=1, max_length=80)
-    kinds:     list[str] | None = None
+    kinds: list[str] | None = None
 
 
 class ResultRequest(BaseModel):
     status: str = Field(..., pattern="^(done|failed|cancelled)$")
     result: Any = None
-    error:  str | None = None
+    error: str | None = None
 
 
 @router.post("", response_model=TaskOut)
@@ -94,7 +94,9 @@ async def claim(body: ClaimRequest, _: AuthContext = AUTH_DEP) -> dict[str, Any]
         return {"claimed": False}
     logger.info(
         "control.task.claimed id=%s kind=%s device=%s",
-        task.id, task.kind, body.device_id,
+        task.id,
+        task.kind,
+        body.device_id,
     )
     return {"claimed": True, "task": _to_out(task).model_dump()}
 
@@ -110,17 +112,20 @@ async def post_result(
     )
     if not task:
         raise HTTPException(status_code=404, detail="Task not found")
-    logger.info("control.task.result id=%s status=%s attempt=%d", task.id, task.status, task.attempts)
+    logger.info(
+        "control.task.result id=%s status=%s attempt=%d", task.id, task.status, task.attempts
+    )
     return _to_out(task)
 
 
 # ── Observability ────────────────────────────────────────────────────────────
 
+
 class QueueStats(BaseModel):
-    queue_depth:    int
+    queue_depth: int
     inflight_count: int
-    backend:        str                # "redis" | "memory"
-    node_id:        str
+    backend: str  # "redis" | "memory"
+    node_id: str
 
 
 @router.get("/_/stats", response_model=QueueStats)
@@ -132,12 +137,15 @@ async def queue_stats(_: AuthContext = AUTH_DEP) -> QueueStats:
     # Peek by querying a lightweight operation; if it succeeds, redis is live.
     try:
         import redis
+
         from app.core.config import settings
+
         redis.Redis.from_url(settings.rq_redis_url).ping()
         backend = "redis"
     except Exception:
         backend = "memory"
     from app.core import node_identity
+
     return QueueStats(
         queue_depth=task_queue.queue_depth(),
         inflight_count=task_queue.inflight_count(),

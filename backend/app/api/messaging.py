@@ -30,16 +30,16 @@ SESSION_DEP = Depends(get_session)
 
 
 class RouteMessageRequest(BaseModel):
-    source:  Literal["telegram", "discord", "other"] = "other"
-    text:    str = Field(..., description="The raw inbound user message.")
+    source: Literal["telegram", "discord", "other"] = "other"
+    text: str = Field(..., description="The raw inbound user message.")
 
 
 class RouteMessageResponse(BaseModel):
-    reply:         str
-    used_ai:       bool
-    reason:        str
-    response_ms:   float
-    provider:      str = "none"
+    reply: str
+    used_ai: bool
+    reason: str
+    response_ms: float
+    provider: str = "none"
 
 
 @router.post("/route", response_model=RouteMessageResponse)
@@ -69,7 +69,11 @@ async def route_message(
     )
     logger.info(
         "messaging.routed source=%s reason=%s used_ai=%s ms=%.1f provider=%s",
-        body.source, route.reason, route.use_ai, elapsed_ms, provider,
+        body.source,
+        route.reason,
+        route.use_ai,
+        elapsed_ms,
+        provider,
     )
 
     return RouteMessageResponse(
@@ -82,15 +86,15 @@ async def route_message(
 
 
 class MetricsResponse(BaseModel):
-    total_count:         int
-    avg_ms_last_10:      float | None
-    telegram_avg_ms:     float | None
-    telegram_last_at:    float | None
-    telegram_count:      int
-    discord_avg_ms:      float | None
-    discord_last_at:     float | None
-    discord_count:       int
-    ai_call_ratio_pct:   float
+    total_count: int
+    avg_ms_last_10: float | None
+    telegram_avg_ms: float | None
+    telegram_last_at: float | None
+    telegram_count: int
+    discord_avg_ms: float | None
+    discord_last_at: float | None
+    discord_count: int
+    ai_call_ratio_pct: float
 
 
 @router.get("/metrics", response_model=MetricsResponse)
@@ -100,7 +104,9 @@ async def get_metrics(_: AuthContext = AUTH_DEP) -> MetricsResponse:
     return MetricsResponse(
         total_count=snap.total_count,
         avg_ms_last_10=round(snap.avg_ms_last_10, 2) if snap.avg_ms_last_10 is not None else None,
-        telegram_avg_ms=round(snap.telegram_avg_ms, 2) if snap.telegram_avg_ms is not None else None,
+        telegram_avg_ms=(
+            round(snap.telegram_avg_ms, 2) if snap.telegram_avg_ms is not None else None
+        ),
         telegram_last_at=snap.telegram_last_at,
         telegram_count=snap.telegram_count,
         discord_avg_ms=round(snap.discord_avg_ms, 2) if snap.discord_avg_ms is not None else None,

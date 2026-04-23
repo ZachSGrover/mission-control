@@ -77,9 +77,7 @@ async def stream_chat(
                 system_instruction=system_instruction["parts"][0]["text"]
             )
         try:
-            async for chunk in await client.aio.models.generate_content_stream(
-                **generate_kwargs
-            ):
+            async for chunk in await client.aio.models.generate_content_stream(**generate_kwargs):
                 text = chunk.text
                 if text:
                     yield f"data: {json.dumps({'delta': text})}\n\n"

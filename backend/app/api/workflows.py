@@ -58,6 +58,7 @@ def _get_urls() -> tuple[str, str]:
 
     return backend, frontend
 
+
 # Simple in-memory cache for last health status
 _last_health: dict[str, Any] = {}
 _last_health_ts: float = 0.0
@@ -66,14 +67,15 @@ HEALTH_CACHE_TTL = 30  # seconds
 
 # ── Schemas ───────────────────────────────────────────────────────────────────
 
+
 class CheckResult(BaseModel):
     name: str
-    status: str       # "pass" | "fail" | "warn"
+    status: str  # "pass" | "fail" | "warn"
     detail: str = ""
 
 
 class HealthReport(BaseModel):
-    overall: str      # "healthy" | "degraded" | "down"
+    overall: str  # "healthy" | "degraded" | "down"
     pass_count: int
     fail_count: int
     checks: list[CheckResult]
@@ -88,18 +90,19 @@ class DeployRequest(BaseModel):
 class DeployResponse(BaseModel):
     triggered: bool
     deploy_id: str = ""
-    method: str       # "render_api" | "not_configured"
+    method: str  # "render_api" | "not_configured"
     message: str = ""
 
 
 class ErrorReport(BaseModel):
-    status: str       # "clean" | "errors_detected"
+    status: str  # "clean" | "errors_detected"
     errors: list[str]
     warnings: list[str]
     fix_suggestions: list[str]
 
 
 # ── Health check logic ────────────────────────────────────────────────────────
+
 
 async def _check(
     client: httpx.AsyncClient,
@@ -142,18 +145,41 @@ async def run_health_check() -> HealthReport:
     async with httpx.AsyncClient(follow_redirects=True) as client:
         tasks = [
             # Backend
-            _check(client, "backend.health",        f"{backend_url}/health",                  expected_status=200),
-            _check(client, "backend.readyz",         f"{backend_url}/readyz",                  expected_status=200),
+            _check(client, "backend.health", f"{backend_url}/health", expected_status=200),
+            _check(client, "backend.readyz", f"{backend_url}/readyz", expected_status=200),
             # CORS
-            _check(client, "cors.settings",          f"{backend_url}/api/v1/settings/api-keys", "OPTIONS", frontend_url, 200),
-            _check(client, "cors.roles_me",           f"{backend_url}/api/v1/roles/me",          "OPTIONS", frontend_url, 200),
+            _check(
+                client,
+                "cors.settings",
+                f"{backend_url}/api/v1/settings/api-keys",
+                "OPTIONS",
+                frontend_url,
+                200,
+            ),
+            _check(
+                client,
+                "cors.roles_me",
+                f"{backend_url}/api/v1/roles/me",
+                "OPTIONS",
+                frontend_url,
+                200,
+            ),
             # Auth (expect 401 without token)
-            _check(client, "auth.settings",           f"{backend_url}/api/v1/settings/api-keys", expected_status=401),
-            _check(client, "auth.roles_me",           f"{backend_url}/api/v1/roles/me",          expected_status=401),
-            _check(client, "auth.openai",             f"{backend_url}/api/v1/openai/status",     expected_status=401),
-            _check(client, "auth.gemini",             f"{backend_url}/api/v1/gemini/status",     expected_status=401),
+            _check(
+                client,
+                "auth.settings",
+                f"{backend_url}/api/v1/settings/api-keys",
+                expected_status=401,
+            ),
+            _check(client, "auth.roles_me", f"{backend_url}/api/v1/roles/me", expected_status=401),
+            _check(
+                client, "auth.openai", f"{backend_url}/api/v1/openai/status", expected_status=401
+            ),
+            _check(
+                client, "auth.gemini", f"{backend_url}/api/v1/gemini/status", expected_status=401
+            ),
             # Frontend
-            _check(client, "frontend.root",           frontend_url,                              expected_status=200),
+            _check(client, "frontend.root", frontend_url, expected_status=200),
         ]
         results = await asyncio.gather(*tasks, return_exceptions=True)
 
@@ -164,7 +190,7 @@ async def run_health_check() -> HealthReport:
             checks.append(CheckResult(name="unknown", status="fail", detail=str(r)))
 
     passes = sum(1 for c in checks if c.status == "pass")
-    fails  = sum(1 for c in checks if c.status == "fail")
+    fails = sum(1 for c in checks if c.status == "fail")
     overall = "healthy" if fails == 0 else ("down" if passes == 0 else "degraded")
 
     return HealthReport(
@@ -178,6 +204,7 @@ async def run_health_check() -> HealthReport:
 
 # ── Endpoints ─────────────────────────────────────────────────────────────────
 
+
 @router.post("/health-check", response_model=HealthReport)
 async def trigger_health_check(_role: str = OWNER_DEP) -> HealthReport:
     """Run a full system health check and return a structured report."""
@@ -190,7 +217,9 @@ async def trigger_health_check(_role: str = OWNER_DEP) -> HealthReport:
 
     logger.info(
         "workflows.health_check overall=%s pass=%d fail=%d",
-        report.overall, report.pass_count, report.fail_count,
+        report.overall,
+        report.pass_count,
+        report.fail_count,
     )
     return report
 
@@ -256,9 +285,9 @@ async def trigger_error_detect(_role: str = OWNER_DEP) -> ErrorReport:
 
     # Map errors → fix suggestions
     fix_map = {
-        "cors":     ["cors.settings", "cors.roles_me"],
-        "auth":     ["auth.settings", "auth.roles_me", "auth.openai"],
-        "backend":  ["backend.health", "backend.readyz"],
+        "cors": ["cors.settings", "cors.roles_me"],
+        "auth": ["auth.settings", "auth.roles_me", "auth.openai"],
+        "backend": ["backend.health", "backend.readyz"],
         "frontend": ["frontend.root"],
     }
     suggestions: set[str] = set()
@@ -272,7 +301,9 @@ async def trigger_error_detect(_role: str = OWNER_DEP) -> ErrorReport:
 
     logger.info(
         "workflows.error_detect errors=%d warnings=%d suggestions=%s",
-        len(errors), len(warnings), list(suggestions),
+        len(errors),
+        len(warnings),
+        list(suggestions),
     )
 
     return ErrorReport(

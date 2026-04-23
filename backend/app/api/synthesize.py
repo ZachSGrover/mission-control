@@ -103,11 +103,7 @@ async def generate_synthesis(
 
     if response_count == 1:
         # Return the single available response as-is
-        single = (
-            request.responses.claude
-            or request.responses.chatgpt
-            or request.responses.gemini
-        )
+        single = request.responses.claude or request.responses.chatgpt or request.responses.gemini
         return SynthesisResult(synthesis=single.strip(), model_used="passthrough")
 
     prompt = _build_synthesis_prompt(request)
@@ -117,7 +113,10 @@ async def generate_synthesis(
 
     anthropic_key = await get_api_key("anthropic", session, settings.anthropic_api_key)
     if anthropic_key.strip():
-        logger.info("[synthesize] anthropic key present — using Claude (%s)", settings.anthropic_synthesis_model)
+        logger.info(
+            "[synthesize] anthropic key present — using Claude (%s)",
+            settings.anthropic_synthesis_model,
+        )
         return await _synthesize_with_anthropic(anthropic_key.strip(), prompt)
 
     logger.info("[synthesize] no anthropic key — falling back to OpenAI GPT-4o")

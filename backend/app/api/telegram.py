@@ -18,9 +18,8 @@ from __future__ import annotations
 
 import logging
 import os
-from typing import Any
-
 import time
+from typing import Any
 
 import httpx
 from fastapi import APIRouter, Depends, Header, HTTPException, Request, status
@@ -75,6 +74,7 @@ _TG_API = "https://api.telegram.org/bot{token}/{method}"
 
 # ── Schemas ───────────────────────────────────────────────────────────────────
 
+
 class TelegramConfigStatus(BaseModel):
     has_token: bool
     bot_username: str | None = None
@@ -91,6 +91,7 @@ class TestMessageRequest(BaseModel):
 
 
 # ── Internal helpers ──────────────────────────────────────────────────────────
+
 
 async def _get_bot_token(session: AsyncSession) -> str:
     """Return the active bot token. DB value overrides env fallback."""
@@ -131,6 +132,7 @@ async def _get_me(token: str) -> dict[str, Any]:
 
 # ── Command handlers ──────────────────────────────────────────────────────────
 
+
 async def _handle_command(command: str, session: AsyncSession) -> str:
     """Parse a Telegram bot command and return a plain-text response."""
     cmd = command.strip().lower().split()[0]
@@ -153,6 +155,7 @@ async def _handle_command(command: str, session: AsyncSession) -> str:
     if cmd in ("/status", "/health"):
         try:
             from app.api.workflows import run_health_check
+
             report = await run_health_check()
             detail_lines = ""
             if cmd == "/health":
@@ -163,8 +166,7 @@ async def _handle_command(command: str, session: AsyncSession) -> str:
             return (
                 f"System Status: {report.overall.upper()}\n"
                 f"Checks passed: {report.pass_count}/{report.pass_count + report.fail_count}\n"
-                f"Timestamp: {report.timestamp}"
-                + detail_lines
+                f"Timestamp: {report.timestamp}" + detail_lines
             )
         except Exception as exc:
             logger.error("telegram.command.status error: %s", exc)
@@ -177,6 +179,7 @@ async def _handle_command(command: str, session: AsyncSession) -> str:
     if cmd == "/agents":
         try:
             from app.core.config import settings
+
             async with httpx.AsyncClient(timeout=10.0) as client:
                 resp = await client.get(
                     f"{settings.base_url}/api/v1/agents",
@@ -188,10 +191,7 @@ async def _handle_command(command: str, session: AsyncSession) -> str:
                 items = data.get("items", data) if isinstance(data, dict) else data
                 if isinstance(items, list):
                     count = len(items)
-                    names = [
-                        a.get("name") or a.get("id", "unnamed")
-                        for a in items[:10]
-                    ]
+                    names = [a.get("name") or a.get("id", "unnamed") for a in items[:10]]
                     name_list = "\n".join(f"  • {n}" for n in names)
                     suffix = f"\n  … and {count - 10} more" if count > 10 else ""
                     return f"Agents ({count}):\n{name_list}{suffix}"
@@ -233,13 +233,11 @@ async def _handle_command(command: str, session: AsyncSession) -> str:
             logger.error("telegram.command.deploy error: %s", exc)
             return f"Deploy failed: {exc}"
 
-    return (
-        f"Unknown command: {command.split()[0]}\n"
-        "Send /help for a list of available commands."
-    )
+    return f"Unknown command: {command.split()[0]}\n" "Send /help for a list of available commands."
 
 
 # ── Endpoints ─────────────────────────────────────────────────────────────────
+
 
 @router.post(
     "/webhook",
@@ -253,15 +251,16 @@ async def _handle_command(command: str, session: AsyncSession) -> str:
 async def telegram_webhook(
     request: Request,
     session: AsyncSession = SESSION_DEP,
-    x_telegram_bot_api_secret_token: str | None = Header(default=None, alias="X-Telegram-Bot-Api-Secret-Token"),
+    x_telegram_bot_api_secret_token: str | None = Header(
+        default=None, alias="X-Telegram-Bot-Api-Secret-Token"
+    ),
 ) -> dict[str, str]:
     """Process incoming Telegram bot updates."""
     # ── Secret-token validation ───────────────────────────────────────────────
     if _WEBHOOK_SECRET:
         if x_telegram_bot_api_secret_token != _WEBHOOK_SECRET:
             logger.warning(
-                "telegram.webhook.rejected reason=invalid_secret "
-                "ip=%s",
+                "telegram.webhook.rejected reason=invalid_secret " "ip=%s",
                 request.client.host if request.client else "unknown",
             )
             raise HTTPException(
@@ -309,13 +308,18 @@ async def _process_incoming_message(
     text: str = message.get("text", "").strip()
     # Forum supergroup topic threading: echo the reply into the same topic.
     raw_thread = message.get("message_thread_id")
-    message_thread_id: int | None = int(raw_thread) if isinstance(raw_thread, (int, str)) and str(raw_thread).lstrip("-").isdigit() else None
+    message_thread_id: int | None = (
+        int(raw_thread)
+        if isinstance(raw_thread, (int, str)) and str(raw_thread).lstrip("-").isdigit()
+        else None
+    )
 
     # ── Chat allowlist ────────────────────────────────────────────────────────
     if _ALLOWED_CHAT_IDS and chat_id not in _ALLOWED_CHAT_IDS:
         logger.warning(
             "telegram.rejected reason=chat_not_allowed chat_id=%s username=%s",
-            chat_id, username,
+            chat_id,
+            username,
         )
         return "rejected"
 
@@ -344,7 +348,9 @@ async def _process_incoming_message(
         # ── Slash command → existing dispatcher (unchanged) ───────────────────
         logger.info(
             "telegram.command.received chat_id=%s username=%s command=%r",
-            chat_id, username, text.split()[0],
+            chat_id,
+            username,
+            text.split()[0],
         )
         try:
             response_text = await _handle_command(text, session)
@@ -359,7 +365,8 @@ async def _process_incoming_message(
             used_ai = True
             logger.info(
                 "telegram.speed_layer source=telegram path=ai reason=%s chat_id=%s",
-                route.reason, chat_id,
+                route.reason,
+                chat_id,
             )
             response_text, provider = await ask_ai(text, session)
             logger.info("telegram.ai.replied provider=%s chars=%d", provider, len(response_text))
@@ -367,16 +374,15 @@ async def _process_incoming_message(
             response_text = route.fast_reply or "👍"
             logger.info(
                 "telegram.speed_layer source=telegram path=fast reason=%s chat_id=%s",
-                route.reason, chat_id,
+                route.reason,
+                chat_id,
             )
 
     # ── Send reply ────────────────────────────────────────────────────────────
     try:
         await _send_message(token, chat_id, response_text, message_thread_id=message_thread_id)
     except Exception as exc:
-        logger.error(
-            "telegram.send_message.error chat_id=%s error=%s", chat_id, exc
-        )
+        logger.error("telegram.send_message.error chat_id=%s error=%s", chat_id, exc)
 
     elapsed_ms = (time.perf_counter() - start) * 1000.0
     message_metrics.record(
@@ -387,9 +393,13 @@ async def _process_incoming_message(
     )
     logger.info(
         "telegram.response source=telegram ms=%.1f used_ai=%s reason=%s chars=%d",
-        elapsed_ms, used_ai, reason, len(response_text),
+        elapsed_ms,
+        used_ai,
+        reason,
+        len(response_text),
     )
     from app.core import node_identity
+
     print(
         f"[messaging] node={node_identity.node_id()} source=telegram "
         f"ms={elapsed_ms:.1f} used_ai={used_ai} reason={reason}",

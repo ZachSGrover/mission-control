@@ -21,7 +21,7 @@ __all__ = ["get_state", "set_state", "merge_state", "clear_state"]
 
 _DATA_DIR = Path(os.getenv("MC_DATA_DIR", str(Path.home() / ".mission-control")))
 _STATE_DIR = _DATA_DIR / "agent_state"
-_MAX_SIZE_BYTES = 64 * 1024      # 64 KB per agent — enough for many bots, caps blow-ups
+_MAX_SIZE_BYTES = 64 * 1024  # 64 KB per agent — enough for many bots, caps blow-ups
 
 _locks: dict[str, threading.RLock] = {}
 _locks_guard = threading.Lock()

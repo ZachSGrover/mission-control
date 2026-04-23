@@ -21,22 +21,22 @@ AUTH_DEP = Depends(get_auth_context)
 
 
 class HeartbeatRequest(BaseModel):
-    device_id:    str = Field(..., min_length=1, max_length=80)
-    name:         str = Field(..., min_length=1, max_length=80)
+    device_id: str = Field(..., min_length=1, max_length=80)
+    name: str = Field(..., min_length=1, max_length=80)
     capabilities: list[str] = []
     current_task: str | None = None
-    meta:         dict = {}
+    meta: dict = {}
 
 
 class DeviceOut(BaseModel):
-    device_id:    str
-    name:         str
+    device_id: str
+    name: str
     capabilities: list[str]
     current_task: str | None
-    last_seen:    float
-    age_s:        float
-    online:       bool
-    meta:         dict
+    last_seen: float
+    age_s: float
+    online: bool
+    meta: dict
 
 
 def _to_out(dev: device_registry.Device) -> DeviceOut:

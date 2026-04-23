@@ -42,12 +42,14 @@ def _note_transition(now_connected: bool) -> None:
         return
     if now_connected != _last_connected:
         import time as _time
+
         _last_transition_at = _time.time()
         if now_connected:
             logger.warning("discord.reconnected at=%s", _last_transition_at)
         else:
             logger.warning("discord.disconnected at=%s", _last_transition_at)
         _last_connected = now_connected
+
 
 _OPENCLAW_BASE = os.getenv("OPENCLAW_BASE_URL", "http://127.0.0.1:18789")
 _OPENCLAW_TOKEN = os.getenv("OPENCLAW_GATEWAY_TOKEN", "").strip()
@@ -113,7 +115,9 @@ async def discord_status(_: AuthContext = AUTH_DEP) -> DiscordStatusResponse:
                 if isinstance(data, list):
                     for ch in data:
                         if ch.get("type") == "discord" or "discord" in ch.get("id", "").lower():
-                            is_connected = ch.get("connected", False) or ch.get("status") == "connected"
+                            is_connected = (
+                                ch.get("connected", False) or ch.get("status") == "connected"
+                            )
                             bot_name = ch.get("botUsername") or ch.get("bot_username")
                             _note_transition(is_connected)
                             return DiscordStatusResponse(
@@ -137,19 +141,20 @@ async def discord_status(_: AuthContext = AUTH_DEP) -> DiscordStatusResponse:
 
 # ── Speed-layer message routing (OpenClaw → backend → reply) ─────────────────
 
+
 class DiscordMessageRequest(BaseModel):
     text: str
     channel_id: str | None = None
     user: str | None = None
-    message_id: str | None = None     # optional; enables replay-protection after reconnect
+    message_id: str | None = None  # optional; enables replay-protection after reconnect
 
 
 class DiscordMessageResponse(BaseModel):
-    reply:        str
-    used_ai:      bool
-    reason:       str
-    response_ms:  float
-    provider:     str = "none"
+    reply: str
+    used_ai: bool
+    reason: str
+    response_ms: float
+    provider: str = "none"
 
 
 @router.post("/message", response_model=DiscordMessageResponse)
@@ -194,9 +199,13 @@ async def handle_discord_message(
     )
     logger.info(
         "discord.response source=discord ms=%.1f used_ai=%s reason=%s provider=%s",
-        elapsed_ms, route.use_ai, route.reason, provider,
+        elapsed_ms,
+        route.use_ai,
+        route.reason,
+        provider,
     )
     from app.core import node_identity
+
     print(
         f"[messaging] node={node_identity.node_id()} source=discord "
         f"ms={elapsed_ms:.1f} used_ai={route.use_ai} reason={route.reason}",

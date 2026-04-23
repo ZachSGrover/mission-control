@@ -14,13 +14,12 @@ from __future__ import annotations
 
 import logging
 import time
+import uuid
+from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, Field
 from sqlmodel.ext.asyncio.session import AsyncSession
-
-import uuid
-from typing import Any
 
 from app.api.mc_roles import require_owner
 from app.core import agent_executions, agent_state, agents_registry, message_metrics
@@ -38,49 +37,55 @@ SESSION_DEP = Depends(get_session)
 
 
 class AgentOut(BaseModel):
-    id:            str
-    name:          str
-    purpose:       str
+    id: str
+    name: str
+    purpose: str
     system_prompt: str
-    model:         str
-    provider:      str
-    active:        bool
-    tags:          list[str]
-    platforms:     list[str]
-    is_default:    bool
+    model: str
+    provider: str
+    active: bool
+    tags: list[str]
+    platforms: list[str]
+    is_default: bool
 
     @classmethod
     def from_core(cls, a: Agent) -> "AgentOut":
         return cls(
-            id=a.id, name=a.name, purpose=a.purpose,
-            system_prompt=a.system_prompt, model=a.model,
-            provider=a.provider, active=a.active, tags=a.tags,
-            platforms=a.platforms, is_default=a.is_default,
+            id=a.id,
+            name=a.name,
+            purpose=a.purpose,
+            system_prompt=a.system_prompt,
+            model=a.model,
+            provider=a.provider,
+            active=a.active,
+            tags=a.tags,
+            platforms=a.platforms,
+            is_default=a.is_default,
         )
 
 
 class AgentCreate(BaseModel):
-    name:          str = Field(..., min_length=1, max_length=80)
-    purpose:       str = Field(..., max_length=400)
+    name: str = Field(..., min_length=1, max_length=80)
+    purpose: str = Field(..., max_length=400)
     system_prompt: str = Field(..., max_length=4000)
-    model:         str = ""
-    provider:      str = "auto"
-    active:        bool = True
-    tags:          list[str] = []
-    platforms:     list[str] = []
-    is_default:    bool = False
+    model: str = ""
+    provider: str = "auto"
+    active: bool = True
+    tags: list[str] = []
+    platforms: list[str] = []
+    is_default: bool = False
 
 
 class AgentPatch(BaseModel):
-    name:          str | None = None
-    purpose:       str | None = None
+    name: str | None = None
+    purpose: str | None = None
     system_prompt: str | None = None
-    model:         str | None = None
-    provider:      str | None = None
-    active:        bool | None = None
-    tags:          list[str] | None = None
-    platforms:     list[str] | None = None
-    is_default:    bool | None = None
+    model: str | None = None
+    provider: str | None = None
+    active: bool | None = None
+    tags: list[str] | None = None
+    platforms: list[str] | None = None
+    is_default: bool | None = None
 
 
 class InvokeRequest(BaseModel):
@@ -90,37 +95,37 @@ class InvokeRequest(BaseModel):
 
 
 class InvokeResponse(BaseModel):
-    agent_id:     str
-    reply:        str
-    provider:     str
-    response_ms:  float
-    attempts:     int
-    status:       str
+    agent_id: str
+    reply: str
+    provider: str
+    response_ms: float
+    attempts: int
+    status: str
     correlation_id: str
-    error:        str | None = None
+    error: str | None = None
 
 
 class ExecutionOut(BaseModel):
-    id:             str
-    agent_id:       str
-    agent_name:     str
-    source:         str
-    prompt:         str
-    reply:          str
-    provider:       str
-    status:         str
-    error:          str | None
-    response_ms:    float
-    attempts:       int
+    id: str
+    agent_id: str
+    agent_name: str
+    source: str
+    prompt: str
+    reply: str
+    provider: str
+    status: str
+    error: str | None
+    response_ms: float
+    attempts: int
     correlation_id: str | None
-    tokens_in:      int | None
-    tokens_out:     int | None
-    timestamp:      float
+    tokens_in: int | None
+    tokens_out: int | None
+    timestamp: float
 
 
 class StateResponse(BaseModel):
     agent_id: str
-    state:    dict[str, Any]
+    state: dict[str, Any]
 
 
 class StatePut(BaseModel):
@@ -219,7 +224,7 @@ async def invoke(
         error = err
         if provider == "none":
             status_label = "error"
-    except Exception as exc:                             # noqa: BLE001
+    except Exception as exc:  # noqa: BLE001
         reply, provider, attempts = "", "none", 1
         status_label, error = "error", str(exc)
 
@@ -248,7 +253,12 @@ async def invoke(
     )
     logger.info(
         "control.agent.invoked agent=%s provider=%s ms=%.1f attempts=%d status=%s corr=%s",
-        agent.name, provider, elapsed_ms, attempts, status_label, corr_id,
+        agent.name,
+        provider,
+        elapsed_ms,
+        attempts,
+        status_label,
+        corr_id,
     )
     return InvokeResponse(
         agent_id=agent.id,
@@ -264,6 +274,7 @@ async def invoke(
 
 # ── Executions (persistent history) ──────────────────────────────────────────
 
+
 @router.get("/{agent_id}/executions", response_model=list[ExecutionOut])
 async def get_executions(
     agent_id: str,
@@ -277,6 +288,7 @@ async def get_executions(
 
 
 # ── Per-agent state (KV scratchpad) ──────────────────────────────────────────
+
 
 @router.get("/{agent_id}/state", response_model=StateResponse)
 async def get_agent_state(agent_id: str, _: AuthContext = AUTH_DEP) -> StateResponse:
@@ -329,6 +341,7 @@ async def clear_agent_state(
 
 
 # ── Global execution feed ────────────────────────────────────────────────────
+
 
 @router.get("/_/executions", response_model=list[ExecutionOut])
 async def all_recent_executions(

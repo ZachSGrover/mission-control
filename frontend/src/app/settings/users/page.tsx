@@ -25,12 +25,17 @@ interface UserEntry {
 }
 
 interface AllowedUserEntry {
-  clerk_user_id: string;
+  clerk_user_id: string | null;
   email: string | null;
   name: string | null;
   role: string;
   added_by_clerk_user_id: string | null;
   created_at: string;
+  pending: boolean;
+}
+
+function entryKey(entry: AllowedUserEntry): string {
+  return entry.clerk_user_id ?? (entry.email ? `email:${entry.email}` : entry.created_at);
 }
 
 type FetchFn = (url: string, init?: RequestInit) => Promise<Response>;
@@ -79,15 +84,15 @@ async function fetchAllowedUsers(fetchFn: FetchFn): Promise<AllowedUserEntry[]> 
   return res.json() as Promise<AllowedUserEntry[]>;
 }
 
-async function addAllowedUser(
-  clerkUserId: string,
+async function addAllowedUserByEmail(
+  email: string,
   role: MCRole,
   fetchFn: FetchFn,
 ): Promise<AllowedUserEntry> {
   const res = await fetchFn(`${getApiBaseUrl()}/api/v1/allowed-users`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ clerk_user_id: clerkUserId, role }),
+    body: JSON.stringify({ email, role }),
   });
   if (!res.ok) {
     const body = await res.json().catch(() => null) as { detail?: string } | null;
@@ -96,10 +101,11 @@ async function addAllowedUser(
   return res.json() as Promise<AllowedUserEntry>;
 }
 
-async function removeAllowedUser(clerkUserId: string, fetchFn: FetchFn): Promise<void> {
-  const res = await fetchFn(`${getApiBaseUrl()}/api/v1/allowed-users/${clerkUserId}`, {
-    method: "DELETE",
-  });
+async function removeAllowedUser(key: string, fetchFn: FetchFn): Promise<void> {
+  const res = await fetchFn(
+    `${getApiBaseUrl()}/api/v1/allowed-users/${encodeURIComponent(key)}`,
+    { method: "DELETE" },
+  );
   if (!res.ok && res.status !== 204) {
     const body = await res.json().catch(() => null) as { detail?: string } | null;
     throw new Error(body?.detail ?? `HTTP ${res.status}`);
@@ -238,17 +244,21 @@ function AllowedUserRow({
 }: {
   entry: AllowedUserEntry;
   fetchFn: FetchFn;
-  onRemove: (id: string) => void;
+  onRemove: (key: string) => void;
 }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  const rowKey = entryKey(entry);
+  const deleteKey = entry.clerk_user_id ?? entry.email ?? "";
+
   const handleRemove = async () => {
+    if (!deleteKey) return;
     setBusy(true);
     setError(null);
     try {
-      await removeAllowedUser(entry.clerk_user_id, fetchFn);
-      onRemove(entry.clerk_user_id);
+      await removeAllowedUser(deleteKey, fetchFn);
+      onRemove(rowKey);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed");
     } finally {
@@ -256,8 +266,10 @@ function AllowedUserRow({
     }
   };
 
-  const displayName = entry.name ?? entry.email ?? entry.clerk_user_id;
-  const sub = entry.name && entry.email ? entry.email : entry.clerk_user_id;
+  const displayName = entry.name ?? entry.email ?? entry.clerk_user_id ?? "—";
+  const sub = entry.name && entry.email
+    ? entry.email
+    : entry.clerk_user_id ?? entry.email ?? "";
 
   return (
     <div
@@ -275,11 +287,20 @@ function AllowedUserRow({
         <p className="truncate text-xs font-mono" style={{ color: "var(--text-quiet)" }}>{sub}</p>
         {error && <p className="mt-0.5 text-xs" style={{ color: "var(--danger)" }}>{error}</p>}
       </div>
+      {entry.pending && (
+        <span
+          className="rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider"
+          style={{ background: "rgba(234,179,8,0.15)", color: "#eab308" }}
+          title="Invited by email. Access grants on first sign-in."
+        >
+          Pending
+        </span>
+      )}
       <RoleBadge role={entry.role} />
       <button
         type="button"
         title="Remove from allowlist (revokes access)"
-        disabled={busy}
+        disabled={busy || !deleteKey}
         onClick={() => void handleRemove()}
         className="rounded-lg p-1.5 transition-colors disabled:opacity-40"
         style={{ background: "var(--surface-muted)", border: "1px solid var(--border-strong)", color: "var(--danger, #ef4444)" }}
@@ -299,20 +320,24 @@ function AddAllowlistPanel({
   fetchFn: FetchFn;
   onAdded: (entry: AllowedUserEntry) => void;
 }) {
-  const [clerkId, setClerkId] = useState("");
+  const [email, setEmail] = useState("");
   const [role, setRole] = useState<MCRole>("viewer");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const handleAdd = async () => {
-    const id = clerkId.trim();
-    if (!id) { setError("Enter a Clerk user ID."); return; }
+    const trimmed = email.trim();
+    if (!trimmed) { setError("Enter an email address."); return; }
+    if (!trimmed.includes("@") || !trimmed.includes(".")) {
+      setError("Enter a valid email address.");
+      return;
+    }
     setBusy(true);
     setError(null);
     try {
-      const entry = await addAllowedUser(id, role, fetchFn);
+      const entry = await addAllowedUserByEmail(trimmed, role, fetchFn);
       onAdded(entry);
-      setClerkId("");
+      setEmail("");
       setRole("viewer");
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to add user.");
@@ -326,19 +351,19 @@ function AddAllowlistPanel({
       className="rounded-xl p-4 space-y-3"
       style={{ background: "var(--surface-strong)", border: "1px solid var(--border)" }}
     >
-      <p className="text-sm font-medium" style={{ color: "var(--text)" }}>Invite user</p>
+      <p className="text-sm font-medium" style={{ color: "var(--text)" }}>Invite by email</p>
       <p className="text-xs" style={{ color: "var(--text-quiet)" }}>
-        Enter their Clerk user ID (found in the Clerk dashboard under Users). They will be granted access on next sign-in.
+        Enter an email address. They&apos;ll be pre-authorized; the invite activates the first time they sign in with that email.
       </p>
       <div className="flex gap-2">
         <input
-          type="text"
-          value={clerkId}
-          onChange={(e) => setClerkId(e.target.value)}
+          type="email"
+          value={email}
+          onChange={(e) => setEmail(e.target.value)}
           onKeyDown={(e) => { if (e.key === "Enter") void handleAdd(); }}
-          placeholder="user_xxxxxxxxxxxxxxxx"
+          placeholder="name@example.com"
           disabled={busy}
-          className="flex-1 rounded-lg px-3 py-2 text-sm font-mono focus:outline-none disabled:opacity-50"
+          className="flex-1 rounded-lg px-3 py-2 text-sm focus:outline-none disabled:opacity-50"
           style={{ background: "var(--surface-muted)", border: "1px solid var(--border-strong)", color: "var(--text)" }}
         />
         <select
@@ -355,7 +380,7 @@ function AddAllowlistPanel({
         <button
           type="button"
           onClick={() => void handleAdd()}
-          disabled={busy || !clerkId.trim()}
+          disabled={busy || !email.trim()}
           className="flex items-center gap-1.5 rounded-lg px-4 py-2 text-sm font-medium text-white transition-opacity disabled:opacity-40"
           style={{ background: "var(--accent)" }}
         >
@@ -363,6 +388,9 @@ function AddAllowlistPanel({
           {busy ? "Adding…" : "Invite"}
         </button>
       </div>
+      <p className="text-[11px]" style={{ color: "var(--text-quiet)" }}>
+        Non-viewer roles for pending invites default to <code>viewer</code> until they sign in — adjust from Role assignments afterward.
+      </p>
       {error && <p className="text-xs" style={{ color: "var(--danger)" }}>{error}</p>}
     </div>
   );
@@ -403,17 +431,22 @@ function UserManagementContent() {
   }, []);
 
   const handleAllowedAdded = useCallback((entry: AllowedUserEntry) => {
+    const newKey = entryKey(entry);
     setAllowedUsers((prev) => {
-      const exists = prev.some((u) => u.clerk_user_id === entry.clerk_user_id);
+      const exists = prev.some((u) => entryKey(u) === newKey);
       return exists
-        ? prev.map((u) => u.clerk_user_id === entry.clerk_user_id ? entry : u)
+        ? prev.map((u) => entryKey(u) === newKey ? entry : u)
         : [...prev, entry];
     });
   }, []);
 
-  const handleAllowedRemoved = useCallback((id: string) => {
-    setAllowedUsers((prev) => prev.filter((u) => u.clerk_user_id !== id));
-    setUsers((prev) => prev.filter((u) => u.clerk_user_id !== id));
+  const handleAllowedRemoved = useCallback((removedKey: string) => {
+    setAllowedUsers((prev) => prev.filter((u) => entryKey(u) !== removedKey));
+    setUsers((prev) => prev.filter((u) => {
+      const byClerk = removedKey === u.clerk_user_id;
+      const byEmail = removedKey === `email:${u.email ?? ""}`;
+      return !byClerk && !byEmail;
+    }));
   }, []);
 
   return (
@@ -457,7 +490,7 @@ function UserManagementContent() {
           ) : (
             allowedUsers.map((u) => (
               <AllowedUserRow
-                key={u.clerk_user_id}
+                key={entryKey(u)}
                 entry={u}
                 fetchFn={fetchWithAuth}
                 onRemove={handleAllowedRemoved}

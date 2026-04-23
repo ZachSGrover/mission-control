@@ -2,12 +2,17 @@
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException, status  # noqa: F401 (Depends used in param defaults)
+from fastapi import (  # noqa: F401 (Depends used in param defaults)
+    APIRouter,
+    Depends,
+    HTTPException,
+    status,
+)
 from pydantic import BaseModel
 from sqlmodel.ext.asyncio.session import AsyncSession
 
-from app.core.auth import AuthContext, get_auth_context
 from app.api.mc_roles import require_owner
+from app.core.auth import AuthContext, get_auth_context
 from app.core.secrets_store import (
     GITHUB_KEYS,
     PROVIDER_KEYS,
@@ -120,6 +125,7 @@ async def delete_api_key(
 
 # ── GitHub credentials ────────────────────────────────────────────────────────
 
+
 class GitHubFieldStatus(BaseModel):
     configured: bool
     preview: str | None = None
@@ -146,8 +152,8 @@ async def get_github_settings(
     results: dict[str, GitHubFieldStatus] = {}
     env_fallbacks = {
         "github_username": app_settings.github_username,
-        "github_pat":      app_settings.github_pat,
-        "github_repo":     app_settings.github_repo,
+        "github_pat": app_settings.github_pat,
+        "github_repo": app_settings.github_repo,
     }
     for field, db_key in GITHUB_KEYS.items():
         value = await get_secret(session, db_key, fallback=env_fallbacks[field])

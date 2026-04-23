@@ -27,8 +27,8 @@ __all__ = ["seen", "namespace_size"]
 
 logger = logging.getLogger(__name__)
 
-_TTL_S = 24 * 3600           # 24-hour replay window — generous but bounded
-_MAX_MEMORY = 10_000         # fallback LRU size per namespace
+_TTL_S = 24 * 3600  # 24-hour replay window — generous but bounded
+_MAX_MEMORY = 10_000  # fallback LRU size per namespace
 _MEM: dict[str, "OrderedDict[str, float]"] = {}
 _mem_lock = RLock()
 _redis_warned = False
@@ -38,10 +38,10 @@ def _redis():
     global _redis_warned
     try:
         import redis
+
         from app.core.config import settings
-        client = redis.Redis.from_url(
-            os.getenv("MC_DEDUP_REDIS_URL") or settings.rq_redis_url
-        )
+
+        client = redis.Redis.from_url(os.getenv("MC_DEDUP_REDIS_URL") or settings.rq_redis_url)
         client.ping()
         return client
     except Exception as exc:
@@ -73,8 +73,7 @@ def seen(key: str, namespace: str) -> bool:
             client.zremrangebyrank(zkey, 0, -50_001)
             return False
         except Exception as exc:
-            logger.warning("message_dedup.redis_failed ns=%s key=%s error=%s",
-                           namespace, key, exc)
+            logger.warning("message_dedup.redis_failed ns=%s key=%s error=%s", namespace, key, exc)
 
     with _mem_lock:
         store = _MEM.setdefault(namespace, OrderedDict())

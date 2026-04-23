@@ -29,15 +29,15 @@ logger = logging.getLogger(__name__)
 # ── Supported providers ──────────────────────────────────────────────────────
 
 PROVIDER_KEYS: dict[str, str] = {
-    "openai":    "api_key.openai",
-    "gemini":    "api_key.gemini",
+    "openai": "api_key.openai",
+    "gemini": "api_key.gemini",
     "anthropic": "api_key.anthropic",
 }
 
 GITHUB_KEYS: dict[str, str] = {
     "github_username": "github.username",
-    "github_pat":      "github.pat",
-    "github_repo":     "github.repo",
+    "github_pat": "github.pat",
+    "github_repo": "github.repo",
 }
 
 # ── Fernet helpers ───────────────────────────────────────────────────────────
@@ -49,6 +49,7 @@ def _get_fernet() -> Fernet:
     global _fernet
     if _fernet is None:
         import os
+
         from app.core.config import settings
 
         # Priority 1: dedicated encryption key — immune to auth credential rotation.

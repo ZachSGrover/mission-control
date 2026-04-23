@@ -63,33 +63,33 @@ TaskStatus = Literal["queued", "running", "done", "failed", "cancelled"]
 
 # ── Tunables ─────────────────────────────────────────────────────────────────
 _NS = "mc:control"
-_QUEUE_KEY          = f"{_NS}:queue"
-_SCHEDULED_KEY      = f"{_NS}:queue:scheduled"
-_INFLIGHT_KEY       = f"{_NS}:inflight"
-_INDEX_KEY          = f"{_NS}:index"
-_TASK_KEY_FMT       = f"{_NS}:task:{{task_id}}"
-_TASK_TTL_S         = 7 * 24 * 3600          # week of history
-_CLAIM_TIMEOUT_S    = 300.0                  # 5 min — reclaim if node died
-_MAX_ATTEMPTS       = 3
+_QUEUE_KEY = f"{_NS}:queue"
+_SCHEDULED_KEY = f"{_NS}:queue:scheduled"
+_INFLIGHT_KEY = f"{_NS}:inflight"
+_INDEX_KEY = f"{_NS}:index"
+_TASK_KEY_FMT = f"{_NS}:task:{{task_id}}"
+_TASK_TTL_S = 7 * 24 * 3600  # week of history
+_CLAIM_TIMEOUT_S = 300.0  # 5 min — reclaim if node died
+_MAX_ATTEMPTS = 3
 _BASE_RETRY_DELAY_S = 2.0
-_LIST_CAP           = 500
+_LIST_CAP = 500
 
 
 @dataclass
 class Task:
-    id:          str
-    kind:        str
-    payload:     dict[str, Any]
-    status:      TaskStatus = "queued"
-    agent_id:    str | None = None
-    device_id:   str | None = None
-    result:      Any = None
-    error:       str | None = None
-    created_at:  float = 0.0
-    started_at:  float | None = None
+    id: str
+    kind: str
+    payload: dict[str, Any]
+    status: TaskStatus = "queued"
+    agent_id: str | None = None
+    device_id: str | None = None
+    result: Any = None
+    error: str | None = None
+    created_at: float = 0.0
+    started_at: float | None = None
     finished_at: float | None = None
-    tags:        list[str] = field(default_factory=list)
-    attempts:    int = 0
+    tags: list[str] = field(default_factory=list)
+    attempts: int = 0
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -107,7 +107,9 @@ def _redis():
     global _redis_warned
     try:
         import redis
+
         from app.core.config import settings
+
         client = redis.Redis.from_url(
             os.getenv("MC_CONTROL_QUEUE_REDIS_URL") or settings.rq_redis_url
         )
@@ -164,7 +166,8 @@ def _sweep_inflight_redis(client) -> int:
         recovered += 1
         logger.warning(
             "control_tasks_store.visibility_timeout id=%s attempt=%d",
-            tid, task.attempts,
+            tid,
+            task.attempts,
         )
     return recovered
 
@@ -188,7 +191,7 @@ def _drain_scheduled_redis(client) -> None:
 _mem_lock = RLock()
 _mem_tasks: dict[str, Task] = {}
 _mem_queue: deque[str] = deque()
-_mem_inflight: dict[str, float] = {}     # task_id → claim_ts
+_mem_inflight: dict[str, float] = {}  # task_id → claim_ts
 
 
 def _sweep_inflight_memory() -> int:
@@ -213,6 +216,7 @@ def _sweep_inflight_memory() -> int:
 # ═════════════════════════════════════════════════════════════════════════════
 # Public API (signature-compatible with Phase-3 task_queue.py)
 # ═════════════════════════════════════════════════════════════════════════════
+
 
 def enqueue(
     kind: str,
@@ -373,7 +377,9 @@ def record_result(
                 client.zadd(_SCHEDULED_KEY, {task.id: time.time() + retry_delay})
                 logger.info(
                     "control_tasks_store.retry id=%s attempt=%d delay=%.1fs",
-                    task.id, task.attempts, retry_delay,
+                    task.id,
+                    task.attempts,
+                    retry_delay,
                 )
                 return task
             task.status = status
@@ -406,6 +412,7 @@ def record_result(
 
 
 # ── Observability helpers (wired into SystemStatusBar) ───────────────────────
+
 
 def queue_depth() -> int:
     client = _redis()

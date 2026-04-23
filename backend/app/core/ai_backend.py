@@ -44,7 +44,10 @@ def _is_transient(exc: BaseException) -> bool:
     msg = str(exc).lower()
     if isinstance(exc, asyncio.TimeoutError):
         return True
-    if any(tag in name for tag in ("timeout", "connection", "apiconnection", "ratelimit", "serviceunavailable")):
+    if any(
+        tag in name
+        for tag in ("timeout", "connection", "apiconnection", "ratelimit", "serviceunavailable")
+    ):
         return True
     if any(tag in msg for tag in ("502", "503", "504", "429", "temporarily", "overloaded")):
         return True
@@ -52,7 +55,7 @@ def _is_transient(exc: BaseException) -> bool:
 
 
 async def _attempt_with_retry(
-    coro_factory,                  # zero-arg callable returning a coroutine
+    coro_factory,  # zero-arg callable returning a coroutine
     provider: str,
     timeout_s: float,
 ) -> tuple[str, int]:
@@ -65,20 +68,24 @@ async def _attempt_with_retry(
             if attempt > 1:
                 logger.info("ai_backend.%s.retry.success attempt=%d", provider, attempt)
             return reply, attempt
-        except BaseException as exc:     # noqa: BLE001 — we classify below
+        except BaseException as exc:  # noqa: BLE001 — we classify below
             last_exc = exc
             if attempt >= _MAX_ATTEMPTS or not _is_transient(exc):
                 raise
             delay = _BASE_DELAY_S * (2 ** (attempt - 1))
             logger.warning(
                 "ai_backend.%s.retry attempt=%d delay=%.2fs error=%s",
-                provider, attempt, delay, exc,
+                provider,
+                attempt,
+                delay,
+                exc,
             )
             await asyncio.sleep(delay)
     # Unreachable but keeps mypy happy
     if last_exc:
         raise last_exc
     raise RuntimeError("ai_backend: exhausted retries without exception")
+
 
 _NO_KEY_MSG: Final = (
     "AI responses aren't configured yet. Add an Anthropic or OpenAI API key in "

@@ -452,8 +452,17 @@ def _parse_subject(claims: dict[str, object]) -> str | None:
     return payload.sub
 
 
-async def _check_allowlist(session: AsyncSession, clerk_user_id: str) -> None:
+async def _check_allowlist(
+    session: AsyncSession,
+    clerk_user_id: str,
+    email: str | None = None,
+) -> None:
     """Enforce invite-only access: raise 403 if caller is not on the allowlist.
+
+    Matching order:
+    1. Existing row keyed on clerk_user_id (fast path — already-known user).
+    2. Email-only pending row — backfill clerk_user_id onto it on first sign-in.
+    3. Bootstrap / owner bypass.
 
     Bootstrap rule: if the allowlist is empty, the first caller is auto-added
     (they will also become the owner via mc_user_roles auto-seed logic).
@@ -462,7 +471,8 @@ async def _check_allowlist(session: AsyncSession, clerk_user_id: str) -> None:
     are always permitted — so existing owners are never locked out even if the
     allowlist is empty or they were added before the allowlist existed.
     """
-    from sqlmodel import func, select as sql_select
+    from sqlmodel import func
+    from sqlmodel import select as sql_select
 
     from app.models.mc_allowed_user import MCAllowedUser
     from app.models.mc_role import MCUserRole
@@ -473,6 +483,20 @@ async def _check_allowlist(session: AsyncSession, clerk_user_id: str) -> None:
     )
     if allowed_result.first() is not None:
         return
+
+    # Email-based invite: match a pending row by email, then backfill clerk_user_id.
+    normalized_email = _normalize_email(email)
+    if normalized_email:
+        email_result = await session.exec(
+            sql_select(MCAllowedUser).where(MCAllowedUser.email == normalized_email)
+        )
+        email_row = email_result.first()
+        if email_row is not None:
+            if email_row.clerk_user_id != clerk_user_id:
+                email_row.clerk_user_id = clerk_user_id
+                session.add(email_row)
+                await session.commit()
+            return
 
     # Owner bypass: env-pinned owner always passes
     owner_id = (settings.owner_user_id or "").strip()
@@ -486,7 +510,7 @@ async def _check_allowlist(session: AsyncSession, clerk_user_id: str) -> None:
     role_row = role_result.first()
     if role_row and role_row.role == "owner" and not role_row.disabled:
         # Auto-add owner to allowlist so future checks are fast
-        new_entry = MCAllowedUser(clerk_user_id=clerk_user_id)
+        new_entry = MCAllowedUser(clerk_user_id=clerk_user_id, email=normalized_email)
         session.add(new_entry)
         await session.commit()
         return
@@ -495,7 +519,7 @@ async def _check_allowlist(session: AsyncSession, clerk_user_id: str) -> None:
     count_result = await session.exec(sql_select(func.count()).select_from(MCAllowedUser))
     count = count_result.one()
     if count == 0:
-        new_entry = MCAllowedUser(clerk_user_id=clerk_user_id)
+        new_entry = MCAllowedUser(clerk_user_id=clerk_user_id, email=normalized_email)
         session.add(new_entry)
         await session.commit()
         return
@@ -540,7 +564,7 @@ async def get_auth_context(
         claims=claims,
     )
 
-    await _check_allowlist(session, clerk_user_id)
+    await _check_allowlist(session, clerk_user_id, email=user.email)
 
     from app.services.organizations import ensure_member_for_user
 

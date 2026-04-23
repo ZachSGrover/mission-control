@@ -11,28 +11,9 @@ from fastapi.openapi.utils import get_openapi
 from fastapi_pagination import add_pagination
 
 from app.api.activity import router as activity_router
-from app.api.app_settings import router as app_settings_router
-from app.api.integrations import router as integrations_router
-from app.api.git_save import router as git_save_router
-from app.api.mc_roles import router as mc_roles_router
-from app.api.mc_allowed_users import router as mc_allowed_users_router
-from app.api.workflows import router as workflows_router
-from app.api.master import router as master_router
-from app.api.telegram import router as telegram_router
-from app.api.discord import router as discord_router
-from app.api.messaging import router as messaging_router
-from app.api.control_agents import router as control_agents_router
-from app.api.control_devices import router as control_devices_router
-from app.api.control_tasks import router as control_tasks_router
-from app.api.system_node import router as system_node_router
-from app.api.gemini_chat import router as gemini_chat_router
-from app.api.journal import router as journal_router
-from app.api.judge import router as judge_router
-from app.api.synthesize import router as synthesize_router
-from app.api.operator import router as operator_router
-from app.api.openai_chat import router as openai_chat_router
 from app.api.agent import router as agent_router
 from app.api.agents import router as agents_router
+from app.api.app_settings import router as app_settings_router
 from app.api.approvals import router as approvals_router
 from app.api.auth import router as auth_router
 from app.api.board_group_memory import router as board_group_memory_router
@@ -41,16 +22,35 @@ from app.api.board_memory import router as board_memory_router
 from app.api.board_onboarding import router as board_onboarding_router
 from app.api.board_webhooks import router as board_webhooks_router
 from app.api.boards import router as boards_router
+from app.api.control_agents import router as control_agents_router
+from app.api.control_devices import router as control_devices_router
+from app.api.control_tasks import router as control_tasks_router
+from app.api.discord import router as discord_router
 from app.api.gateway import router as gateway_router
 from app.api.gateways import router as gateways_router
+from app.api.gemini_chat import router as gemini_chat_router
+from app.api.git_save import router as git_save_router
+from app.api.integrations import router as integrations_router
+from app.api.journal import router as journal_router
+from app.api.judge import router as judge_router
+from app.api.master import router as master_router
+from app.api.mc_allowed_users import router as mc_allowed_users_router
+from app.api.mc_roles import router as mc_roles_router
+from app.api.messaging import router as messaging_router
 from app.api.metrics import router as metrics_router
+from app.api.openai_chat import router as openai_chat_router
+from app.api.operator import router as operator_router
 from app.api.organizations import router as organizations_router
 from app.api.skills_marketplace import router as skills_marketplace_router
 from app.api.souls_directory import router as souls_directory_router
+from app.api.synthesize import router as synthesize_router
+from app.api.system_node import router as system_node_router
 from app.api.tags import router as tags_router
 from app.api.task_custom_fields import router as task_custom_fields_router
 from app.api.tasks import router as tasks_router
+from app.api.telegram import router as telegram_router
 from app.api.users import router as users_router
+from app.api.workflows import router as workflows_router
 from app.core.config import settings
 from app.core.error_handling import install_error_handling
 from app.core.logging import configure_logging, get_logger
@@ -457,8 +457,8 @@ def _log_key_availability() -> None:
     resolved per-request.  Missing ENV keys may still be in the DB.
     """
     env_keys = {
-        "openai":    settings.openai_api_key,
-        "gemini":    settings.gemini_api_key,
+        "openai": settings.openai_api_key,
+        "gemini": settings.gemini_api_key,
         "anthropic": settings.anthropic_api_key,
         "github_pat": settings.github_pat,
     }
@@ -489,10 +489,12 @@ async def lifespan(_: FastAPI) -> AsyncIterator[None]:
     else:
         logger.info("app.lifecycle.rate_limit backend=memory")
     from app.core import node_identity
+
     logger.info("app.node.identity node_id=%s", node_identity.node_id())
 
     # ── Resilience background tasks ──────────────────────────────────────────
     import asyncio as _asyncio
+
     from app.core import network_monitor as _netmon
     from app.core import telegram_polling as _tgpoll
 
@@ -513,7 +515,7 @@ async def lifespan(_: FastAPI) -> AsyncIterator[None]:
         for t in _bg_tasks:
             try:
                 await t
-            except (BaseException,):     # swallow cancellations/cleanup errors
+            except (BaseException,):  # swallow cancellations/cleanup errors
                 pass
         logger.info("app.lifecycle.stopped")
 
@@ -534,11 +536,13 @@ _KNOWN_FRONTEND_ORIGINS = [
 ]
 
 # Merge base CORS origins, extra ones (EXTRA_CORS_ORIGINS env var), and known hosts
-_base_origins  = [o.strip() for o in settings.cors_origins.split(",")       if o.strip()]
+_base_origins = [o.strip() for o in settings.cors_origins.split(",") if o.strip()]
 _extra_origins = [o.strip() for o in settings.extra_cors_origins.split(",") if o.strip()]
-origins = list(dict.fromkeys(
-    _base_origins + _extra_origins + _KNOWN_FRONTEND_ORIGINS,
-))  # deduplicate, preserve order
+origins = list(
+    dict.fromkeys(
+        _base_origins + _extra_origins + _KNOWN_FRONTEND_ORIGINS,
+    )
+)  # deduplicate, preserve order
 if origins:
     app.add_middleware(
         CORSMiddleware,

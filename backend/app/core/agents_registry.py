@@ -38,16 +38,16 @@ _lock = RLock()
 
 @dataclass
 class Agent:
-    id:            str
-    name:          str
-    purpose:       str
+    id: str
+    name: str
+    purpose: str
     system_prompt: str
-    model:         str = ""                  # empty → provider default
-    provider:      Provider = "auto"         # "auto" = try anthropic → openai
-    active:        bool = True
-    tags:          list[str] = field(default_factory=list)
-    platforms:     list[str] = field(default_factory=list)   # ["telegram","discord","ui",…]
-    is_default:    bool = False              # default-handler for platforms in `platforms`
+    model: str = ""  # empty → provider default
+    provider: Provider = "auto"  # "auto" = try anthropic → openai
+    active: bool = True
+    tags: list[str] = field(default_factory=list)
+    platforms: list[str] = field(default_factory=list)  # ["telegram","discord","ui",…]
+    is_default: bool = False  # default-handler for platforms in `platforms`
 
     @classmethod
     def new(
@@ -148,6 +148,7 @@ def _persist(agents: list[Agent]) -> None:
 
 # ── Public API ────────────────────────────────────────────────────────────────
 
+
 def list_agents() -> list[Agent]:
     with _lock:
         return list(_ensure_loaded())
@@ -173,8 +174,15 @@ def create_agent(
     is_default: bool = False,
 ) -> Agent:
     agent = Agent.new(
-        name, purpose, system_prompt, model, provider,
-        active, tags, platforms, is_default,
+        name,
+        purpose,
+        system_prompt,
+        model,
+        provider,
+        active,
+        tags,
+        platforms,
+        is_default,
     )
     with _lock:
         agents = _ensure_loaded()
@@ -185,8 +193,15 @@ def create_agent(
 
 def update_agent(agent_id: str, **updates: object) -> Agent | None:
     allowed = {
-        "name", "purpose", "system_prompt", "model", "provider",
-        "active", "tags", "platforms", "is_default",
+        "name",
+        "purpose",
+        "system_prompt",
+        "model",
+        "provider",
+        "active",
+        "tags",
+        "platforms",
+        "is_default",
     }
     with _lock:
         agents = _ensure_loaded()

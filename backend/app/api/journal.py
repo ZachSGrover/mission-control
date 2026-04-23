@@ -19,19 +19,19 @@ SESSION_DEP = Depends(get_session)
 
 
 class JournalMessageIn(BaseModel):
-    role: str       # "user" | "assistant"
+    role: str  # "user" | "assistant"
     text: str
-    provider: str   # "claude" | "chatgpt" | "gemini"
+    provider: str  # "claude" | "chatgpt" | "gemini"
     createdAt: str  # ISO timestamp
 
 
 class MemoryEntryIn(BaseModel):
-    type: str       # "context" | "decision" | "note"
+    type: str  # "context" | "decision" | "note"
     content: str
 
 
 class JournalGenerateRequest(BaseModel):
-    date: str                           # "YYYY-MM-DD"
+    date: str  # "YYYY-MM-DD"
     messages: list[JournalMessageIn]
     memory: list[MemoryEntryIn] = []
 
@@ -73,7 +73,7 @@ def _build_prompt(date: str, messages: list[JournalMessageIn], memory: list[Memo
     lines.append(
         "Generate a concise daily journal entry for the date above based on the conversation activity.\n"
         "Respond with ONLY valid JSON matching this exact schema:\n"
-        '{\n'
+        "{\n"
         '  "headline": "<1 sentence, ≤80 chars — what today was really about>",\n'
         '  "summary": "<2-4 sentences — narrative of the day\'s work and thinking>",\n'
         '  "categories": {\n'
@@ -81,8 +81,8 @@ def _build_prompt(date: str, messages: list[JournalMessageIn], memory: list[Memo
         '    "decisions": ["<choice made and why>", ...],\n'
         '    "insights": ["<learning or realization>", ...],\n'
         '    "themes": ["<recurring topic or focus area>", ...]\n'
-        '  }\n'
-        '}\n'
+        "  }\n"
+        "}\n"
         "Keep each item concise (one sentence). Use empty arrays for categories with nothing relevant.\n"
         "Focus on substance — extract what actually matters from the activity above."
     )
@@ -138,11 +138,15 @@ async def generate_journal(
     # Try OpenAI first, fall back to Gemini
     openai_key = await get_api_key("openai", session, settings.openai_api_key)
     if openai_key.strip():
-        return await _generate_with_openai(openai_key.strip(), prompt, request.date, len(request.messages))
+        return await _generate_with_openai(
+            openai_key.strip(), prompt, request.date, len(request.messages)
+        )
 
     gemini_key = await get_api_key("gemini", session, settings.gemini_api_key)
     if gemini_key.strip():
-        return await _generate_with_gemini(gemini_key.strip(), prompt, request.date, len(request.messages))
+        return await _generate_with_gemini(
+            gemini_key.strip(), prompt, request.date, len(request.messages)
+        )
 
     raise HTTPException(
         status_code=status.HTTP_400_BAD_REQUEST,

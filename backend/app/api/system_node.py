@@ -23,31 +23,33 @@ router = APIRouter(prefix="/system", tags=["system"])
 
 
 class NodeHealth(BaseModel):
-    node_id:          str
-    ok:               bool
-    uptime_s:         float
-    started_at:       float
-    now:              float
-    queue_depth:      int
-    inflight_count:   int
-    queue_backend:    str                 # "redis" | "memory"
-    messages_total:   int
-    avg_ms_last_10:   float | None
+    node_id: str
+    ok: bool
+    uptime_s: float
+    started_at: float
+    now: float
+    queue_depth: int
+    inflight_count: int
+    queue_backend: str  # "redis" | "memory"
+    messages_total: int
+    avg_ms_last_10: float | None
     telegram_last_at: float | None
-    discord_last_at:  float | None
+    discord_last_at: float | None
     last_activity_at: float | None
 
 
 class NodePing(BaseModel):
     node_id: str
-    ok:      bool
-    now:     float
+    ok: bool
+    now: float
 
 
 def _queue_backend_label() -> str:
     try:
         import redis
+
         from app.core.config import settings
+
         redis.Redis.from_url(settings.rq_redis_url).ping()
         return "redis"
     except Exception:
@@ -84,13 +86,13 @@ async def node_ping() -> NodePing:
 
 
 class NetworkState(BaseModel):
-    is_online:             bool | None
-    last_online_at:        float | None
-    last_offline_at:       float | None
-    consecutive_failures:  int
+    is_online: bool | None
+    last_online_at: float | None
+    last_offline_at: float | None
+    consecutive_failures: int
     consecutive_successes: int
-    last_checked_at:       float | None
-    probe_target:          str
+    last_checked_at: float | None
+    probe_target: str
 
 
 @router.get("/network", response_model=NetworkState)
@@ -100,11 +102,11 @@ async def network_state() -> NetworkState:
 
 
 class TelegramMode(BaseModel):
-    mode:                str
+    mode: str
     last_webhook_hit_at: float | None
     last_mode_change_at: float | None
-    last_update_id:      int | None
-    polling_active:      bool
+    last_update_id: int | None
+    polling_active: bool
 
 
 @router.get("/telegram-mode", response_model=TelegramMode)

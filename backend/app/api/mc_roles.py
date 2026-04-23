@@ -25,6 +25,7 @@ SESSION_DEP = Depends(get_session)
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
+
 def _clerk_id(auth: AuthContext) -> str:
     """Extract clerk_user_id from auth context; returns 'local' for local-auth mode."""
     if auth.user and auth.user.clerk_user_id:
@@ -53,9 +54,7 @@ async def _resolve_role(clerk_id: str, session: AsyncSession) -> tuple[str, bool
         return "owner", False
 
     # DB lookup
-    result = await session.exec(
-        select(MCUserRole).where(MCUserRole.clerk_user_id == clerk_id)
-    )
+    result = await session.exec(select(MCUserRole).where(MCUserRole.clerk_user_id == clerk_id))
     row = result.first()
     if row:
         return row.role, row.disabled
@@ -74,6 +73,7 @@ async def _resolve_role(clerk_id: str, session: AsyncSession) -> tuple[str, bool
 
 
 # ── Public dependency ─────────────────────────────────────────────────────────
+
 
 async def get_mc_role(
     auth: AuthContext = AUTH_DEP,
@@ -98,6 +98,7 @@ async def require_owner(role: str = Depends(get_mc_role)) -> str:
 
 # ── Schemas ───────────────────────────────────────────────────────────────────
 
+
 class MyRoleResponse(BaseModel):
     role: str
     disabled: bool
@@ -117,6 +118,7 @@ class SetRoleRequest(BaseModel):
 
 
 # ── Endpoints ─────────────────────────────────────────────────────────────────
+
 
 @router.get("/me", response_model=MyRoleResponse)
 async def get_my_role(
@@ -183,9 +185,7 @@ async def set_user_role(
             detail="You cannot change your own role.",
         )
 
-    result = await session.exec(
-        select(MCUserRole).where(MCUserRole.clerk_user_id == clerk_user_id)
-    )
+    result = await session.exec(select(MCUserRole).where(MCUserRole.clerk_user_id == clerk_user_id))
     row = result.first()
 
     if row:
@@ -204,12 +204,16 @@ async def set_user_role(
     await session.commit()
 
     from app.models.users import User
-    user_result = await session.exec(
-        select(User).where(User.clerk_user_id == clerk_user_id)
-    )
+
+    user_result = await session.exec(select(User).where(User.clerk_user_id == clerk_user_id))
     user = user_result.first()
 
-    logger.info("[mc_roles] set role clerk_user_id=%s role=%s disabled=%s", clerk_user_id, body.role, body.disabled)
+    logger.info(
+        "[mc_roles] set role clerk_user_id=%s role=%s disabled=%s",
+        clerk_user_id,
+        body.role,
+        body.disabled,
+    )
 
     return UserRoleEntry(
         clerk_user_id=clerk_user_id,
@@ -234,9 +238,7 @@ async def remove_user_role(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="You cannot remove your own role.",
         )
-    result = await session.exec(
-        select(MCUserRole).where(MCUserRole.clerk_user_id == clerk_user_id)
-    )
+    result = await session.exec(select(MCUserRole).where(MCUserRole.clerk_user_id == clerk_user_id))
     row = result.first()
     if row:
         await session.delete(row)

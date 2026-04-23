@@ -23,24 +23,24 @@ _RECENT_FOR_AVG = 10
 
 @dataclass(frozen=True)
 class MetricPoint:
-    source:       Source
-    response_ms:  float
-    used_ai:      bool
-    reason:       str
-    timestamp:    float   # UNIX epoch seconds
+    source: Source
+    response_ms: float
+    used_ai: bool
+    reason: str
+    timestamp: float  # UNIX epoch seconds
 
 
 @dataclass(frozen=True)
 class MetricsSnapshot:
-    total_count:         int
-    avg_ms_last_10:      float | None
-    telegram_avg_ms:     float | None
-    telegram_last_at:    float | None
-    telegram_count:      int
-    discord_avg_ms:      float | None
-    discord_last_at:     float | None
-    discord_count:       int
-    ai_call_ratio_pct:   float
+    total_count: int
+    avg_ms_last_10: float | None
+    telegram_avg_ms: float | None
+    telegram_last_at: float | None
+    telegram_count: int
+    discord_avg_ms: float | None
+    discord_last_at: float | None
+    discord_count: int
+    ai_call_ratio_pct: float
 
 
 _buffer: deque[MetricPoint] = deque(maxlen=_MAX_POINTS)

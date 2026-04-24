@@ -850,6 +850,24 @@ export default function WorkflowsPage() {
         adminOnlyMessage="Only organization owners and admins can access workflows."
       >
         <div className="flex flex-col gap-8 max-w-3xl">
+          {/* Explainer for first-time users */}
+          <div
+            className="rounded-xl p-4 text-xs leading-relaxed"
+            style={{ background: "var(--surface)", border: "1px solid var(--border)", color: "var(--text-muted)" }}
+          >
+            <p>
+              <strong style={{ color: "var(--text)" }}>Workflows</strong> are repeatable
+              step-by-step automations. Example:{" "}
+              <em>scrape leads → qualify → draft outreach → post to Discord → ping me</em>.
+              System workflows below handle app-level tasks; custom workflows are ones
+              you save yourself. See{" "}
+              <a href="/guide#workflows" className="underline" style={{ color: "var(--accent-strong)" }}>
+                Guide → Workflows
+              </a>{" "}
+              for examples.
+            </p>
+          </div>
+
           {/* Section 1: System Workflows */}
           <section className="flex flex-col gap-3">
             <div>

@@ -146,6 +146,38 @@ export default function AgentsPage() {
         adminOnlyMessage="Only organization owners and admins can access agents."
         stickyHeader
       >
+        {/* What is an Agent / Gateway — primer for first-time users */}
+        <div
+          className="mb-4 rounded-xl p-5 grid gap-4 md:grid-cols-2"
+          style={{ background: "var(--surface)", border: "1px solid var(--border)" }}
+        >
+          <div>
+            <h2 className="text-sm font-semibold" style={{ color: "var(--text)" }}>
+              What is an Agent?
+            </h2>
+            <p className="mt-1 text-xs leading-relaxed" style={{ color: "var(--text-muted)" }}>
+              A specialized AI worker that performs a specific job — writing content,
+              sourcing leads, managing outreach, drafting SOPs, monitoring updates.
+              Examples you&apos;ll likely build: Content Agent, Hiring Agent, Reddit Agent,
+              Sales Reply Agent, SOP Agent, Research Agent.
+            </p>
+          </div>
+          <div>
+            <h2 className="text-sm font-semibold" style={{ color: "var(--text)" }}>
+              What is a Gateway?
+            </h2>
+            <p className="mt-1 text-xs leading-relaxed" style={{ color: "var(--text-muted)" }}>
+              A Gateway is the connection that lets an agent take real-world actions —
+              call APIs, post to Discord, run local tools, read files. Without a Gateway
+              an agent can only think, not act. See{" "}
+              <a href="/guide#agents" className="underline" style={{ color: "var(--accent-strong)" }}>
+                Guide → Agents
+              </a>{" "}
+              for the full picture.
+            </p>
+          </div>
+        </div>
+
         <div className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
           <AgentsTable
             agents={agents}

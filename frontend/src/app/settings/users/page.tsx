@@ -338,7 +338,8 @@ function AddAllowlistPanel({
       const entry = await addAllowedUserByEmail(trimmed, role, fetchFn);
       onAdded(entry);
       setEmail("");
-      setRole("viewer");
+      // Keep the role selection — owners usually invite several users at the
+      // same tier in a row. Role resets to viewer only if the page reloads.
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to add user.");
     } finally {
@@ -389,7 +390,7 @@ function AddAllowlistPanel({
         </button>
       </div>
       <p className="text-[11px]" style={{ color: "var(--text-quiet)" }}>
-        Non-viewer roles for pending invites default to <code>viewer</code> until they sign in — adjust from Role assignments afterward.
+        The selected role is applied automatically on first sign-in. You can still adjust it later from Role assignments.
       </p>
       {error && <p className="text-xs" style={{ color: "var(--danger)" }}>{error}</p>}
     </div>
@@ -455,7 +456,7 @@ function UserManagementContent() {
         <div>
           <h1 className="text-xl font-semibold" style={{ color: "var(--text)" }}>User Management</h1>
           <p className="mt-1 text-sm" style={{ color: "var(--text-muted)" }}>
-            Control who can access Mission Control and what they can do.
+            Control who can access Digital OS and what they can do.
           </p>
         </div>
 
@@ -560,7 +561,7 @@ export default function UsersPage() {
   return (
     <DashboardShell>
       <SignedOut>
-        <SignedOutPanel message="Sign in to access Digidle OS" forceRedirectUrl="/settings/users" />
+        <SignedOutPanel message="Sign in to access Digital OS" forceRedirectUrl="/settings/users" />
       </SignedOut>
       <SignedIn>
         <DashboardSidebar />

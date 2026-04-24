@@ -8,7 +8,7 @@
  *
  * To change the wordmark text:
  *   Set NEXT_PUBLIC_APP_NAME in your Vercel environment variables.
- *   Defaults to "Mission Control".
+ *   Defaults to "Digital OS".
  */
 
 "use client";
@@ -17,7 +17,7 @@ import Image from "next/image";
 import { useState } from "react";
 
 const LOGO_SRC = "/logo.png"; // drop your logo here: frontend/public/logo.png
-const APP_NAME = process.env.NEXT_PUBLIC_APP_NAME ?? "Mission Control";
+const APP_NAME = process.env.NEXT_PUBLIC_APP_NAME ?? "Digital OS";
 
 export function BrandMark() {
   const [logoError, setLogoError] = useState(false);

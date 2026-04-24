@@ -69,7 +69,13 @@ def _normalize_email(value: str | None) -> str | None:
 
 
 async def _enrich(row: MCAllowedUser, session: AsyncSession) -> AllowedUserEntry:
-    """Join with users + mc_user_roles to get display fields."""
+    """Join with users + mc_user_roles to get display fields.
+
+    Role precedence for display:
+      1. mc_user_roles.role if the user has signed in (source of truth post-login)
+      2. pending_role captured at invite time (displayed while pending)
+      3. "viewer" fallback (legacy rows created before pending_role existed)
+    """
     from app.models.users import User
 
     user = None
@@ -87,12 +93,16 @@ async def _enrich(row: MCAllowedUser, session: AsyncSession) -> AllowedUserEntry
         role_row = role_result.first()
 
     email = row.email or (user.email if user else None)
+    display_role = (
+        role_row.role if role_row
+        else (row.pending_role or "viewer")
+    )
 
     return AllowedUserEntry(
         clerk_user_id=row.clerk_user_id,
         email=email,
         name=(user.name or user.preferred_name) if user else None,
-        role=role_row.role if role_row else "viewer",
+        role=display_role,
         added_by_clerk_user_id=row.added_by_clerk_user_id,
         created_at=row.created_at.isoformat(),
         pending=row.clerk_user_id is None,
@@ -172,6 +182,7 @@ async def add_allowed_user(
             clerk_user_id=clerk_user_id,
             email=email,
             added_by_clerk_user_id=adder_id,
+            pending_role=body.role,
         )
         session.add(allowed_row)
     else:
@@ -179,11 +190,13 @@ async def add_allowed_user(
             allowed_row.clerk_user_id = clerk_user_id
         if email and not allowed_row.email:
             allowed_row.email = email
+        # Update pending_role so re-invites / role edits on pending rows stick.
+        allowed_row.pending_role = body.role
         session.add(allowed_row)
 
-    # Role assignment is keyed on clerk_user_id, so we can only upsert the role
-    # row once a Clerk account is linked. For email-only invites the role
-    # defaults to `viewer` on first sign-in (owner can promote afterward).
+    # If the invitee has already signed in (clerk_user_id known), write the role
+    # straight into mc_user_roles. Otherwise pending_role above carries it until
+    # first sign-in, where _check_allowlist applies it.
     if clerk_user_id:
         role_result = await session.exec(
             select(MCUserRole).where(MCUserRole.clerk_user_id == clerk_user_id)

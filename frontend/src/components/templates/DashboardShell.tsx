@@ -70,7 +70,7 @@ export function DashboardShell({ children }: { children: ReactNode }) {
       >
         <div
           className="flex items-center pr-4 shrink-0 w-[220px]"
-          style={{ paddingLeft: isMacElectron ? "88px" : "24px" }}
+          style={{ paddingLeft: isMacElectron ? "78px" : "24px" }}
         >
           <button
             type="button"
@@ -81,7 +81,7 @@ export function DashboardShell({ children }: { children: ReactNode }) {
           >
             {sidebarOpen ? <X className="h-4 w-4" /> : <Menu className="h-4 w-4" />}
           </button>
-          <BrandMark />
+          <BrandMark compact={isMacElectron} />
         </div>
 
       </header>

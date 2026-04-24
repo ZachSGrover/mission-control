@@ -650,7 +650,7 @@ export default function MemoryPage() {
   return (
     <DashboardShell>
       <SignedOut>
-        <SignedOutPanel message="Sign in to access Digidle OS" forceRedirectUrl="/memory" />
+        <SignedOutPanel message="Sign in to access Digital OS" forceRedirectUrl="/memory" />
       </SignedOut>
       <SignedIn>
         <DashboardSidebar />

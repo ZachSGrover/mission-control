@@ -2,24 +2,25 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { useState } from "react";
 import {
   Activity,
   Bot,
   Brain,
   CalendarDays,
+  ChevronDown,
+  ChevronRight,
   Check,
   CloudUpload,
-  Code2,
   FolderOpen,
   GitBranch,
   Layout,
   Loader2,
   MessageSquare,
   Network,
-  // MessagesSquare, — Master (hidden)
   Plug,
   Settings,
-  // Sparkles, — Gemini (hidden)
+  Sparkles,
   TriangleAlert,
   Users,
   Wrench,
@@ -47,6 +48,55 @@ function NavSection({ label, children }: { label: string; children: React.ReactN
         {label}
       </p>
       <div className="space-y-0.5">{children}</div>
+    </div>
+  );
+}
+
+// ── Collapsible section (user setting persists to localStorage) ──────────────
+
+function CollapsibleSection({
+  label,
+  storageKey,
+  defaultOpen,
+  children,
+}: {
+  label: string;
+  storageKey: string;
+  defaultOpen: boolean;
+  children: React.ReactNode;
+}) {
+  // Lazy initializer reads localStorage during the first client render so
+  // initial markup already matches the user's stored preference.
+  const [open, setOpen] = useState<boolean>(() => {
+    if (typeof window === "undefined") return defaultOpen;
+    try {
+      const stored = window.localStorage.getItem(storageKey);
+      if (stored === "1") return true;
+      if (stored === "0") return false;
+    } catch { /* ignore */ }
+    return defaultOpen;
+  });
+
+  const toggle = () => {
+    setOpen((prev) => {
+      const next = !prev;
+      try { localStorage.setItem(storageKey, next ? "1" : "0"); } catch { /* ignore */ }
+      return next;
+    });
+  };
+
+  return (
+    <div>
+      <button
+        type="button"
+        onClick={toggle}
+        className="w-full flex items-center justify-between px-3 mb-1 text-[10px] font-semibold uppercase tracking-widest transition-colors"
+        style={{ color: "var(--text-quiet)" }}
+      >
+        <span>{label}</span>
+        {open ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
+      </button>
+      {open && <div className="space-y-0.5">{children}</div>}
     </div>
   );
 }
@@ -92,7 +142,7 @@ function NavLink({
   );
 }
 
-// ── Sub-item nav link (indented, used under Memory) ───────────────────────────
+// ── Sub-item nav link (indented) ──────────────────────────────────────────────
 
 function NavSubLink({
   href,
@@ -158,6 +208,10 @@ export function DashboardSidebar() {
   const gitSave = useGitSave();
   const { role } = useRole();
 
+  // Auto-open "More" if the user is on a route inside it
+  const moreRoutes = ["/chat/gpt", "/chat/gemini", "/chat/master", "/projects", "/memory", "/calendar", "/boards", "/agents", "/control", "/workflows", "/skills"];
+  const moreOpenByRoute = moreRoutes.some((r) => pathname.startsWith(r));
+
   return (
     <aside
       className={cn(
@@ -172,33 +226,29 @@ export function DashboardSidebar() {
       {/* ── Scrollable nav ───────────────────────────────────────────── */}
       <div className="flex-1 overflow-y-auto px-3 py-5 space-y-5">
 
-        {/* Chat */}
-        <NavSection label="Chat">
-          <NavLink href="/chat"             label="Claude"      Icon={MessageSquare} exact />
-          <NavLink href="/chat/claude-code" label="Claude Code" Icon={Code2} />
-          <NavLink href="/chat/gpt"         label="ChatGPT"     Icon={Zap} />
-          {/* Hidden until keys configured:
-          <NavLink href="/chat/gemini" label="Gemini"  Icon={Sparkles} />
-          <NavLink href="/chat/master" label="Master"  Icon={MessagesSquare} />
-          */}
+        {/* Primary */}
+        <NavSection label="Primary">
+          <NavLink href="/chat"     label="Claw" Icon={MessageSquare} exact />
+          <NavLink href="/activity" label="Logs" Icon={Activity} />
         </NavSection>
 
-        {/* Memory — with Projects, Memory, Calendar as sub-items */}
-        <NavSection label="Memory">
+        {/* More — everything working but secondary, collapsed by default */}
+        <CollapsibleSection label="More" storageKey="mc_sidebar_more_open" defaultOpen={moreOpenByRoute}>
+          {/* Other chat providers */}
+          <NavSubLink href="/chat/gpt"     label="ChatGPT"  Icon={Zap} />
+          <NavSubLink href="/chat/gemini"  label="Gemini"   Icon={Sparkles} />
+          <NavSubLink href="/chat/master"  label="Master"   Icon={MessageSquare} />
+          {/* Memory / Planning */}
           <NavSubLink href="/projects"  label="Projects"  Icon={FolderOpen} />
           <NavSubLink href="/memory"    label="Memory"    Icon={Brain} exact />
           <NavSubLink href="/calendar"  label="Calendar"  Icon={CalendarDays} />
-        </NavSection>
-
-        {/* Automation */}
-        <NavSection label="Automation">
-          <NavLink href="/boards"    label="Boards"    Icon={Layout} />
-          <NavLink href="/agents"    label="Agents"    Icon={Bot} />
-          <NavLink href="/control"   label="Control"   Icon={Network} />
-          <NavLink href="/workflows" label="Workflows" Icon={GitBranch} />
-          <NavLink href="/skills"    label="Skills"    Icon={Wrench} />
-          <NavLink href="/activity"  label="Logs"      Icon={Activity} />
-        </NavSection>
+          {/* Automation */}
+          <NavSubLink href="/boards"    label="Boards"    Icon={Layout} />
+          <NavSubLink href="/agents"    label="Agents"    Icon={Bot} />
+          <NavSubLink href="/control"   label="Control"   Icon={Network} />
+          <NavSubLink href="/workflows" label="Workflows" Icon={GitBranch} />
+          <NavSubLink href="/skills"    label="Skills"    Icon={Wrench} />
+        </CollapsibleSection>
 
       </div>
 
@@ -207,7 +257,6 @@ export function DashboardSidebar() {
         className="shrink-0 px-3 pb-4 pt-2 space-y-1"
         style={{ borderTop: "1px solid var(--border)" }}
       >
-        {/* ── Save button ──────────────────────────────────────────── */}
         <button
           type="button"
           onClick={() => {
@@ -246,7 +295,6 @@ export function DashboardSidebar() {
           </span>
         </button>
 
-        {/* Error detail */}
         {gitSave.status === "error" && gitSave.message && (
           <p className="px-3 text-[11px] leading-snug text-red-400">
             {gitSave.message}
@@ -257,19 +305,19 @@ export function DashboardSidebar() {
           href="/settings"
           className={cn(
             "flex items-center gap-2.5 rounded-lg px-3 py-2 text-sm transition-colors",
-            isSettingsActive && !pathname.startsWith("/settings/users") ? "font-medium" : "font-normal",
+            isSettingsActive && !pathname.startsWith("/settings/users") && !pathname.startsWith("/settings/integrations") ? "font-medium" : "font-normal",
           )}
           style={
-            isSettingsActive && !pathname.startsWith("/settings/users")
+            isSettingsActive && !pathname.startsWith("/settings/users") && !pathname.startsWith("/settings/integrations")
               ? { background: "var(--accent-soft)", color: "var(--accent-strong)" }
               : { color: "var(--text-muted)" }
           }
           onMouseEnter={(e) => {
-            if (!(isSettingsActive && !pathname.startsWith("/settings/users")))
+            if (!(isSettingsActive && !pathname.startsWith("/settings/users") && !pathname.startsWith("/settings/integrations")))
               (e.currentTarget as HTMLElement).style.color = "var(--text)";
           }}
           onMouseLeave={(e) => {
-            if (!(isSettingsActive && !pathname.startsWith("/settings/users")))
+            if (!(isSettingsActive && !pathname.startsWith("/settings/users") && !pathname.startsWith("/settings/integrations")))
               (e.currentTarget as HTMLElement).style.color = "var(--text-muted)";
           }}
         >

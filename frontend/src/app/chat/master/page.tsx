@@ -810,7 +810,7 @@ export default function MasterChatPage() {
   return (
     <DashboardShell>
       <SignedOut>
-        <SignedOutPanel message="Sign in to access Digidle OS" forceRedirectUrl="/chat/master" />
+        <SignedOutPanel message="Sign in to access Digital OS" forceRedirectUrl="/chat/master" />
       </SignedOut>
       <SignedIn>
         <DashboardSidebar />

@@ -18,7 +18,7 @@ from app.core.time import utcnow
 
 
 class MCAllowedUser(SQLModel, table=True):
-    """Allowlist entry — only users with a matching row here may access Mission Control."""
+    """Allowlist entry — only users with a matching row here may access Digital OS."""
 
     __tablename__ = "mc_allowed_users"  # pyright: ignore[reportAssignmentType]
 
@@ -26,4 +26,7 @@ class MCAllowedUser(SQLModel, table=True):
     clerk_user_id: str | None = Field(default=None, index=True, unique=True, max_length=255)
     email: str | None = Field(default=None, index=True, unique=True, max_length=320)
     added_by_clerk_user_id: str | None = Field(default=None, max_length=255)
+    # pending_role: intended role captured at invite time. Applied to mc_user_roles on first
+    # sign-in so email-only invites don't silently downgrade to viewer.
+    pending_role: str | None = Field(default=None, max_length=32)
     created_at: datetime = Field(default_factory=utcnow)

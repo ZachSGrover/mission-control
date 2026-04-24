@@ -415,7 +415,7 @@ function TelegramSection({ fetchFn }: { fetchFn: FetchFn }) {
       </div>
 
       <p className="text-xs" style={{ color: "var(--text-quiet)" }}>
-        Control Mission Control remotely via a Telegram bot. Get your token from{" "}
+        Control Digital OS remotely via a Telegram bot. Get your token from{" "}
         <span className="font-mono" style={{ color: "var(--text)" }}>@BotFather</span> on Telegram.
       </p>
 
@@ -666,7 +666,7 @@ export default function SettingsPage() {
   return (
     <DashboardShell>
       <SignedOut>
-        <SignedOutPanel message="Sign in to access Digidle OS" forceRedirectUrl="/settings" />
+        <SignedOutPanel message="Sign in to access Digital OS" forceRedirectUrl="/settings" />
       </SignedOut>
       <SignedIn>
         <DashboardSidebar />

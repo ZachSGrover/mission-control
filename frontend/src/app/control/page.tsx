@@ -536,8 +536,33 @@ function ControlBody() {
     <div className="max-w-5xl mx-auto px-6 py-6 space-y-4">
       <div>
         <h1 className="text-xl font-semibold text-slate-900">Control</h1>
-        <p className="text-sm text-slate-500">Agents, device nodes, and background tasks.</p>
+        <p className="text-sm text-slate-500">Live operations center — what&apos;s running right now.</p>
       </div>
+
+      {/* Plain-English explainer for new users */}
+      <div
+        className="rounded-xl p-4 text-xs leading-relaxed"
+        style={{ background: "var(--surface)", border: "1px solid var(--border)", color: "var(--text-muted)" }}
+      >
+        <p className="mb-2">
+          Three panels below, from top to bottom:
+        </p>
+        <ul className="list-disc pl-5 space-y-1">
+          <li>
+            <strong style={{ color: "var(--text)" }}>Agents</strong> — active AI workers.
+            Invoke, pause, or delete them. Empty until you create an agent on the Agents page.
+          </li>
+          <li>
+            <strong style={{ color: "var(--text)" }}>Devices</strong> — CLAW nodes
+            (laptops, servers) that heartbeat in. Gives your agents places to run.
+          </li>
+          <li>
+            <strong style={{ color: "var(--text)" }}>Tasks</strong> — background jobs queued
+            on your gateway. Track status, errors, retries.
+          </li>
+        </ul>
+      </div>
+
       <AgentsPanel fetchFn={fetchWithAuth} />
       <DevicesPanel fetchFn={fetchWithAuth} />
       <TasksPanel fetchFn={fetchWithAuth} />

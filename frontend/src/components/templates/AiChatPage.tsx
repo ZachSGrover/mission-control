@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { Mic } from "lucide-react";
 
 import { Markdown } from "@/components/atoms/Markdown";
 import { DashboardSidebar } from "@/components/organisms/DashboardSidebar";
@@ -176,6 +177,7 @@ function AiChatContent({
   models,
   model,
   onModelChange,
+  voicePlaceholder = false,
 }: {
   provider: string;
   chat: ChatState;
@@ -183,6 +185,7 @@ function AiChatContent({
   models?: ModelOption[];
   model?: string;
   onModelChange?: (model: string) => void;
+  voicePlaceholder?: boolean;
 }) {
   const { messages, status, isSending, sendMessage, clearMessages, isReconnected } = chat;
   const bottomRef = useRef<HTMLDivElement>(null);
@@ -202,6 +205,17 @@ function AiChatContent({
         <div className="flex items-center gap-3">
           {models && model && onModelChange && (
             <ModelSelector models={models} value={model} onChange={onModelChange} />
+          )}
+          {voicePlaceholder && (
+            <button
+              type="button"
+              disabled
+              aria-label="Voice Mode"
+              title="Voice Mode coming next: talk to Claw through your headset."
+              className="rounded-md p-1.5 text-slate-300 cursor-not-allowed"
+            >
+              <Mic className="h-4 w-4" />
+            </button>
           )}
           {isSending && (
             <span className="flex items-center gap-1.5 text-xs text-slate-400">
@@ -281,11 +295,22 @@ export interface AiChatPageProps {
   models?: ModelOption[];
   model?: string;
   onModelChange?: (model: string) => void;
+  // When true, renders a disabled microphone icon next to the model selector.
+  // Placeholder for Voice Mode — see /guide#voice.
+  voicePlaceholder?: boolean;
 }
 
 // Always renders sidebar + content regardless of auth state.
 // Clerk redirect guards are incompatible with Electron (no external auth flow).
-export function AiChatPage({ provider, chat, banner, models, model, onModelChange }: AiChatPageProps) {
+export function AiChatPage({
+  provider,
+  chat,
+  banner,
+  models,
+  model,
+  onModelChange,
+  voicePlaceholder,
+}: AiChatPageProps) {
   return (
     <DashboardShell>
       <DashboardSidebar />
@@ -296,6 +321,7 @@ export function AiChatPage({ provider, chat, banner, models, model, onModelChang
         models={models}
         model={model}
         onModelChange={onModelChange}
+        voicePlaceholder={voicePlaceholder}
       />
     </DashboardShell>
   );

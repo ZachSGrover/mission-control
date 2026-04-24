@@ -4,6 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
   Activity,
+  BookOpen,
   Bot,
   Brain,
   CalendarDays,
@@ -120,6 +121,7 @@ export function DashboardSidebar() {
 
   const usersActive = pathname.startsWith("/settings/users");
   const integrationsActive = pathname.startsWith("/settings/integrations");
+  const guideActive = pathname.startsWith("/guide");
 
   return (
     <aside
@@ -200,6 +202,28 @@ export function DashboardSidebar() {
           {gitSave.status === "error" && gitSave.message && (
             <p className="px-3 text-[11px] leading-snug text-red-400">{gitSave.message}</p>
           )}
+
+          <Link
+            href="/guide"
+            className={cn(
+              "flex items-center gap-2.5 rounded-lg px-3 py-2 text-sm transition-colors",
+              guideActive ? "font-medium" : "font-normal",
+            )}
+            style={
+              guideActive
+                ? { background: "var(--accent-soft)", color: "var(--accent-strong)" }
+                : { color: "var(--text-muted)" }
+            }
+            onMouseEnter={(e) => {
+              if (!guideActive) (e.currentTarget as HTMLElement).style.color = "var(--text)";
+            }}
+            onMouseLeave={(e) => {
+              if (!guideActive) (e.currentTarget as HTMLElement).style.color = "var(--text-muted)";
+            }}
+          >
+            <BookOpen className="h-4 w-4 shrink-0" />
+            Guide
+          </Link>
 
           <Link
             href="/settings"

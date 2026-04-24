@@ -745,6 +745,57 @@ export default function SettingsPage() {
               </section>
               {/* Remote Access — Telegram */}
               <TelegramSection fetchFn={fetchWithAuth} />
+
+              {/* Branding — logo + app name */}
+              <section className="space-y-3">
+                <h2 className="text-xs font-semibold uppercase tracking-widest" style={{ color: "var(--text-quiet)" }}>
+                  Branding
+                </h2>
+                <div
+                  className="rounded-xl p-4 space-y-3"
+                  style={{ background: "var(--surface-strong)", border: "1px solid var(--border)" }}
+                >
+                  <p className="text-xs leading-relaxed" style={{ color: "var(--text-muted)" }}>
+                    The sidebar logo loads from{" "}
+                    <code
+                      className="rounded px-1.5 py-0.5 font-mono text-[11px]"
+                      style={{ background: "var(--surface)", color: "var(--text)" }}
+                    >
+                      frontend/public/logo.png
+                    </code>
+                    .
+                  </p>
+                  <ol
+                    className="text-xs list-decimal pl-5 space-y-1"
+                    style={{ color: "var(--text-muted)" }}
+                  >
+                    <li>
+                      Drop your logo file at that path (PNG, transparent background,
+                      40×40 recommended).
+                    </li>
+                    <li>
+                      Quit and reopen the app, or hit{" "}
+                      <code
+                        className="rounded px-1.5 py-0.5 font-mono text-[11px]"
+                        style={{ background: "var(--surface)", color: "var(--text)" }}
+                      >
+                        ⌘R
+                      </code>{" "}
+                      to reload the window.
+                    </li>
+                  </ol>
+                  <p className="text-xs" style={{ color: "var(--text-quiet)" }}>
+                    The wordmark (<em>Digital OS</em>) reads from the{" "}
+                    <code
+                      className="rounded px-1.5 py-0.5 font-mono text-[11px]"
+                      style={{ background: "var(--surface)", color: "var(--text)" }}
+                    >
+                      NEXT_PUBLIC_APP_NAME
+                    </code>{" "}
+                    environment variable.
+                  </p>
+                </div>
+              </section>
             </RoleGuard>
 
             {/* ── Integration Foundations ─────────────────────────────────── */}

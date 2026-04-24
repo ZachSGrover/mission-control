@@ -43,6 +43,7 @@ export default function ClawChatPage() {
       models={CLAW_MODELS}
       model={model}
       onModelChange={setModel}
+      voicePlaceholder
     />
   );
 }

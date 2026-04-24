@@ -385,7 +385,7 @@ export default function CalendarPage() {
   return (
     <DashboardShell>
       <SignedOut>
-        <SignedOutPanel message="Sign in to access Digidle OS" forceRedirectUrl="/calendar" />
+        <SignedOutPanel message="Sign in to access Digital OS" forceRedirectUrl="/calendar" />
       </SignedOut>
       <SignedIn>
         <DashboardSidebar />

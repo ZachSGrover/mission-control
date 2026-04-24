@@ -484,7 +484,9 @@ async def _check_allowlist(
     if allowed_result.first() is not None:
         return
 
-    # Email-based invite: match a pending row by email, then backfill clerk_user_id.
+    # Email-based invite: match a pending row by email, then backfill clerk_user_id
+    # and apply the invite's pending_role (if any) so the user gets the intended
+    # role instead of silently defaulting to viewer.
     normalized_email = _normalize_email(email)
     if normalized_email:
         email_result = await session.exec(
@@ -492,9 +494,33 @@ async def _check_allowlist(
         )
         email_row = email_result.first()
         if email_row is not None:
+            changed = False
             if email_row.clerk_user_id != clerk_user_id:
                 email_row.clerk_user_id = clerk_user_id
                 session.add(email_row)
+                changed = True
+
+            pending_role = (email_row.pending_role or "").strip()
+            if pending_role:
+                existing_role = await session.exec(
+                    sql_select(MCUserRole).where(
+                        MCUserRole.clerk_user_id == clerk_user_id
+                    )
+                )
+                role_row = existing_role.first()
+                if role_row is None:
+                    session.add(
+                        MCUserRole(
+                            clerk_user_id=clerk_user_id,
+                            role=pending_role,
+                            disabled=False,
+                        )
+                    )
+                    changed = True
+                # If a role row already exists (e.g. prior sign-in), don't
+                # overwrite — owner can still adjust from the Users page.
+
+            if changed:
                 await session.commit()
             return
 

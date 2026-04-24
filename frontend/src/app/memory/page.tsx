@@ -650,7 +650,7 @@ export default function MemoryPage() {
   return (
     <DashboardShell>
       <SignedOut>
-        <SignedOutPanel message="Sign in to access Digidle OS" forceRedirectUrl="/memory" />
+        <SignedOutPanel message="Sign in to access Digital OS" forceRedirectUrl="/memory" />
       </SignedOut>
       <SignedIn>
         <DashboardSidebar />
@@ -682,6 +682,46 @@ export default function MemoryPage() {
             </div>
 
             {tab === "memory" ? <MemoryTab /> : <JournalTab />}
+
+            {/* ── Obsidian Vault (planned) ─────────────────────────────── */}
+            <section
+              className="rounded-xl p-5 space-y-3"
+              style={{ background: "var(--surface-strong)", border: "1px dashed var(--border-strong)" }}
+            >
+              <div className="flex items-center justify-between gap-3">
+                <h2 className="text-sm font-semibold" style={{ color: "var(--text)" }}>
+                  Obsidian Vault
+                </h2>
+                <span
+                  className="rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider"
+                  style={{ background: "rgba(234,179,8,0.15)", color: "#eab308" }}
+                  title="Obsidian integration is not wired yet. See Guide → Obsidian Setup."
+                >
+                  Not connected yet
+                </span>
+              </div>
+              <p className="text-xs leading-relaxed" style={{ color: "var(--text-muted)" }}>
+                Your real long-term memory will live in your Obsidian vault. Once connected,
+                Digital OS will read markdown files locally (never uploaded), show the folder tree
+                here, let you search, and inject selected notes into Claw&apos;s context.
+              </p>
+              <ul
+                className="text-xs space-y-1 pl-5 list-disc"
+                style={{ color: "var(--text-quiet)" }}
+              >
+                <li>Add vault path (coming soon)</li>
+                <li>Sync notes</li>
+                <li>Search vault</li>
+                <li>Inject selected notes into Claw</li>
+              </ul>
+              <a
+                href="/guide#obsidian"
+                className="inline-block text-xs font-medium"
+                style={{ color: "var(--accent-strong)" }}
+              >
+                See the Obsidian setup plan →
+              </a>
+            </section>
           </div>
         </main>
       </SignedIn>

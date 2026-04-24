@@ -243,7 +243,7 @@ function createWindow() {
     minWidth: 960,
     minHeight: 600,
     titleBarStyle: 'hiddenInset',
-    trafficLightPosition: { x: 16, y: 16 },
+    trafficLightPosition: { x: 18, y: 22 },
     backgroundColor: '#000000',
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
@@ -251,7 +251,7 @@ function createWindow() {
       nodeIntegration: false,
       sandbox: false,
     },
-    title: 'Mission Control',
+    title: 'Digital OS',
     show: false,
   })
 
@@ -295,7 +295,7 @@ function createWindow() {
   mainWindow.webContents.on('render-process-gone', (event, details) => {
     console.error('[electron] Renderer process gone:', details.reason)
     mainWindow.webContents.loadURL(
-      `data:text/html,<body style="background:#0a0a0a;color:#f87171;font-family:system-ui;display:flex;align-items:center;justify-content:center;height:100vh;margin:0;flex-direction:column;gap:12px"><h2 style="margin:0">Mission Control renderer crashed</h2><p style="color:#888;font-size:13px">Reason: ${details.reason}</p><button onclick="location.reload()" style="background:#3b82f6;color:white;border:none;padding:8px 18px;border-radius:8px;cursor:pointer;font-size:13px">Reload</button></body>`
+      `data:text/html,<body style="background:#0a0a0a;color:#f87171;font-family:system-ui;display:flex;align-items:center;justify-content:center;height:100vh;margin:0;flex-direction:column;gap:12px"><h2 style="margin:0">Digital OS renderer crashed</h2><p style="color:#888;font-size:13px">Reason: ${details.reason}</p><button onclick="location.reload()" style="background:#3b82f6;color:white;border:none;padding:8px 18px;border-radius:8px;cursor:pointer;font-size:13px">Reload</button></body>`
     )
   })
 
@@ -304,7 +304,7 @@ function createWindow() {
     if (errorCode === -3) return // ERR_ABORTED — navigation cancelled (normal for our redirect intercept)
     console.error('[electron] Page failed to load:', errorCode, errorDesc, url)
     mainWindow.webContents.loadURL(
-      `data:text/html,<body style="background:#0a0a0a;color:#f87171;font-family:system-ui;display:flex;align-items:center;justify-content:center;height:100vh;margin:0;flex-direction:column;gap:12px"><h2 style="margin:0">Failed to load Mission Control</h2><p style="color:#888;font-size:13px">${errorDesc}</p><p style="color:#555;font-size:12px">Tried: ${url}</p><button onclick="location.href='http://localhost:3000'" style="background:#3b82f6;color:white;border:none;padding:8px 18px;border-radius:8px;cursor:pointer;font-size:13px">Retry</button></body>`
+      `data:text/html,<body style="background:#0a0a0a;color:#f87171;font-family:system-ui;display:flex;align-items:center;justify-content:center;height:100vh;margin:0;flex-direction:column;gap:12px"><h2 style="margin:0">Failed to load Digital OS</h2><p style="color:#888;font-size:13px">${errorDesc}</p><p style="color:#555;font-size:12px">Tried: ${url}</p><button onclick="location.href='http://localhost:3000'" style="background:#3b82f6;color:white;border:none;padding:8px 18px;border-radius:8px;cursor:pointer;font-size:13px">Retry</button></body>`
     )
     mainWindow.show()
   })

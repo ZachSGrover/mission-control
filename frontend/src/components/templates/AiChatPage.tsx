@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { Mic } from "lucide-react";
 
 import { Markdown } from "@/components/atoms/Markdown";
 import { DashboardSidebar } from "@/components/organisms/DashboardSidebar";
@@ -54,11 +55,11 @@ function ModelSelector({
 
 function StatusDot({ status }: { status: ConnectionStatus }) {
   const map: Record<ConnectionStatus, { color: string; label: string }> = {
-    idle:         { color: "bg-slate-400",               label: "Idle" },
+    idle:         { color: "bg-slate-400",               label: "Ready" },
     connecting:   { color: "bg-yellow-400 animate-pulse", label: "Connecting…" },
-    connected:    { color: "bg-emerald-500",              label: "Connected" },
-    disconnected: { color: "bg-slate-400",               label: "Disconnected" },
-    error:        { color: "bg-red-500",                 label: "Connection error" },
+    connected:    { color: "bg-emerald-500",              label: "Online" },
+    disconnected: { color: "bg-slate-400",               label: "Offline" },
+    error:        { color: "bg-red-500",                 label: "Reconnecting" },
   };
   const { color, label } = map[status];
   return (
@@ -176,6 +177,7 @@ function AiChatContent({
   models,
   model,
   onModelChange,
+  voicePlaceholder = false,
 }: {
   provider: string;
   chat: ChatState;
@@ -183,6 +185,7 @@ function AiChatContent({
   models?: ModelOption[];
   model?: string;
   onModelChange?: (model: string) => void;
+  voicePlaceholder?: boolean;
 }) {
   const { messages, status, isSending, sendMessage, clearMessages, isReconnected } = chat;
   const bottomRef = useRef<HTMLDivElement>(null);
@@ -197,11 +200,22 @@ function AiChatContent({
       <div className="flex items-center justify-between border-b border-slate-200 bg-white px-6 py-4 shrink-0">
         <div>
           <h1 className="text-base font-semibold text-slate-900">{provider}</h1>
-          <p className="text-xs text-slate-500">AI · local</p>
+          <p className="text-xs text-slate-500">Your assistant</p>
         </div>
         <div className="flex items-center gap-3">
           {models && model && onModelChange && (
             <ModelSelector models={models} value={model} onChange={onModelChange} />
+          )}
+          {voicePlaceholder && (
+            <button
+              type="button"
+              disabled
+              aria-label="Voice Mode"
+              title="Voice Mode coming next: talk to Claw through your headset."
+              className="rounded-md p-1.5 text-slate-300 cursor-not-allowed"
+            >
+              <Mic className="h-4 w-4" />
+            </button>
           )}
           {isSending && (
             <span className="flex items-center gap-1.5 text-xs text-slate-400">
@@ -235,19 +249,10 @@ function AiChatContent({
             <div className="text-center text-slate-400">
               <p className="text-2xl mb-2">💬</p>
               <p className="text-sm font-medium">
-                {status === "connected"
-                  ? `Send a message to ${provider}`
-                  : status === "connecting"
-                  ? "Connecting…"
-                  : status === "error"
-                  ? "Connection failed"
-                  : "Waiting…"}
+                {status === "error"
+                  ? `${provider} is reconnecting. Try again in a moment.`
+                  : `Send a message to ${provider}`}
               </p>
-              {status === "error" && (
-                <p className="text-xs mt-1 text-red-400">
-                  Make sure the AI service is running
-                </p>
-              )}
             </div>
           </div>
         ) : (
@@ -270,13 +275,7 @@ function AiChatContent({
       <div className="border-t border-slate-200 bg-white px-6 pb-6 shrink-0">
         <div className="mx-auto max-w-2xl">
           <AiChatInput
-            placeholder={
-              status === "connected"
-                ? `Message ${provider}…`
-                : status === "connecting"
-                ? "Connecting…"
-                : "Not connected"
-            }
+            placeholder={`Message ${provider}…`}
             isSending={isSending}
             disabled={status !== "connected"}
             onSend={sendMessage}
@@ -296,11 +295,22 @@ export interface AiChatPageProps {
   models?: ModelOption[];
   model?: string;
   onModelChange?: (model: string) => void;
+  // When true, renders a disabled microphone icon next to the model selector.
+  // Placeholder for Voice Mode — see /guide#voice.
+  voicePlaceholder?: boolean;
 }
 
 // Always renders sidebar + content regardless of auth state.
 // Clerk redirect guards are incompatible with Electron (no external auth flow).
-export function AiChatPage({ provider, chat, banner, models, model, onModelChange }: AiChatPageProps) {
+export function AiChatPage({
+  provider,
+  chat,
+  banner,
+  models,
+  model,
+  onModelChange,
+  voicePlaceholder,
+}: AiChatPageProps) {
   return (
     <DashboardShell>
       <DashboardSidebar />
@@ -311,6 +321,7 @@ export function AiChatPage({ provider, chat, banner, models, model, onModelChang
         models={models}
         model={model}
         onModelChange={onModelChange}
+        voicePlaceholder={voicePlaceholder}
       />
     </DashboardShell>
   );

@@ -54,11 +54,11 @@ function ModelSelector({
 
 function StatusDot({ status }: { status: ConnectionStatus }) {
   const map: Record<ConnectionStatus, { color: string; label: string }> = {
-    idle:         { color: "bg-slate-400",               label: "Idle" },
+    idle:         { color: "bg-slate-400",               label: "Ready" },
     connecting:   { color: "bg-yellow-400 animate-pulse", label: "Connecting…" },
-    connected:    { color: "bg-emerald-500",              label: "Connected" },
-    disconnected: { color: "bg-slate-400",               label: "Disconnected" },
-    error:        { color: "bg-red-500",                 label: "Connection error" },
+    connected:    { color: "bg-emerald-500",              label: "Online" },
+    disconnected: { color: "bg-slate-400",               label: "Offline" },
+    error:        { color: "bg-red-500",                 label: "Reconnecting" },
   };
   const { color, label } = map[status];
   return (
@@ -197,7 +197,7 @@ function AiChatContent({
       <div className="flex items-center justify-between border-b border-slate-200 bg-white px-6 py-4 shrink-0">
         <div>
           <h1 className="text-base font-semibold text-slate-900">{provider}</h1>
-          <p className="text-xs text-slate-500">AI · local</p>
+          <p className="text-xs text-slate-500">Your assistant</p>
         </div>
         <div className="flex items-center gap-3">
           {models && model && onModelChange && (
@@ -235,19 +235,10 @@ function AiChatContent({
             <div className="text-center text-slate-400">
               <p className="text-2xl mb-2">💬</p>
               <p className="text-sm font-medium">
-                {status === "connected"
-                  ? `Send a message to ${provider}`
-                  : status === "connecting"
-                  ? "Connecting…"
-                  : status === "error"
-                  ? "Connection failed"
-                  : "Waiting…"}
+                {status === "error"
+                  ? `${provider} is reconnecting. Try again in a moment.`
+                  : `Send a message to ${provider}`}
               </p>
-              {status === "error" && (
-                <p className="text-xs mt-1 text-red-400">
-                  Make sure the AI service is running
-                </p>
-              )}
             </div>
           </div>
         ) : (
@@ -270,13 +261,7 @@ function AiChatContent({
       <div className="border-t border-slate-200 bg-white px-6 pb-6 shrink-0">
         <div className="mx-auto max-w-2xl">
           <AiChatInput
-            placeholder={
-              status === "connected"
-                ? `Message ${provider}…`
-                : status === "connecting"
-                ? "Connecting…"
-                : "Not connected"
-            }
+            placeholder={`Message ${provider}…`}
             isSending={isSending}
             disabled={status !== "connected"}
             onSend={sendMessage}

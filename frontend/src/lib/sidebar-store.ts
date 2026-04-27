@@ -134,7 +134,7 @@ const SEED_LAYOUT: SidebarLayout = {
       id: "chat", label: "Chat", order: 0, collapsed: false, custom: false,
       createdAt: SEED_DATE, updatedAt: SEED_DATE,
       items: [
-        item("claw", "Claw", "/chat", "MessageSquare", 0, { activeMode: "exact" }),
+        item("claw", "Chat", "/chat", "MessageSquare", 0, { activeMode: "exact" }),
       ],
     },
     {
@@ -177,6 +177,13 @@ const SEED_LAYOUT: SidebarLayout = {
       ],
     },
   ],
+};
+
+// One-shot label migrations for core items renamed in past releases.
+// `from` lists every historical seed default; only those exact strings are
+// rewritten, so any user-customized rename (e.g. "Main") is left alone.
+const LABEL_MIGRATIONS: Record<string, { from: string[]; to: string }> = {
+  claw: { from: ["Claw", "Clawdius"], to: "Chat" },
 };
 
 // IDs of items/categories that must always survive (hide allowed, delete not).
@@ -297,8 +304,12 @@ function mergeWithSeed(stored: SidebarLayout): SidebarLayout {
         if (seedItem) {
           // Core item: force href, requireRole, kind, actionKey to seed values
           // (prevent breakage); keep user's label / order / hidden / iconKey.
+          const migration = LABEL_MIGRATIONS[it.id];
+          const migratedLabel =
+            migration && migration.from.includes(it.label) ? migration.to : it.label;
           mergedItems.push({
             ...it,
+            label: migratedLabel,
             href: seedItem.href,
             requireRole: seedItem.requireRole,
             activeMode: seedItem.activeMode,
@@ -350,6 +361,16 @@ function normalizeOrders(cats: SidebarCategoryDef[]): SidebarCategoryDef[] {
 }
 
 // ── CRUD ─────────────────────────────────────────────────────────────────────
+
+/**
+ * Always returns the seed layout — deterministic and safe to call during SSR
+ * or as a `useState` initializer. Use this instead of `loadLayout()` for the
+ * initial state, then swap to `loadLayout()` inside `useEffect` so server and
+ * client first renders match.
+ */
+export function getServerLayout(): SidebarLayout {
+  return SEED_LAYOUT;
+}
 
 export function loadLayout(): SidebarLayout {
   if (typeof window === "undefined") return SEED_LAYOUT;

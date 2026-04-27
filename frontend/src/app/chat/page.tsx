@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 import { AiChatPage, type ModelOption } from "@/components/templates/AiChatPage";
 import { useOpenClawChat } from "@/hooks/use-openclaw-chat";
@@ -20,14 +20,19 @@ const STORAGE_KEY = "mc_model_claw";
 const DEFAULT_MODEL = CLAW_MODELS[0].value;
 
 export default function ClawChatPage() {
-  const [model, setModelState] = useState<string>(() => {
-    if (typeof window === "undefined") return DEFAULT_MODEL;
+  // Start with the deterministic default so server and client first renders
+  // match (no hydration error). Promote to the user's stored choice on the
+  // second render, after useEffect runs only on the client.
+  const [model, setModelState] = useState<string>(DEFAULT_MODEL);
+
+  useEffect(() => {
     try {
       const stored = window.localStorage.getItem(STORAGE_KEY);
-      if (stored && CLAW_MODELS.some((m) => m.value === stored)) return stored;
+      if (stored && CLAW_MODELS.some((m) => m.value === stored)) {
+        setModelState(stored);
+      }
     } catch { /* ignore */ }
-    return DEFAULT_MODEL;
-  });
+  }, []);
 
   const setModel = (next: string) => {
     setModelState(next);
@@ -38,7 +43,7 @@ export default function ClawChatPage() {
 
   return (
     <AiChatPage
-      provider="Claw"
+      provider="Clawdius"
       chat={chat}
       models={CLAW_MODELS}
       model={model}

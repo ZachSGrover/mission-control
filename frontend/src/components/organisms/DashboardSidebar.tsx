@@ -42,6 +42,7 @@ import { useGitPreview } from "@/hooks/use-git-preview";
 import { useGitSave } from "@/hooks/use-git-save";
 import { useRole } from "@/hooks/use-role";
 import {
+  getServerLayout,
   loadLayout,
   saveLayout,
   type SidebarIconKey,
@@ -220,12 +221,13 @@ export function DashboardSidebar() {
   const pathname = usePathname();
   const { role } = useRole();
 
-  // Start from seed (deterministic for SSR); load from localStorage after mount.
-  const [layout, setLayout] = useState<SidebarLayout>(() => loadLayout());
+  // Start from seed (deterministic — server and client first render produce
+  // identical HTML, so React hydration succeeds). Swap to the stored layout
+  // inside useEffect, which runs only on the client after mount.
+  const [layout, setLayout] = useState<SidebarLayout>(getServerLayout);
   const [manageOpen, setManageOpen] = useState(false);
 
   useEffect(() => {
-    // Re-load on mount to pick up client-side localStorage (SSR may have seeded only).
     setLayout(loadLayout());
   }, []);
 

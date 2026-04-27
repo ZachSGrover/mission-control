@@ -845,7 +845,7 @@ export default function ProjectsPage() {
   return (
     <DashboardShell>
       <SignedOut>
-        <SignedOutPanel message="Sign in to access Digital OS" forceRedirectUrl="/projects" />
+        <SignedOutPanel message="Sign in to access Digidle OS" forceRedirectUrl="/projects" />
       </SignedOut>
       <SignedIn>
         <DashboardSidebar />

@@ -2,6 +2,11 @@
 
 const { app, BrowserWindow, shell } = require('electron')
 const path = require('path')
+
+// macOS dock/app icon — loaded from build/icon.icns at the repo root.
+// In a packaged .app this path resolves inside the app bundle's resources;
+// in `electron .` dev mode it resolves from the source tree.
+const ICON_PATH = path.join(__dirname, '..', 'build', 'icon.icns')
 const { spawn } = require('child_process')
 const http = require('http')
 const net = require('net')
@@ -243,15 +248,16 @@ function createWindow() {
     minWidth: 960,
     minHeight: 600,
     titleBarStyle: 'hiddenInset',
-    trafficLightPosition: { x: 18, y: 22 },
+    trafficLightPosition: { x: 20, y: 22 },
     backgroundColor: '#000000',
+    icon: ICON_PATH,
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: false,
     },
-    title: 'Digital OS',
+    title: 'Digidle OS',
     show: false,
   })
 
@@ -295,7 +301,7 @@ function createWindow() {
   mainWindow.webContents.on('render-process-gone', (event, details) => {
     console.error('[electron] Renderer process gone:', details.reason)
     mainWindow.webContents.loadURL(
-      `data:text/html,<body style="background:#0a0a0a;color:#f87171;font-family:system-ui;display:flex;align-items:center;justify-content:center;height:100vh;margin:0;flex-direction:column;gap:12px"><h2 style="margin:0">Digital OS renderer crashed</h2><p style="color:#888;font-size:13px">Reason: ${details.reason}</p><button onclick="location.reload()" style="background:#3b82f6;color:white;border:none;padding:8px 18px;border-radius:8px;cursor:pointer;font-size:13px">Reload</button></body>`
+      `data:text/html,<body style="background:#0a0a0a;color:#f87171;font-family:system-ui;display:flex;align-items:center;justify-content:center;height:100vh;margin:0;flex-direction:column;gap:12px"><h2 style="margin:0">Digidle OS renderer crashed</h2><p style="color:#888;font-size:13px">Reason: ${details.reason}</p><button onclick="location.reload()" style="background:#3b82f6;color:white;border:none;padding:8px 18px;border-radius:8px;cursor:pointer;font-size:13px">Reload</button></body>`
     )
   })
 
@@ -304,7 +310,7 @@ function createWindow() {
     if (errorCode === -3) return // ERR_ABORTED — navigation cancelled (normal for our redirect intercept)
     console.error('[electron] Page failed to load:', errorCode, errorDesc, url)
     mainWindow.webContents.loadURL(
-      `data:text/html,<body style="background:#0a0a0a;color:#f87171;font-family:system-ui;display:flex;align-items:center;justify-content:center;height:100vh;margin:0;flex-direction:column;gap:12px"><h2 style="margin:0">Failed to load Digital OS</h2><p style="color:#888;font-size:13px">${errorDesc}</p><p style="color:#555;font-size:12px">Tried: ${url}</p><button onclick="location.href='http://localhost:3000'" style="background:#3b82f6;color:white;border:none;padding:8px 18px;border-radius:8px;cursor:pointer;font-size:13px">Retry</button></body>`
+      `data:text/html,<body style="background:#0a0a0a;color:#f87171;font-family:system-ui;display:flex;align-items:center;justify-content:center;height:100vh;margin:0;flex-direction:column;gap:12px"><h2 style="margin:0">Failed to load Digidle OS</h2><p style="color:#888;font-size:13px">${errorDesc}</p><p style="color:#555;font-size:12px">Tried: ${url}</p><button onclick="location.href='http://localhost:3000'" style="background:#3b82f6;color:white;border:none;padding:8px 18px;border-radius:8px;cursor:pointer;font-size:13px">Retry</button></body>`
     )
     mainWindow.show()
   })
@@ -315,6 +321,13 @@ function createWindow() {
 // ─── App lifecycle ────────────────────────────────────────────────────────────
 
 app.whenReady().then(async () => {
+  // Set the dock icon explicitly for `electron .` dev runs. In a packaged
+  // .app, macOS reads the icon from Info.plist (set via electron-builder's
+  // build.mac.icon field) — this call is a no-op there but harmless.
+  if (process.platform === 'darwin' && app.dock && fs.existsSync(ICON_PATH)) {
+    try { app.dock.setIcon(ICON_PATH) } catch (e) { console.warn('[electron] dock.setIcon failed:', e.message) }
+  }
+
   // 1. Start OpenClaw if not already running
   const openclawRunning = await isTcpPortInUse(OPENCLAW_PORT)
   if (openclawRunning) {

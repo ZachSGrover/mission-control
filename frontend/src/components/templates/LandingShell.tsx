@@ -25,7 +25,7 @@ export function LandingShell({ children }: { children: ReactNode }) {
             </div>
             <div className="logo-text">
               <div className="logo-name">OpenClaw</div>
-              <div className="logo-tagline">Digital OS</div>
+              <div className="logo-tagline">Digidle OS</div>
             </div>
           </Link>
 

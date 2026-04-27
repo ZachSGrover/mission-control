@@ -415,7 +415,7 @@ function TelegramSection({ fetchFn }: { fetchFn: FetchFn }) {
       </div>
 
       <p className="text-xs" style={{ color: "var(--text-quiet)" }}>
-        Control Digital OS remotely via a Telegram bot. Get your token from{" "}
+        Control Digidle OS remotely via a Telegram bot. Get your token from{" "}
         <span className="font-mono" style={{ color: "var(--text)" }}>@BotFather</span> on Telegram.
       </p>
 
@@ -666,7 +666,7 @@ export default function SettingsPage() {
   return (
     <DashboardShell>
       <SignedOut>
-        <SignedOutPanel message="Sign in to access Digital OS" forceRedirectUrl="/settings" />
+        <SignedOutPanel message="Sign in to access Digidle OS" forceRedirectUrl="/settings" />
       </SignedOut>
       <SignedIn>
         <DashboardSidebar />
@@ -785,7 +785,7 @@ export default function SettingsPage() {
                     </li>
                   </ol>
                   <p className="text-xs" style={{ color: "var(--text-quiet)" }}>
-                    The wordmark (<em>Digital OS</em>) reads from the{" "}
+                    The wordmark (<em>Digidle OS</em>) reads from the{" "}
                     <code
                       className="rounded px-1.5 py-0.5 font-mono text-[11px]"
                       style={{ background: "var(--surface)", color: "var(--text)" }}

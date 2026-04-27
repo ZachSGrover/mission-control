@@ -139,7 +139,7 @@ export function DashboardSidebar() {
 
         {/* Chat — one unified assistant */}
         <NavSection label="Chat">
-          <NavLink href="/chat" label="Claw" Icon={MessageSquare} exact />
+          <NavLink href="/chat" label="Chat" Icon={MessageSquare} exact />
         </NavSection>
 
         {/* Memory */}

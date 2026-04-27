@@ -211,7 +211,7 @@ function AiChatContent({
               type="button"
               disabled
               aria-label="Voice Mode"
-              title="Voice Mode coming next: talk to Claw through your headset."
+              title="Voice Mode coming next: talk to Clawdius through your headset."
               className="rounded-md p-1.5 text-slate-300 cursor-not-allowed"
             >
               <Mic className="h-4 w-4" />

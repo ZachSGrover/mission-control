@@ -456,7 +456,7 @@ function UserManagementContent() {
         <div>
           <h1 className="text-xl font-semibold" style={{ color: "var(--text)" }}>User Management</h1>
           <p className="mt-1 text-sm" style={{ color: "var(--text-muted)" }}>
-            Control who can access Digital OS and what they can do.
+            Control who can access Digidle OS and what they can do.
           </p>
         </div>
 
@@ -561,7 +561,7 @@ export default function UsersPage() {
   return (
     <DashboardShell>
       <SignedOut>
-        <SignedOutPanel message="Sign in to access Digital OS" forceRedirectUrl="/settings/users" />
+        <SignedOutPanel message="Sign in to access Digidle OS" forceRedirectUrl="/settings/users" />
       </SignedOut>
       <SignedIn>
         <DashboardSidebar />

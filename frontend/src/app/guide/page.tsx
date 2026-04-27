@@ -40,7 +40,7 @@ export default function GuidePage() {
   return (
     <DashboardShell>
       <SignedOut>
-        <SignedOutPanel message="Sign in to access Digital OS" forceRedirectUrl="/guide" />
+        <SignedOutPanel message="Sign in to access Digidle OS" forceRedirectUrl="/guide" />
       </SignedOut>
       <SignedIn>
         <DashboardSidebar />
@@ -51,7 +51,7 @@ export default function GuidePage() {
             <div>
               <h1 className="text-xl font-semibold" style={{ color: "var(--text)" }}>Guide</h1>
               <p className="mt-1 text-sm" style={{ color: "var(--text-muted)" }}>
-                What every section does, how to use Digital OS to run multiple things at once, and how upcoming features will plug in.
+                What every section does, how to use Digidle OS to run multiple things at once, and how upcoming features will plug in.
               </p>
             </div>
 
@@ -61,7 +61,7 @@ export default function GuidePage() {
               style={{ background: "var(--surface-strong)", border: "1px solid var(--border)" }}
             >
               {[
-                ["#claw", "Claw"],
+                ["#claw", "Clawdius"],
                 ["#projects", "Projects"],
                 ["#memory", "Memory"],
                 ["#calendar", "Calendar"],
@@ -91,9 +91,9 @@ export default function GuidePage() {
               ))}
             </nav>
 
-            <Section id="claw" title="1. Claw">
+            <Section id="claw" title="1. Clawdius">
               <p>
-                Your main operator chat — the assistant you talk to. Claw is the one place
+                Your main operator chat — the assistant you talk to. Clawdius is the one place
                 you give instructions, ask questions, and get responses. Pick the engine in
                 the chat header: <strong>Balanced</strong> for normal work, <strong>Deep</strong>
                 {" "}for careful reasoning, <strong>Fast</strong> for quick replies.
@@ -104,7 +104,7 @@ export default function GuidePage() {
               <p>
                 Your business and work areas. Examples: Digidle, Modern Sales Agency,
                 Modern Athlete, Grover Art Projects. Projects organize memory, agents,
-                boards, tasks, and workflows so Claw knows what context each thing belongs to.
+                boards, tasks, and workflows so Clawdius knows what context each thing belongs to.
               </p>
             </Section>
 
@@ -112,7 +112,7 @@ export default function GuidePage() {
               <p>
                 Long-term knowledge base. Right now it holds per-project context + an
                 auto-generated journal of your conversations. It will eventually connect to
-                your Obsidian vault so Claw can read your real notes, SOPs, and decisions.
+                your Obsidian vault so Clawdius can read your real notes, SOPs, and decisions.
                 See <a href="#obsidian" className="underline" style={{ color: "var(--accent-strong)" }}>Obsidian Setup</a> for the plan.
               </p>
             </Section>
@@ -142,7 +142,7 @@ export default function GuidePage() {
                 <strong>What is a Gateway?</strong> It&apos;s the connection that lets an
                 agent run real-world actions — call APIs, post to Discord, read files,
                 execute scripts. Without a Gateway an agent can only think, not act.
-                The local OpenClaw gateway is what Claw itself runs on.
+                The local OpenClaw gateway is what Clawdius itself runs on.
               </p>
             </Section>
 
@@ -224,9 +224,9 @@ export default function GuidePage() {
 
             {/* ── Operational sections ───────────────────────────────────── */}
 
-            <Section id="multitasking" title="How to multitask with Digital OS">
+            <Section id="multitasking" title="How to multitask with Digidle OS">
               <ol className="list-decimal pl-5 space-y-1">
-                <li>Use <strong>Claw</strong> for the main conversation — strategy, triage, thinking out loud.</li>
+                <li>Use <strong>Clawdius</strong> for the main conversation — strategy, triage, thinking out loud.</li>
                 <li>Use <strong>Agents</strong> for jobs that should run on their own schedule or on a trigger.</li>
                 <li>Use <strong>Workflows</strong> for repeatable multi-step processes you trigger over and over.</li>
                 <li>Use <strong>Boards</strong> to track progress of human + agent work.</li>
@@ -235,7 +235,7 @@ export default function GuidePage() {
                 <li>Use <strong>Memory</strong> (and later Obsidian) so agents share the same business context you have.</li>
               </ol>
               <p>
-                Rule of thumb: if you&apos;re telling Claw the same thing more than twice,
+                Rule of thumb: if you&apos;re telling Clawdius the same thing more than twice,
                 it belongs in Memory. If you&apos;re doing the same multi-step thing more than
                 twice, it belongs in a Workflow or Agent.
               </p>
@@ -243,7 +243,7 @@ export default function GuidePage() {
 
             <Section id="obsidian" title="Obsidian Setup (planned)">
               <p>
-                Today: Memory is local to Digital OS (localStorage entries + journal).
+                Today: Memory is local to Digidle OS (localStorage entries + journal).
                 It does <strong>not</strong> read your Obsidian vault yet.
               </p>
               <p>Planned rollout — simplest-first:</p>
@@ -252,7 +252,7 @@ export default function GuidePage() {
                 <li>Electron reads markdown files from that folder locally — never uploaded to a server.</li>
                 <li>Memory page shows the vault&apos;s folder tree and notes.</li>
                 <li>Search notes by title / content.</li>
-                <li>Select a note and inject it into Claw&apos;s context for the next message.</li>
+                <li>Select a note and inject it into Clawdius&apos;s context for the next message.</li>
               </ol>
               <p>
                 This uses local file-system reads under Electron only; there&apos;s no cloud
@@ -262,19 +262,19 @@ export default function GuidePage() {
 
             <Section id="voice" title="Voice Mode (planned)">
               <p>
-                Goal: talk to Claw through your headset.
+                Goal: talk to Clawdius through your headset.
               </p>
               <p>
-                Intended path: microphone input → speech-to-text → Claw &shy;→ text-to-speech → headset output.
+                Intended path: microphone input → speech-to-text → Clawdius &shy;→ text-to-speech → headset output.
               </p>
               <p>
                 First shipping version will use the browser/Electron Web Speech API (no
                 extra server, works offline for recognition on most macOS builds):
               </p>
               <ol className="list-decimal pl-5 space-y-1">
-                <li>Microphone button in the Claw chat header.</li>
+                <li>Microphone button in the Clawdius chat header.</li>
                 <li>Hold or click → speech-to-text fills the input box.</li>
-                <li>Release → Claw answers in text; optional &ldquo;speak reply&rdquo; toggle for TTS.</li>
+                <li>Release → Clawdius answers in text; optional &ldquo;speak reply&rdquo; toggle for TTS.</li>
               </ol>
               <p>
                 Until the mic button is enabled the icon will stay greyed out so there are
@@ -293,7 +293,7 @@ export default function GuidePage() {
               </ol>
               <p>
                 The wordmark next to the logo uses the environment variable{" "}
-                <Code>NEXT_PUBLIC_APP_NAME</Code>, defaulting to <em>Digital OS</em>.
+                <Code>NEXT_PUBLIC_APP_NAME</Code>, defaulting to <em>Digidle OS</em>.
                 Set that in your Vercel env (or <Code>frontend/.env.local</Code>) to
                 change the product name without touching the logo.
               </p>

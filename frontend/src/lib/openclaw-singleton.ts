@@ -21,15 +21,23 @@ const TOKEN =
 // deployed browsers behave correctly:
 //   - Explicit NEXT_PUBLIC_OPENCLAW_WS_URL always wins (local or production).
 //   - No env var + browser on localhost → default to ws://localhost:18789 (dev).
-//   - No env var + browser on a deployed host → return null, stay "disconnected".
-//     (Prevents hq.digidle.com from trying to reach the user's laptop.)
+//   - No env var + browser on hq.digidle.com → wss://claw.digidle.com (the
+//     Cloudflare-tunneled gateway exposing the operator's local OpenClaw).
+//   - No env var + any other deployed host → null, stay "disconnected".
 //   - SSR / non-browser → null (never auto-connect during render).
+const PRODUCTION_HOST_GATEWAYS: Record<string, string> = {
+  "hq.digidle.com": "wss://claw.digidle.com",
+};
+
 function _resolveWsUrl(): string | null {
   if (ENV_WS_URL) return ENV_WS_URL;
   if (typeof window === "undefined") return null;
   const host = window.location.hostname;
   if (host === "localhost" || host === "127.0.0.1" || host === "0.0.0.0") {
     return "ws://localhost:18789";
+  }
+  if (host in PRODUCTION_HOST_GATEWAYS) {
+    return PRODUCTION_HOST_GATEWAYS[host];
   }
   return null;
 }

@@ -36,7 +36,7 @@ export default function Loading() {
             flexShrink: 0,
           }}
         >
-          {/* Brandmark — "Digital OS" wordmark replica */}
+          {/* Brandmark — "Digidle OS" wordmark replica */}
           <span
             style={{
               fontFamily: "var(--font-heading, sans-serif)",
@@ -47,7 +47,7 @@ export default function Loading() {
               opacity: 0.9,
             }}
           >
-            Digital OS
+            Digidle OS
           </span>
         </div>
 

@@ -20,7 +20,7 @@
   },
   "build": {
     "appId": "com.zachary.mission-control",
-    "productName": "Mission Control",
+    "productName": "Digidle",
     "copyright": "Zachary",
     "directories": {
       "output": "electron-dist"
@@ -32,14 +32,16 @@
         "target": "dir",
         "arch": "universal"
       },
-      "darkModeSupport": true
+      "darkModeSupport": true,
+      "icon": "build/icon.icns"
     },
     "files": [
       "electron/**/*",
       "node_modules/**/*",
       ".next/**/*",
       "next.config.js",
-      "package.json"
+      "package.json",
+      "build/icon.icns"
     ],
     "extraResources": []
   },

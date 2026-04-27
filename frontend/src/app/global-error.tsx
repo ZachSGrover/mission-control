@@ -28,7 +28,7 @@ export default function GlobalError({
         }}
       >
         <p style={{ fontSize: "16px", fontWeight: 600, color: "#f87171" }}>
-          Digital OS encountered an unexpected error
+          Digidle OS encountered an unexpected error
         </p>
         {error.message && (
           <p

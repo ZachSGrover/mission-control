@@ -14,14 +14,20 @@ const DRAG_REGION = { WebkitAppRegion: "drag" } as CSSProperties;
 const NO_DRAG_REGION = { WebkitAppRegion: "no-drag" } as CSSProperties;
 
 // Detect Electron on macOS so we can reserve space for traffic-light buttons
-// without wasting left-pad in the browser build. Lazy initializer — reads
-// window.electron on the first client render.
+// without wasting left-pad in the browser build.
+//
+// Returns false on the server AND on the client's first render — both produce
+// identical HTML so React hydration succeeds. The real value lands in the
+// second render after `useEffect` runs on the client. In Electron this means
+// the brand column briefly renders with browser padding (one paint) before
+// snapping to Electron padding; this is the standard React 18+/19 pattern for
+// runtime-detected environment values and avoids a hydration error.
 function useIsMacElectron(): boolean {
-  const [isMacElectron] = useState<boolean>(() => {
-    if (typeof window === "undefined") return false;
+  const [isMacElectron, setIsMacElectron] = useState<boolean>(false);
+  useEffect(() => {
     const w = window as unknown as { electron?: { platform?: string } };
-    return w.electron?.platform === "darwin";
-  });
+    setIsMacElectron(w.electron?.platform === "darwin");
+  }, []);
   return isMacElectron;
 }
 
@@ -69,8 +75,8 @@ export function DashboardShell({ children }: { children: ReactNode }) {
         }}
       >
         <div
-          className="flex items-center pr-4 shrink-0 w-[220px]"
-          style={{ paddingLeft: isMacElectron ? "78px" : "24px" }}
+          className="flex items-center pr-3 shrink-0 w-[220px]"
+          style={{ paddingLeft: isMacElectron ? "88px" : "20px" }}
         >
           <button
             type="button"
@@ -81,7 +87,7 @@ export function DashboardShell({ children }: { children: ReactNode }) {
           >
             {sidebarOpen ? <X className="h-4 w-4" /> : <Menu className="h-4 w-4" />}
           </button>
-          <BrandMark compact={isMacElectron} />
+          <BrandMark />
         </div>
 
       </header>

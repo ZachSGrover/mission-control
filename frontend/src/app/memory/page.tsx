@@ -650,7 +650,7 @@ export default function MemoryPage() {
   return (
     <DashboardShell>
       <SignedOut>
-        <SignedOutPanel message="Sign in to access Digital OS" forceRedirectUrl="/memory" />
+        <SignedOutPanel message="Sign in to access Digidle OS" forceRedirectUrl="/memory" />
       </SignedOut>
       <SignedIn>
         <DashboardSidebar />
@@ -702,8 +702,8 @@ export default function MemoryPage() {
               </div>
               <p className="text-xs leading-relaxed" style={{ color: "var(--text-muted)" }}>
                 Your real long-term memory will live in your Obsidian vault. Once connected,
-                Digital OS will read markdown files locally (never uploaded), show the folder tree
-                here, let you search, and inject selected notes into Claw&apos;s context.
+                Digidle OS will read markdown files locally (never uploaded), show the folder tree
+                here, let you search, and inject selected notes into Clawdius&apos;s context.
               </p>
               <ul
                 className="text-xs space-y-1 pl-5 list-disc"
@@ -712,7 +712,7 @@ export default function MemoryPage() {
                 <li>Add vault path (coming soon)</li>
                 <li>Sync notes</li>
                 <li>Search vault</li>
-                <li>Inject selected notes into Claw</li>
+                <li>Inject selected notes into Clawdius</li>
               </ul>
               <a
                 href="/guide#obsidian"

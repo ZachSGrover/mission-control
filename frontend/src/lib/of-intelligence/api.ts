@@ -31,6 +31,13 @@ export type PingResponse = {
   base_url: string;
   api_key_source: "db" | "env" | "none";
   error: string | null;
+  // Self-diagnosing fields populated by the backend's PingResult.  When
+  // the *backend* route itself is missing (Mission Control out of date),
+  // the frontend synthesizes a "mission_control" error_source instead of
+  // throwing — see ofiApi.testConnection below.
+  tested_url: string;
+  error_source: "ok" | "configuration" | "network" | "onlymonster" | "mission_control" | "unknown";
+  message: string | null;
 };
 
 export type SyncLogRow = {
@@ -242,7 +249,53 @@ export const ofiApi = {
       body: JSON.stringify(body),
     }),
   deleteCredentials: (f: FetchFn) => jsonRequest<void>(f, "/credentials", { method: "DELETE" }),
-  testConnection: (f: FetchFn) => jsonRequest<PingResponse>(f, "/test", { method: "POST" }),
+  testConnection: async (f: FetchFn): Promise<PingResponse> => {
+    const url = `${getApiBaseUrl()}${BASE}/test`;
+    let res: Response;
+    try {
+      res = await f(url, { method: "POST" });
+    } catch (err) {
+      return {
+        ok: false,
+        status_code: null,
+        latency_ms: null,
+        base_url: "",
+        api_key_source: "none",
+        error: err instanceof Error ? err.message : String(err),
+        tested_url: url,
+        error_source: "mission_control",
+        message: `Could not reach Mission Control backend at ${url}.`,
+      };
+    }
+    if (res.ok) {
+      return res.json() as Promise<PingResponse>;
+    }
+    // 404 here means *the Mission Control backend itself* is missing the
+    // /of-intelligence/test route — usually because the backend process is
+    // running an older build that predates this branch.  Return a
+    // synthesized response so the Settings page can render a useful banner.
+    let detail = `HTTP ${res.status}`;
+    try {
+      const body = (await res.json()) as { detail?: string };
+      if (body?.detail) detail = body.detail;
+    } catch {
+      /* ignore */
+    }
+    return {
+      ok: false,
+      status_code: res.status,
+      latency_ms: null,
+      base_url: "",
+      api_key_source: "none",
+      error: detail,
+      tested_url: url,
+      error_source: "mission_control",
+      message:
+        res.status === 404
+          ? "Mission Control backend has no /api/v1/of-intelligence/test route. Restart the backend with this branch's code."
+          : `Mission Control backend returned ${res.status}: ${detail}`,
+    };
+  },
   triggerSync:   (f: FetchFn) => jsonRequest<{ ok: boolean; started_at: string; detail: string }>(f, "/sync", { method: "POST" }),
   syncLogs:      (f: FetchFn, limit = 100) => jsonRequest<SyncLogRow[]>(f, `/sync-logs?limit=${limit}`),
 

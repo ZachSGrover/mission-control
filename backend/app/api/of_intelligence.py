@@ -122,6 +122,12 @@ class PingResponse(BaseModel):
     base_url: str = ""
     api_key_source: str = "none"
     error: str | None = None
+    # Self-diagnosing fields (added 2026-04-28).  The frontend renders these
+    # so the operator can tell whether a failure originated in their config,
+    # the network, or OnlyMonster itself.
+    tested_url: str = ""
+    error_source: str = "unknown"
+    message: str | None = None
 
 
 class SyncTriggerResponse(BaseModel):
@@ -389,8 +395,8 @@ async def test_connection(
     client = OnlyMonsterClient(creds)
     result = await client.ping()
     logger.info(
-        "of_intelligence.test ok=%s status=%s latency_ms=%s",
-        result.ok, result.status_code, result.latency_ms,
+        "of_intelligence.test ok=%s status=%s tested_url=%s source=%s latency_ms=%s",
+        result.ok, result.status_code, result.tested_url, result.error_source, result.latency_ms,
     )
     return PingResponse(
         ok=result.ok,
@@ -399,6 +405,9 @@ async def test_connection(
         base_url=result.base_url,
         api_key_source=result.api_key_source,
         error=result.error,
+        tested_url=result.tested_url,
+        error_source=result.error_source,
+        message=result.message,
     )
 
 

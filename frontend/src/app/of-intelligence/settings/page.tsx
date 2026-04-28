@@ -211,12 +211,34 @@ export default function OfIntelligenceSettingsPage() {
             Run test
           </button>
           {ping && (
-            <pre
-              className="mt-3 rounded-md border p-3 text-xs overflow-x-auto"
-              style={{ borderColor: "var(--border)", background: "var(--bg)", color: "var(--text-muted)" }}
-            >
-{JSON.stringify(ping, null, 2)}
-            </pre>
+            <div className="mt-3 space-y-2">
+              <div
+                className="rounded-md border p-3 text-sm"
+                style={{
+                  borderColor: ping.ok ? "rgb(16,185,129)" : "rgb(248,113,113)",
+                  background: "var(--bg)",
+                }}
+              >
+                <p className="font-medium" style={{ color: ping.ok ? "rgb(5,150,105)" : "rgb(225,29,72)" }}>
+                  {ping.ok
+                    ? `ok: true · status_code: ${ping.status_code ?? "—"}`
+                    : `ok: false · status_code: ${ping.status_code ?? "—"} · error_source: ${ping.error_source}`}
+                </p>
+                {ping.message && (
+                  <p className="mt-1" style={{ color: "var(--text)" }}>{ping.message}</p>
+                )}
+                {ping.tested_url && (
+                  <p className="mt-1 text-xs font-mono" style={{ color: "var(--text-quiet)" }}>
+                    tested_url: {ping.tested_url}
+                  </p>
+                )}
+                {ping.latency_ms != null && (
+                  <p className="mt-1 text-xs" style={{ color: "var(--text-quiet)" }}>
+                    latency: {Math.round(ping.latency_ms)}ms · key source: {ping.api_key_source}
+                  </p>
+                )}
+              </div>
+            </div>
           )}
         </section>
 

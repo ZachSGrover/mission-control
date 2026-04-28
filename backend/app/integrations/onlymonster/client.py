@@ -69,6 +69,13 @@ class PingResult:
     api_key_source: str = "none"
     error: str | None = None
     raw: dict[str, Any] | None = None
+    # Self-diagnosing fields populated by ping().  `tested_url` is the
+    # full upstream URL we attempted (never includes the key — the key
+    # travels in the x-om-auth-token header, not the URL).  `error_source`
+    # tells the operator which layer produced the failure.
+    tested_url: str = ""
+    error_source: str = "unknown"  # 'configuration' | 'network' | 'onlymonster' | 'ok'
+    message: str | None = None
 
 
 @dataclass
@@ -145,27 +152,42 @@ class OnlyMonsterClient:
 
         That endpoint exists, requires auth, returns a tiny payload, and
         does not mutate state — perfect heartbeat.
+
+        The result always carries `tested_url` and `error_source` so the
+        UI can show the operator which layer (configuration / network /
+        OnlyMonster) produced any failure.
         """
+        tested_url = self._url("/api/v0/accounts")
+
         if not self._credentials.configured:
+            msg = "No API key configured. Set ONLYMONSTER_API_KEY or save via Settings."
             return PingResult(
                 ok=False,
                 base_url=self._credentials.base_url,
                 api_key_source=self._credentials.api_key_source,
-                error="No API key configured. Set ONLYMONSTER_API_KEY or save via Settings.",
+                error=msg, message=msg,
+                tested_url=tested_url,
+                error_source="configuration",
             )
 
         await self._rate_limiter.acquire("/api/v0/accounts")
         async with httpx.AsyncClient(timeout=self._timeout, headers=self._headers()) as client:
             started = time.monotonic()
             try:
-                resp = await client.get(self._url("/api/v0/accounts"), params={"limit": 1})
+                resp = await client.get(tested_url, params={"limit": 1})
             except httpx.RequestError as exc:
-                logger.warning("onlymonster.ping.network_error err=%s", exc)
+                logger.warning(
+                    "onlymonster.ping.network_error tested_url=%s err=%s",
+                    tested_url, exc,
+                )
+                msg = f"Network error contacting OnlyMonster: {exc}"
                 return PingResult(
                     ok=False,
                     base_url=self._credentials.base_url,
                     api_key_source=self._credentials.api_key_source,
-                    error=f"Network error contacting OnlyMonster: {exc}",
+                    error=msg, message=msg,
+                    tested_url=tested_url,
+                    error_source="network",
                 )
             latency_ms = (time.monotonic() - started) * 1000.0
 
@@ -176,14 +198,28 @@ class OnlyMonsterClient:
             except ValueError:
                 payload = None
 
-            error: str | None = None
-            if not ok:
+            message: str | None = None
+            if ok:
+                error_source = "ok"
+                message = "OnlyMonster responded successfully."
+            else:
+                error_source = "onlymonster"
                 if resp.status_code in (401, 403):
-                    error = f"HTTP {resp.status_code}: API key rejected by OnlyMonster."
+                    message = f"HTTP {resp.status_code}: API key rejected by OnlyMonster."
+                elif resp.status_code == 404:
+                    message = (
+                        f"HTTP 404 from OnlyMonster at {tested_url}. "
+                        "The base URL may be wrong or the /api/v0/accounts route was moved."
+                    )
                 elif resp.status_code == 429:
-                    error = "HTTP 429: rate-limited (the rate-limiter should normally prevent this)."
+                    message = "HTTP 429: rate-limited (the rate-limiter should normally prevent this)."
                 else:
-                    error = f"HTTP {resp.status_code}: {resp.text[:200]}"
+                    message = f"HTTP {resp.status_code} from OnlyMonster: {resp.text[:200]}"
+
+            logger.info(
+                "onlymonster.ping tested_url=%s status=%s ok=%s source=%s",
+                tested_url, resp.status_code, ok, error_source,
+            )
 
             return PingResult(
                 ok=ok,
@@ -191,8 +227,11 @@ class OnlyMonsterClient:
                 latency_ms=latency_ms,
                 base_url=self._credentials.base_url,
                 api_key_source=self._credentials.api_key_source,
-                error=error,
+                error=None if ok else message,
+                message=message,
                 raw=payload if isinstance(payload, dict) else None,
+                tested_url=tested_url,
+                error_source=error_source,
             )
 
     # ── Entity fetch ─────────────────────────────────────────────────────

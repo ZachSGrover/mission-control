@@ -498,11 +498,15 @@ async def lifespan(_: FastAPI) -> AsyncIterator[None]:
 
     from app.core import network_monitor as _netmon
     from app.core import telegram_polling as _tgpoll
+    from app.services.of_intelligence import daily_qc_scheduler as _ofi_qc
 
     _bg_stop = _asyncio.Event()
     _bg_tasks: list[_asyncio.Task] = [
         _asyncio.create_task(_netmon.run_forever(_bg_stop), name="network_monitor"),
         _asyncio.create_task(_tgpoll.run_supervisor(_bg_stop), name="telegram_polling_supervisor"),
+        _asyncio.create_task(
+            _ofi_qc.run_supervisor(_bg_stop), name="of_intelligence_daily_qc_supervisor"
+        ),
     ]
     logger.info("app.lifecycle.background_tasks_started count=%d", len(_bg_tasks))
 

@@ -732,6 +732,75 @@ async def create_qc_report(
     return QcReportDetail.model_validate(report, from_attributes=True)
 
 
+# ── Daily QC scheduler config ────────────────────────────────────────────────
+
+
+class QcConfigResponse(BaseModel):
+    daily_report_time: str = ""  # "HH:MM" UTC, empty = unset
+    enabled: bool = False
+    note: str = (
+        "Time is interpreted as UTC. The supervisor wakes once per minute and "
+        "generates exactly one report per UTC calendar day at or after the "
+        "configured time. Manual generations also count as today's report."
+    )
+
+
+class SaveQcConfigRequest(BaseModel):
+    daily_report_time: str | None = Field(
+        default=None,
+        description="HH:MM in 24-hour UTC, e.g. '08:00'. Empty string clears the schedule.",
+    )
+    enabled: bool | None = None
+
+
+@router.get("/qc-config", response_model=QcConfigResponse)
+async def get_qc_config(
+    _: AuthContext = AUTH_DEP,
+    session: AsyncSession = SESSION_DEP,
+) -> QcConfigResponse:
+    from app.services.of_intelligence.daily_qc_scheduler import load_config
+
+    cfg = await load_config(session)
+    return QcConfigResponse(daily_report_time=cfg.raw_time, enabled=cfg.enabled)
+
+
+@router.post("/qc-config", response_model=QcConfigResponse)
+async def save_qc_config(
+    body: SaveQcConfigRequest,
+    _role: str = OWNER_DEP,
+    session: AsyncSession = SESSION_DEP,
+) -> QcConfigResponse:
+    from app.services.of_intelligence.daily_qc_scheduler import (
+        DAILY_QC_ENABLED_DB_KEY,
+        DAILY_QC_TIME_DB_KEY,
+        _parse_hh_mm,
+        load_config,
+    )
+
+    if body.daily_report_time is not None:
+        cleaned = body.daily_report_time.strip()
+        if cleaned and _parse_hh_mm(cleaned) is None:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="daily_report_time must be HH:MM in 24-hour format (e.g. '08:00').",
+            )
+        if cleaned:
+            await set_secret(session, DAILY_QC_TIME_DB_KEY, cleaned)
+        else:
+            await delete_secret(session, DAILY_QC_TIME_DB_KEY)
+
+    if body.enabled is not None:
+        await set_secret(session, DAILY_QC_ENABLED_DB_KEY, "true" if body.enabled else "false")
+
+    cfg = await load_config(session)
+    logger.info(
+        "of_intelligence.qc_config.saved time=%s enabled=%s",
+        cfg.raw_time or "(unset)",
+        cfg.enabled,
+    )
+    return QcConfigResponse(daily_report_time=cfg.raw_time, enabled=cfg.enabled)
+
+
 # ── Alerts ───────────────────────────────────────────────────────────────────
 
 

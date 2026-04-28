@@ -187,6 +187,12 @@ export type QcReportDetail = QcReportRow & {
   markdown: string | null;
 };
 
+export type QcConfig = {
+  daily_report_time: string;  // "HH:MM" UTC; empty string means unset
+  enabled: boolean;
+  note?: string;
+};
+
 export type AlertRow = {
   id: string;
   code: string;
@@ -315,6 +321,14 @@ export const ofiApi = {
   qcReports:     (f: FetchFn, limit = 30) => jsonRequest<QcReportRow[]>(f, `/qc-reports?limit=${limit}`),
   qcReport:      (f: FetchFn, id: string) => jsonRequest<QcReportDetail>(f, `/qc-reports/${id}`),
   generateQcReport: (f: FetchFn) => jsonRequest<QcReportDetail>(f, "/qc-reports", { method: "POST" }),
+
+  qcConfig:      (f: FetchFn) => jsonRequest<QcConfig>(f, "/qc-config"),
+  saveQcConfig:  (f: FetchFn, body: { daily_report_time?: string | null; enabled?: boolean }) =>
+    jsonRequest<QcConfig>(f, "/qc-config", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    }),
 
   alerts:        (f: FetchFn, opts: { onlyOpen?: boolean; limit?: number } = {}) => {
     const params = new URLSearchParams();

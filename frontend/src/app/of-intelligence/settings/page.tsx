@@ -3,11 +3,16 @@
 export const dynamic = "force-dynamic";
 
 import { useCallback, useEffect, useState } from "react";
-import { Eye, EyeOff, Loader2, Trash2, Zap } from "lucide-react";
+import { Clock, Eye, EyeOff, Loader2, Trash2, Zap } from "lucide-react";
 
 import { SectionShell } from "@/components/of-intelligence/SectionShell";
 import { useAuthFetch } from "@/hooks/use-auth-fetch";
-import { ofiApi, type CredentialStatus, type PingResponse } from "@/lib/of-intelligence/api";
+import {
+  ofiApi,
+  type CredentialStatus,
+  type PingResponse,
+  type QcConfig,
+} from "@/lib/of-intelligence/api";
 
 export default function OfIntelligenceSettingsPage() {
   const { fetchWithAuth } = useAuthFetch();
@@ -21,11 +26,22 @@ export default function OfIntelligenceSettingsPage() {
   const [error, setError] = useState<string | null>(null);
   const [info, setInfo] = useState<string | null>(null);
 
+  const [qcConfig, setQcConfig] = useState<QcConfig | null>(null);
+  const [qcTimeInput, setQcTimeInput] = useState("");
+  const [qcEnabledInput, setQcEnabledInput] = useState(false);
+  const [qcBusy, setQcBusy] = useState(false);
+
   const load = useCallback(async () => {
     try {
-      const res = await ofiApi.credentials(fetchWithAuth);
+      const [res, qc] = await Promise.all([
+        ofiApi.credentials(fetchWithAuth),
+        ofiApi.qcConfig(fetchWithAuth),
+      ]);
       setCreds(res);
       setBaseUrlInput(res.base_url);
+      setQcConfig(qc);
+      setQcTimeInput(qc.daily_report_time);
+      setQcEnabledInput(qc.enabled);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     }
@@ -86,6 +102,31 @@ export default function OfIntelligenceSettingsPage() {
       setBusy(false);
     }
   }, [fetchWithAuth]);
+
+  const onSaveQcConfig = useCallback(async () => {
+    setQcBusy(true);
+    setError(null);
+    setInfo(null);
+    try {
+      const cleaned = qcTimeInput.trim();
+      const res = await ofiApi.saveQcConfig(fetchWithAuth, {
+        daily_report_time: cleaned,
+        enabled: qcEnabledInput,
+      });
+      setQcConfig(res);
+      setQcTimeInput(res.daily_report_time);
+      setQcEnabledInput(res.enabled);
+      setInfo(
+        res.daily_report_time
+          ? `Daily QC report scheduled for ${res.daily_report_time} UTC.`
+          : "Daily QC report schedule cleared.",
+      );
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setQcBusy(false);
+    }
+  }, [fetchWithAuth, qcTimeInput, qcEnabledInput]);
 
   return (
     <SectionShell
@@ -258,10 +299,76 @@ export default function OfIntelligenceSettingsPage() {
           className="rounded-xl border p-5"
           style={{ background: "var(--surface)", borderColor: "var(--border)" }}
         >
-          <h2 className="text-sm font-semibold" style={{ color: "var(--text)" }}>Sync &amp; report defaults</h2>
+          <div className="flex items-center gap-2">
+            <Clock className="h-4 w-4" style={{ color: "var(--text-muted)" }} />
+            <h2 className="text-sm font-semibold" style={{ color: "var(--text)" }}>Daily QC report</h2>
+          </div>
           <p className="text-xs mt-1" style={{ color: "var(--text-muted)" }}>
-            Daily sync, QC report time, alert thresholds, Obsidian export path, and per-account monitoring lists will live
-            here.  Phase 1 ships the backend hooks for these settings; the UI form arrives once the daily-sync scheduler is wired.
+            Generates one QC report per UTC calendar day at the configured time.
+            The supervisor wakes once per minute; manual generations also count
+            as today's report so we never produce duplicates.
+            {qcConfig?.note ? <> <span style={{ color: "var(--text-quiet)" }}>{qcConfig.note}</span></> : null}
+          </p>
+
+          <div className="mt-4 space-y-3">
+            <div className="flex items-center gap-3">
+              <label className="text-xs w-32" style={{ color: "var(--text-muted)" }}>
+                Time (UTC, HH:MM)
+              </label>
+              <input
+                type="text"
+                inputMode="numeric"
+                placeholder="08:00"
+                pattern="^([01]\d|2[0-3]):[0-5]\d$"
+                value={qcTimeInput}
+                onChange={(e) => setQcTimeInput(e.target.value)}
+                className="rounded-md border px-3 py-2 text-sm w-32 font-mono"
+                style={{
+                  background: "var(--bg)",
+                  borderColor: "var(--border)",
+                  color: "var(--text)",
+                }}
+              />
+              <label className="text-xs flex items-center gap-1" style={{ color: "var(--text-muted)" }}>
+                <input
+                  type="checkbox"
+                  checked={qcEnabledInput}
+                  onChange={(e) => setQcEnabledInput(e.target.checked)}
+                />
+                Enabled
+              </label>
+              <button
+                type="button"
+                onClick={() => void onSaveQcConfig()}
+                disabled={qcBusy}
+                className="rounded-md px-3 py-2 text-sm font-medium disabled:opacity-50"
+                style={{ background: "var(--accent-strong)", color: "white" }}
+              >
+                {qcBusy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : "Save"}
+              </button>
+            </div>
+            <p className="text-[11px]" style={{ color: "var(--text-quiet)" }}>
+              Current: {qcConfig
+                ? qcConfig.daily_report_time
+                  ? `${qcConfig.daily_report_time} UTC · ${qcConfig.enabled ? "enabled" : "disabled"}`
+                  : "(no schedule configured)"
+                : "loading…"}
+            </p>
+            <p className="text-[11px]" style={{ color: "var(--text-quiet)" }}>
+              Tip: to test end-to-end, set the time to ~2 minutes from now in UTC and
+              wait. A single QC report should appear on the QC Reports tab.
+            </p>
+          </div>
+        </section>
+
+        <section
+          className="rounded-xl border p-5"
+          style={{ background: "var(--surface)", borderColor: "var(--border)" }}
+        >
+          <h2 className="text-sm font-semibold" style={{ color: "var(--text)" }}>Other defaults</h2>
+          <p className="text-xs mt-1" style={{ color: "var(--text-muted)" }}>
+            Alert thresholds, Obsidian export path, and per-account monitoring lists will live
+            here. Coming with the alerts feature.
           </p>
         </section>
       </div>

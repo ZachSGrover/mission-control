@@ -8,14 +8,27 @@ import {
   type ChatEvent,
   type ConnectionStatus,
 } from "@/lib/openclaw-client";
+import { loadGatewayToken } from "@/lib/gateway-token-store";
 import { requestManager } from "@/lib/request-manager";
 
 const ENV_WS_URL =
   (typeof process !== "undefined" && process.env.NEXT_PUBLIC_OPENCLAW_WS_URL) ||
   "";
-const TOKEN =
+const ENV_TOKEN =
   (typeof process !== "undefined" && process.env.NEXT_PUBLIC_OPENCLAW_TOKEN) ||
   "";
+
+// Resolved at WS-connect time so a Settings save (writes localStorage) is
+// picked up the next time we (re)create the client.
+//   - localStorage `mc_openclaw_token` (set via Settings UI) wins.
+//   - Else fall back to NEXT_PUBLIC_OPENCLAW_TOKEN baked at build time
+//     (the .env.local path used by `npm run dev` and the Electron build).
+//   - Else empty string — gateway will reject if it requires auth.
+function _resolveToken(): string {
+  const stored = loadGatewayToken();
+  if (stored) return stored;
+  return ENV_TOKEN;
+}
 
 // Resolve the WS URL at client-create time (not module load), so SSR and
 // deployed browsers behave correctly:
@@ -44,6 +57,9 @@ function _resolveWsUrl(): string | null {
 
 export const GATEWAY_OFFLINE_MESSAGE =
   "OpenClaw gateway is offline. This deployed build has no NEXT_PUBLIC_OPENCLAW_WS_URL configured, so it will not attempt to reach ws://localhost:18789 from your browser. Configure a secure gateway endpoint (e.g. wss://gateway.example.com) in the hosting provider's env vars, or run Mission Control locally.";
+
+export const GATEWAY_TOKEN_REQUIRED_MESSAGE =
+  "Gateway token required. Add it in Settings.";
 
 // runId → provider, populated on the first delta of each response
 const _runIdToProvider = new Map<string, string>();
@@ -107,7 +123,7 @@ function _getClient(): OpenClawClient | null {
   }
   _client = new OpenClawClient({
     url,
-    token: TOKEN,
+    token: _resolveToken(),
     onChatEvent: _handleEvent,
     onStatusChange: _notifyStatus,
   });
@@ -118,6 +134,25 @@ function _getClient(): OpenClawClient | null {
 /** Returns true if a gateway URL is configured for the current runtime. */
 export function isGatewayConfigured(): boolean {
   return _resolveWsUrl() !== null;
+}
+
+/** Returns true if a token is available (from localStorage or env). */
+export function isGatewayTokenConfigured(): boolean {
+  return _resolveToken().length > 0;
+}
+
+/**
+ * Tear down the current WS client so the next connect attempt picks up a
+ * fresh URL/token. Called by the Settings UI after the user saves or clears
+ * the gateway token.
+ */
+export function resetGatewayConnection(): void {
+  if (_client) {
+    try { _client.disconnect(); } catch { /* ignore */ }
+    _client = null;
+  }
+  _offlineReported = false;
+  _notifyStatus("idle");
 }
 
 /** Send a message via the persistent singleton client. */

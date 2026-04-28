@@ -88,16 +88,18 @@ async def generate_qc_report(
     await session.refresh(report)
 
     # Mirror into the searchable memory store so AI agents can recall it.
-    session.add(BusinessMemoryEntry(
-        product="of_intelligence",
-        kind="qc_report",
-        title=f"QC Report — {target_date.date().isoformat()}",
-        body=markdown,
-        period_start=target_date.replace(hour=0, minute=0, second=0, microsecond=0),
-        period_end=target_date,
-        tags=["qc_report", f"critical:{len(payload.critical_alerts)}"],
-        metadata_={"qc_report_id": str(report.id)},
-    ))
+    session.add(
+        BusinessMemoryEntry(
+            product="of_intelligence",
+            kind="qc_report",
+            title=f"QC Report — {target_date.date().isoformat()}",
+            body=markdown,
+            period_start=target_date.replace(hour=0, minute=0, second=0, microsecond=0),
+            period_end=target_date,
+            tags=["qc_report", f"critical:{len(payload.critical_alerts)}"],
+            metadata_={"qc_report_id": str(report.id)},
+        )
+    )
     await session.commit()
 
     logger.info(
@@ -119,7 +121,11 @@ async def _build_payload(session: AsyncSession, *, target_date: datetime) -> QcR
 
     payload = QcReportPayload(
         report_date=target_date,
-        summary="No data synced yet — pending OnlyMonster API connection." if not accounts else "Daily QC summary.",
+        summary=(
+            "No data synced yet — pending OnlyMonster API connection."
+            if not accounts
+            else "Daily QC summary."
+        ),
         accounts_reviewed=len(accounts),
         chatters_reviewed=len(chatters),
     )
@@ -144,11 +150,13 @@ async def _build_payload(session: AsyncSession, *, target_date: datetime) -> QcR
 async def _detect_sync_failures(session: AsyncSession) -> list[dict[str, Any]]:
     """Surface any sync_log error rows from the last 24h."""
     cutoff = utcnow() - timedelta(hours=24)
-    rows = (await session.exec(
-        select(OfIntelligenceSyncLog)
-        .where(OfIntelligenceSyncLog.started_at >= cutoff)
-        .where(OfIntelligenceSyncLog.status == "error")
-    )).all()
+    rows = (
+        await session.exec(
+            select(OfIntelligenceSyncLog)
+            .where(OfIntelligenceSyncLog.started_at >= cutoff)
+            .where(OfIntelligenceSyncLog.status == "error")
+        )
+    ).all()
     return [
         {
             "code": "sync_error",
@@ -169,21 +177,25 @@ async def _detect_access_issues(
     stale_cutoff = utcnow() - timedelta(hours=6)
     for account in accounts:
         if (account.access_status or "").lower() in {"lost", "blocked", "expired"}:
-            issues.append({
-                "code": "access_lost",
-                "severity": "critical",
-                "title": f"{account.username or account.source_id} may have lost access",
-                "detail": f"access_status={account.access_status}",
-                "account_source_id": account.source_id,
-            })
+            issues.append(
+                {
+                    "code": "access_lost",
+                    "severity": "critical",
+                    "title": f"{account.username or account.source_id} may have lost access",
+                    "detail": f"access_status={account.access_status}",
+                    "account_source_id": account.source_id,
+                }
+            )
         elif account.last_synced_at < stale_cutoff:
-            issues.append({
-                "code": "stale_sync",
-                "severity": "warn",
-                "title": f"{account.username or account.source_id} hasn't synced in 6h+",
-                "detail": f"last_synced_at={account.last_synced_at.isoformat()}",
-                "account_source_id": account.source_id,
-            })
+            issues.append(
+                {
+                    "code": "stale_sync",
+                    "severity": "warn",
+                    "title": f"{account.username or account.source_id} hasn't synced in 6h+",
+                    "detail": f"last_synced_at={account.last_synced_at.isoformat()}",
+                    "account_source_id": account.source_id,
+                }
+            )
     return issues
 
 
@@ -197,30 +209,40 @@ async def _summarize_accounts(
 
     yesterday = utcnow() - timedelta(days=1)
     for account in accounts:
-        revenue_rows = (await session.exec(
-            select(OfIntelligenceRevenue)
-            .where(OfIntelligenceRevenue.account_source_id == account.source_id)
-            .where(OfIntelligenceRevenue.captured_at >= yesterday)
-        )).all()
+        revenue_rows = (
+            await session.exec(
+                select(OfIntelligenceRevenue)
+                .where(OfIntelligenceRevenue.account_source_id == account.source_id)
+                .where(OfIntelligenceRevenue.captured_at >= yesterday)
+            )
+        ).all()
         revenue_24h_cents = sum(r.revenue_cents for r in revenue_rows)
-        summaries.append({
-            "account_source_id": account.source_id,
-            "username": account.username,
-            "status": account.status,
-            "access_status": account.access_status,
-            "revenue_24h_cents": revenue_24h_cents,
-            "problems": [
-                p for p in (
-                    "stale_sync" if account.last_synced_at < utcnow() - timedelta(hours=6) else None,
-                    "no_revenue_24h" if revenue_24h_cents == 0 else None,
-                ) if p
-            ],
-            "recommended_action": (
-                "Investigate sync — possible access issue."
-                if account.last_synced_at < utcnow() - timedelta(hours=6)
-                else None
-            ),
-        })
+        summaries.append(
+            {
+                "account_source_id": account.source_id,
+                "username": account.username,
+                "status": account.status,
+                "access_status": account.access_status,
+                "revenue_24h_cents": revenue_24h_cents,
+                "problems": [
+                    p
+                    for p in (
+                        (
+                            "stale_sync"
+                            if account.last_synced_at < utcnow() - timedelta(hours=6)
+                            else None
+                        ),
+                        "no_revenue_24h" if revenue_24h_cents == 0 else None,
+                    )
+                    if p
+                ],
+                "recommended_action": (
+                    "Investigate sync — possible access issue."
+                    if account.last_synced_at < utcnow() - timedelta(hours=6)
+                    else None
+                ),
+            }
+        )
     return summaries
 
 
@@ -242,13 +264,20 @@ def _summarize_chatters(chatters: list[OfIntelligenceChatter]) -> list[dict[str,
 
 
 async def _summarize_mass_messages(session: AsyncSession) -> dict[str, Any]:
-    rows = (await session.exec(
-        select(OfIntelligenceMassMessage)
-        .order_by(OfIntelligenceMassMessage.snapshot_at.desc())
-        .limit(50)
-    )).all()
+    rows = (
+        await session.exec(
+            select(OfIntelligenceMassMessage)
+            .order_by(OfIntelligenceMassMessage.snapshot_at.desc())
+            .limit(50)
+        )
+    ).all()
     if not rows:
-        return {"best": None, "worst": None, "recommended_changes": [], "note": "No mass-message data yet."}
+        return {
+            "best": None,
+            "worst": None,
+            "recommended_changes": [],
+            "note": "No mass-message data yet.",
+        }
 
     ranked = sorted(
         rows,
@@ -280,7 +309,9 @@ def _build_action_list(payload: QcReportPayload) -> list[str]:
         actions.append(alert["title"])
     for review in payload.account_reviews:
         if review.get("recommended_action"):
-            actions.append(f"{review['username'] or review['account_source_id']}: {review['recommended_action']}")
+            actions.append(
+                f"{review['username'] or review['account_source_id']}: {review['recommended_action']}"
+            )
     return actions
 
 
@@ -321,23 +352,29 @@ def _render_markdown(payload: QcReportPayload) -> str:
         for chatter in payload.chatter_reviews:
             lines.append(f"- {chatter.get('name') or chatter['chatter_source_id']} (score=pending)")
 
-    lines.extend([
-        "",
-        "## Posting Insights",
-        f"_{payload.posting_insights.get('note', '')}_",
-        "",
-        "## Mass Message Insights",
-    ])
+    lines.extend(
+        [
+            "",
+            "## Posting Insights",
+            f"_{payload.posting_insights.get('note', '')}_",
+            "",
+            "## Mass Message Insights",
+        ]
+    )
     mm = payload.mass_message_insights
     if mm.get("note"):
         lines.append(f"_{mm['note']}_")
     else:
         if mm.get("best"):
             best = mm["best"]
-            lines.append(f"- **Best:** ${(best.get('revenue_cents') or 0) / 100:.2f} from {best.get('recipients_count')} recipients")
+            lines.append(
+                f"- **Best:** ${(best.get('revenue_cents') or 0) / 100:.2f} from {best.get('recipients_count')} recipients"
+            )
         if mm.get("worst"):
             worst = mm["worst"]
-            lines.append(f"- **Worst:** ${(worst.get('revenue_cents') or 0) / 100:.2f} from {worst.get('recipients_count')} recipients")
+            lines.append(
+                f"- **Worst:** ${(worst.get('revenue_cents') or 0) / 100:.2f} from {worst.get('recipients_count')} recipients"
+            )
 
     lines.extend(["", "## Action List"])
     if not payload.action_list:

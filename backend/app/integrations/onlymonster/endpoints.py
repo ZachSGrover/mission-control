@@ -26,22 +26,22 @@ class EndpointSpec:
     path: str
     method: str = "GET"
     available: bool = False
-    write: bool = False                       # True = mutates OnlyMonster state
+    write: bool = False  # True = mutates OnlyMonster state
     requires_dynamic_discovery: bool = False  # True = depends on IDs we cannot enumerate yet
     description: str = ""
 
     # Pagination — see _paginate_response in client.py
-    pagination: str = "none"                  # "cursor" | "offset" | "none"
+    pagination: str = "none"  # "cursor" | "offset" | "none"
     items_key: str = "items"
     cursor_key: str = "cursor"
     page_limit: int = 100
 
     # Path parameters and fan-out behaviour
     path_params: tuple[str, ...] = ()
-    fan_out: str = "flat"                     # "flat" | "per_account" | "per_platform_account"
+    fan_out: str = "flat"  # "flat" | "per_account" | "per_platform_account"
 
     # Query parameter handling
-    requires_date_range: bool = False         # injects start/end (or from/to) defaulting to last 30d
+    requires_date_range: bool = False  # injects start/end (or from/to) defaulting to last 30d
     date_range_keys: tuple[str, str] = ("start", "end")
     default_query: tuple[tuple[str, str], ...] = field(default_factory=tuple)
 
@@ -82,7 +82,6 @@ ENDPOINT_CATALOG: tuple[EndpointSpec, ...] = (
         requires_date_range=True,
         date_range_keys=("from", "to"),
     ),
-
     # ── Per-account endpoints (fan out over synced accounts) ───────────────
     EndpointSpec(
         entity="account_details",
@@ -125,7 +124,6 @@ ENDPOINT_CATALOG: tuple[EndpointSpec, ...] = (
         path_params=("account_id",),
         fan_out="per_account",
     ),
-
     # ── Folder-scoped — needs vault_folder.id discovered in this run ──────
     # Currently disabled because the sync orchestrator only fans out over
     # accounts; folder discovery / iteration is a follow-up.  Mark for
@@ -145,7 +143,6 @@ ENDPOINT_CATALOG: tuple[EndpointSpec, ...] = (
         fan_out="per_account",
         page_limit=10,  # OnlyMonster enforces limit <= 10 on this endpoint.
     ),
-
     # ── Per-platform-account endpoints (fan out over (platform, platform_account_id)) ──
     EndpointSpec(
         entity="transactions",
@@ -221,7 +218,6 @@ ENDPOINT_CATALOG: tuple[EndpointSpec, ...] = (
         requires_date_range=True,
         date_range_keys=("collected_from", "collected_to"),
     ),
-
     # ── Read-only but disabled: no safe chat_id discovery ──────────────────
     EndpointSpec(
         entity="messages",
@@ -240,7 +236,6 @@ ENDPOINT_CATALOG: tuple[EndpointSpec, ...] = (
         path_params=("account_id", "chat_id"),
         fan_out="per_account",
     ),
-
     # ── Write endpoints — INVENTORY ONLY, never fired by sync ──────────────
     EndpointSpec(
         entity="messages_send",
@@ -314,6 +309,7 @@ def supported_entities() -> list[str]:
 def enabled_read_entities() -> list[str]:
     """Entities the sync orchestrator should actually drive."""
     return [
-        spec.entity for spec in ENDPOINT_CATALOG
+        spec.entity
+        for spec in ENDPOINT_CATALOG
         if spec.available and not spec.write and not spec.requires_dynamic_discovery
     ]

@@ -366,7 +366,9 @@ async def save_credentials(
         logger.info("of_intelligence.credentials.api_key.saved")
     if body.base_url is not None:
         cleaned_url = body.base_url.strip().rstrip("/")
-        if cleaned_url and not (cleaned_url.startswith("http://") or cleaned_url.startswith("https://")):
+        if cleaned_url and not (
+            cleaned_url.startswith("http://") or cleaned_url.startswith("https://")
+        ):
             raise HTTPException(
                 status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
                 detail="base_url must be an absolute http(s) URL.",
@@ -401,7 +403,11 @@ async def test_connection(
     result = await client.ping()
     logger.info(
         "of_intelligence.test ok=%s status=%s tested_url=%s source=%s latency_ms=%s",
-        result.ok, result.status_code, result.tested_url, result.error_source, result.latency_ms,
+        result.ok,
+        result.status_code,
+        result.tested_url,
+        result.error_source,
+        result.latency_ms,
     )
     return PingResponse(
         ok=result.ok,
@@ -480,11 +486,13 @@ async def list_sync_logs(
     session: AsyncSession = SESSION_DEP,
     limit: int = Query(default=100, ge=1, le=500),
 ) -> list[SyncLogRow]:
-    rows = (await session.exec(
-        select(OfIntelligenceSyncLog)
-        .order_by(OfIntelligenceSyncLog.started_at.desc())
-        .limit(limit)
-    )).all()
+    rows = (
+        await session.exec(
+            select(OfIntelligenceSyncLog)
+            .order_by(OfIntelligenceSyncLog.started_at.desc())
+            .limit(limit)
+        )
+    ).all()
     return [SyncLogRow.model_validate(r, from_attributes=True) for r in rows]
 
 
@@ -502,37 +510,50 @@ async def overview_metrics(
     fans_count = len((await session.exec(select(OfIntelligenceFan))).all())
     messages_count = len((await session.exec(select(OfIntelligenceMessage))).all())
     chatters = (await session.exec(select(OfIntelligenceChatter))).all()
-    open_critical_alerts = (await session.exec(
-        select(OfIntelligenceAlert)
-        .where(OfIntelligenceAlert.status == "open")
-        .where(OfIntelligenceAlert.severity == "critical")
-    )).all()
+    open_critical_alerts = (
+        await session.exec(
+            select(OfIntelligenceAlert)
+            .where(OfIntelligenceAlert.status == "open")
+            .where(OfIntelligenceAlert.severity == "critical")
+        )
+    ).all()
 
     # Bucket revenue by *transaction time* (period_start), not by when we
     # synced it — otherwise "Revenue Today" reports the full 30-day backfill
     # on the day of first sync.  Falls back to captured_at when period_start
     # is missing (legacy rows pre-source_external_id).
-    revenue_rows = (await session.exec(
-        select(OfIntelligenceRevenue).order_by(OfIntelligenceRevenue.captured_at.desc()).limit(10_000)
-    )).all()
+    revenue_rows = (
+        await session.exec(
+            select(OfIntelligenceRevenue)
+            .order_by(OfIntelligenceRevenue.captured_at.desc())
+            .limit(10_000)
+        )
+    ).all()
     now = utcnow()
 
     def _txn_time(row: OfIntelligenceRevenue) -> datetime:
         return row.period_start or row.captured_at
 
     revenue_today = sum(r.revenue_cents for r in revenue_rows if (now - _txn_time(r)).days < 1)
-    revenue_7d    = sum(r.revenue_cents for r in revenue_rows if (now - _txn_time(r)).days < 7)
-    revenue_30d   = sum(r.revenue_cents for r in revenue_rows if (now - _txn_time(r)).days < 30)
+    revenue_7d = sum(r.revenue_cents for r in revenue_rows if (now - _txn_time(r)).days < 7)
+    revenue_30d = sum(r.revenue_cents for r in revenue_rows if (now - _txn_time(r)).days < 30)
 
-    last_log = (await session.exec(
-        select(OfIntelligenceSyncLog).order_by(OfIntelligenceSyncLog.started_at.desc()).limit(1)
-    )).first()
-    latest_qc = (await session.exec(
-        select(OfIntelligenceQcReport).order_by(OfIntelligenceQcReport.generated_at.desc()).limit(1)
-    )).first()
+    last_log = (
+        await session.exec(
+            select(OfIntelligenceSyncLog).order_by(OfIntelligenceSyncLog.started_at.desc()).limit(1)
+        )
+    ).first()
+    latest_qc = (
+        await session.exec(
+            select(OfIntelligenceQcReport)
+            .order_by(OfIntelligenceQcReport.generated_at.desc())
+            .limit(1)
+        )
+    ).first()
 
     accounts_needing_attention = sum(
-        1 for a in accounts_synced
+        1
+        for a in accounts_synced
         if (a.access_status or "").lower() in {"lost", "blocked", "expired"}
         or (now - a.last_synced_at).total_seconds() > 6 * 3600
     )
@@ -564,9 +585,13 @@ async def list_accounts(
     _: AuthContext = AUTH_DEP,
     session: AsyncSession = SESSION_DEP,
 ) -> list[AccountRow]:
-    rows = (await session.exec(
-        select(OfIntelligenceAccount).order_by(OfIntelligenceAccount.last_synced_at.desc()).limit(500)
-    )).all()
+    rows = (
+        await session.exec(
+            select(OfIntelligenceAccount)
+            .order_by(OfIntelligenceAccount.last_synced_at.desc())
+            .limit(500)
+        )
+    ).all()
     return [AccountRow.model_validate(r, from_attributes=True) for r in rows]
 
 
@@ -576,9 +601,11 @@ async def list_fans(
     session: AsyncSession = SESSION_DEP,
     limit: int = Query(default=200, ge=1, le=1000),
 ) -> list[FanRow]:
-    rows = (await session.exec(
-        select(OfIntelligenceFan).order_by(OfIntelligenceFan.lifetime_value_cents.desc()).limit(limit)  # type: ignore[union-attr]
-    )).all()
+    rows = (
+        await session.exec(
+            select(OfIntelligenceFan).order_by(OfIntelligenceFan.lifetime_value_cents.desc()).limit(limit)  # type: ignore[union-attr]
+        )
+    ).all()
     return [FanRow.model_validate(r, from_attributes=True) for r in rows]
 
 
@@ -588,9 +615,11 @@ async def list_messages(
     session: AsyncSession = SESSION_DEP,
     limit: int = Query(default=200, ge=1, le=1000),
 ) -> list[MessageRow]:
-    rows = (await session.exec(
-        select(OfIntelligenceMessage).order_by(OfIntelligenceMessage.sent_at.desc()).limit(limit)  # type: ignore[union-attr]
-    )).all()
+    rows = (
+        await session.exec(
+            select(OfIntelligenceMessage).order_by(OfIntelligenceMessage.sent_at.desc()).limit(limit)  # type: ignore[union-attr]
+        )
+    ).all()
     return [MessageRow.model_validate(r, from_attributes=True) for r in rows]
 
 
@@ -599,9 +628,13 @@ async def list_chatters(
     _: AuthContext = AUTH_DEP,
     session: AsyncSession = SESSION_DEP,
 ) -> list[ChatterRow]:
-    rows = (await session.exec(
-        select(OfIntelligenceChatter).order_by(OfIntelligenceChatter.last_synced_at.desc()).limit(500)
-    )).all()
+    rows = (
+        await session.exec(
+            select(OfIntelligenceChatter)
+            .order_by(OfIntelligenceChatter.last_synced_at.desc())
+            .limit(500)
+        )
+    ).all()
     return [ChatterRow.model_validate(r, from_attributes=True) for r in rows]
 
 
@@ -611,9 +644,13 @@ async def list_mass_messages(
     session: AsyncSession = SESSION_DEP,
     limit: int = Query(default=100, ge=1, le=500),
 ) -> list[MassMessageRow]:
-    rows = (await session.exec(
-        select(OfIntelligenceMassMessage).order_by(OfIntelligenceMassMessage.snapshot_at.desc()).limit(limit)
-    )).all()
+    rows = (
+        await session.exec(
+            select(OfIntelligenceMassMessage)
+            .order_by(OfIntelligenceMassMessage.snapshot_at.desc())
+            .limit(limit)
+        )
+    ).all()
     return [MassMessageRow.model_validate(r, from_attributes=True) for r in rows]
 
 
@@ -623,9 +660,11 @@ async def list_posts(
     session: AsyncSession = SESSION_DEP,
     limit: int = Query(default=100, ge=1, le=500),
 ) -> list[PostRow]:
-    rows = (await session.exec(
-        select(OfIntelligencePost).order_by(OfIntelligencePost.snapshot_at.desc()).limit(limit)
-    )).all()
+    rows = (
+        await session.exec(
+            select(OfIntelligencePost).order_by(OfIntelligencePost.snapshot_at.desc()).limit(limit)
+        )
+    ).all()
     return [PostRow.model_validate(r, from_attributes=True) for r in rows]
 
 
@@ -635,9 +674,13 @@ async def list_revenue(
     session: AsyncSession = SESSION_DEP,
     limit: int = Query(default=200, ge=1, le=1000),
 ) -> list[RevenueRow]:
-    rows = (await session.exec(
-        select(OfIntelligenceRevenue).order_by(OfIntelligenceRevenue.captured_at.desc()).limit(limit)
-    )).all()
+    rows = (
+        await session.exec(
+            select(OfIntelligenceRevenue)
+            .order_by(OfIntelligenceRevenue.captured_at.desc())
+            .limit(limit)
+        )
+    ).all()
     return [RevenueRow.model_validate(r, from_attributes=True) for r in rows]
 
 
@@ -650,9 +693,13 @@ async def list_qc_reports(
     session: AsyncSession = SESSION_DEP,
     limit: int = Query(default=30, ge=1, le=200),
 ) -> list[QcReportRow]:
-    rows = (await session.exec(
-        select(OfIntelligenceQcReport).order_by(OfIntelligenceQcReport.generated_at.desc()).limit(limit)
-    )).all()
+    rows = (
+        await session.exec(
+            select(OfIntelligenceQcReport)
+            .order_by(OfIntelligenceQcReport.generated_at.desc())
+            .limit(limit)
+        )
+    ).all()
     return [QcReportRow.model_validate(r, from_attributes=True) for r in rows]
 
 
@@ -662,9 +709,11 @@ async def get_qc_report(
     _: AuthContext = AUTH_DEP,
     session: AsyncSession = SESSION_DEP,
 ) -> QcReportDetail:
-    row = (await session.exec(
-        select(OfIntelligenceQcReport).where(OfIntelligenceQcReport.id == report_id)
-    )).first()
+    row = (
+        await session.exec(
+            select(OfIntelligenceQcReport).where(OfIntelligenceQcReport.id == report_id)
+        )
+    ).first()
     if not row:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="QC report not found.")
     return QcReportDetail.model_validate(row, from_attributes=True)
@@ -743,12 +792,14 @@ async def list_memory(
     session: AsyncSession = SESSION_DEP,
     limit: int = Query(default=100, ge=1, le=500),
 ) -> list[MemoryEntryRow]:
-    rows = (await session.exec(
-        select(BusinessMemoryEntry)
-        .where(BusinessMemoryEntry.product == "of_intelligence")
-        .order_by(BusinessMemoryEntry.created_at.desc())
-        .limit(limit)
-    )).all()
+    rows = (
+        await session.exec(
+            select(BusinessMemoryEntry)
+            .where(BusinessMemoryEntry.product == "of_intelligence")
+            .order_by(BusinessMemoryEntry.created_at.desc())
+            .limit(limit)
+        )
+    ).all()
     return [MemoryEntryRow.model_validate(r, from_attributes=True) for r in rows]
 
 
@@ -783,9 +834,11 @@ async def list_chats(
     session: AsyncSession = SESSION_DEP,
     limit: int = Query(default=100, ge=1, le=500),
 ) -> list[dict[str, Any]]:
-    rows = (await session.exec(
-        select(OfIntelligenceChat).order_by(OfIntelligenceChat.last_message_at.desc()).limit(limit)  # type: ignore[union-attr]
-    )).all()
+    rows = (
+        await session.exec(
+            select(OfIntelligenceChat).order_by(OfIntelligenceChat.last_message_at.desc()).limit(limit)  # type: ignore[union-attr]
+        )
+    ).all()
     return [
         {
             "id": str(r.id),

@@ -95,10 +95,14 @@ class EndpointResult:
 
 async def resolve_credentials(session: AsyncSession) -> OnlyMonsterCredentials:
     api_key, key_source = await get_secret_with_source(
-        session, ONLYMONSTER_API_KEY_DB_KEY, fallback=settings.onlymonster_api_key,
+        session,
+        ONLYMONSTER_API_KEY_DB_KEY,
+        fallback=settings.onlymonster_api_key,
     )
     base_url, url_source = await get_secret_with_source(
-        session, ONLYMONSTER_BASE_URL_DB_KEY, fallback=settings.onlymonster_api_base_url,
+        session,
+        ONLYMONSTER_BASE_URL_DB_KEY,
+        fallback=settings.onlymonster_api_base_url,
     )
     return OnlyMonsterCredentials(
         api_key=api_key.strip(),
@@ -165,7 +169,8 @@ class OnlyMonsterClient:
                 ok=False,
                 base_url=self._credentials.base_url,
                 api_key_source=self._credentials.api_key_source,
-                error=msg, message=msg,
+                error=msg,
+                message=msg,
                 tested_url=tested_url,
                 error_source="configuration",
             )
@@ -178,14 +183,16 @@ class OnlyMonsterClient:
             except httpx.RequestError as exc:
                 logger.warning(
                     "onlymonster.ping.network_error tested_url=%s err=%s",
-                    tested_url, exc,
+                    tested_url,
+                    exc,
                 )
                 msg = f"Network error contacting OnlyMonster: {exc}"
                 return PingResult(
                     ok=False,
                     base_url=self._credentials.base_url,
                     api_key_source=self._credentials.api_key_source,
-                    error=msg, message=msg,
+                    error=msg,
+                    message=msg,
                     tested_url=tested_url,
                     error_source="network",
                 )
@@ -212,13 +219,18 @@ class OnlyMonsterClient:
                         "The base URL may be wrong or the /api/v0/accounts route was moved."
                     )
                 elif resp.status_code == 429:
-                    message = "HTTP 429: rate-limited (the rate-limiter should normally prevent this)."
+                    message = (
+                        "HTTP 429: rate-limited (the rate-limiter should normally prevent this)."
+                    )
                 else:
                     message = f"HTTP {resp.status_code} from OnlyMonster: {resp.text[:200]}"
 
             logger.info(
                 "onlymonster.ping tested_url=%s status=%s ok=%s source=%s",
-                tested_url, resp.status_code, ok, error_source,
+                tested_url,
+                resp.status_code,
+                ok,
+                error_source,
             )
 
             return PingResult(
@@ -256,20 +268,29 @@ class OnlyMonsterClient:
             )
         if spec.write:
             return EndpointResult(
-                entity=entity, available=False, reason="write_disabled",
+                entity=entity,
+                available=False,
+                reason="write_disabled",
                 error="This endpoint mutates OnlyMonster data and is disabled by policy.",
                 path_params=path_params or {},
             )
         if not spec.available:
             return EndpointResult(
-                entity=entity, available=False,
-                reason="dynamic_discovery_required" if spec.requires_dynamic_discovery else "not_available_from_api",
+                entity=entity,
+                available=False,
+                reason=(
+                    "dynamic_discovery_required"
+                    if spec.requires_dynamic_discovery
+                    else "not_available_from_api"
+                ),
                 error=spec.description or "Endpoint is not currently enabled.",
                 path_params=path_params or {},
             )
         if not self._credentials.configured:
             return EndpointResult(
-                entity=entity, available=False, reason="not_configured",
+                entity=entity,
+                available=False,
+                reason="not_configured",
                 error="No API key configured.",
                 path_params=path_params or {},
             )
@@ -278,7 +299,9 @@ class OnlyMonsterClient:
         effective_path, missing = _substitute_path(spec.path, path_params or {})
         if missing:
             return EndpointResult(
-                entity=entity, available=True, reason="missing_path_params",
+                entity=entity,
+                available=True,
+                reason="missing_path_params",
                 error=f"Missing path params: {missing}",
                 path_params=path_params or {},
             )
@@ -288,7 +311,9 @@ class OnlyMonsterClient:
         if spec.requires_date_range:
             start_key, end_key = spec.date_range_keys
             now = datetime.now(timezone.utc)
-            base_params.setdefault(start_key, (now - timedelta(days=DEFAULT_DATE_RANGE_DAYS)).isoformat())
+            base_params.setdefault(
+                start_key, (now - timedelta(days=DEFAULT_DATE_RANGE_DAYS)).isoformat()
+            )
             base_params.setdefault(end_key, now.isoformat())
         if query:
             base_params.update(query)
@@ -311,22 +336,35 @@ class OnlyMonsterClient:
                     page_params["offset"] = offset
 
                 await self._rate_limiter.acquire(spec.path)
-                resp = await self._request_with_retry(client, spec.method, effective_path, page_params)
+                resp = await self._request_with_retry(
+                    client, spec.method, effective_path, page_params
+                )
                 if resp is None:
                     return EndpointResult(
-                        entity=entity, available=True, items=items, page_count=pages,
-                        reason="network_error", error="Network error after retries.",
+                        entity=entity,
+                        available=True,
+                        items=items,
+                        page_count=pages,
+                        reason="network_error",
+                        error="Network error after retries.",
                         path_params=path_params or {},
                     )
                 if resp.status_code in (401, 403):
                     return EndpointResult(
-                        entity=entity, available=True, items=items, page_count=pages,
-                        reason="auth_error", error=f"HTTP {resp.status_code}: authentication failed.",
+                        entity=entity,
+                        available=True,
+                        items=items,
+                        page_count=pages,
+                        reason="auth_error",
+                        error=f"HTTP {resp.status_code}: authentication failed.",
                         path_params=path_params or {},
                     )
                 if resp.status_code >= 400:
                     return EndpointResult(
-                        entity=entity, available=True, items=items, page_count=pages,
+                        entity=entity,
+                        available=True,
+                        items=items,
+                        page_count=pages,
                         reason="http_error",
                         error=f"HTTP {resp.status_code}: {resp.text[:200]}",
                         path_params=path_params or {},
@@ -336,8 +374,12 @@ class OnlyMonsterClient:
                     payload = resp.json()
                 except ValueError:
                     return EndpointResult(
-                        entity=entity, available=True, items=items, page_count=pages,
-                        reason="invalid_json", error="OnlyMonster returned non-JSON content.",
+                        entity=entity,
+                        available=True,
+                        items=items,
+                        page_count=pages,
+                        reason="invalid_json",
+                        error="OnlyMonster returned non-JSON content.",
                         path_params=path_params or {},
                     )
 
@@ -357,8 +399,12 @@ class OnlyMonsterClient:
                     break
 
         return EndpointResult(
-            entity=entity, available=True, items=items, page_count=pages,
-            next_cursor=cursor, path_params=path_params or {},
+            entity=entity,
+            available=True,
+            items=items,
+            page_count=pages,
+            next_cursor=cursor,
+            path_params=path_params or {},
         )
 
     # ── HTTP retry helper ────────────────────────────────────────────────
@@ -376,7 +422,9 @@ class OnlyMonsterClient:
             except httpx.RequestError as exc:
                 logger.warning(
                     "onlymonster.request.network_error path=%s attempt=%s err=%s",
-                    path, attempt + 1, exc,
+                    path,
+                    attempt + 1,
+                    exc,
                 )
                 if attempt + 1 < MAX_RETRIES:
                     await asyncio.sleep(RETRY_BACKOFF_SECONDS[attempt])
@@ -391,7 +439,9 @@ class OnlyMonsterClient:
                         delay = max(delay, float(retry_after))
                     logger.info(
                         "onlymonster.request.retry path=%s status=%s sleep=%.1fs",
-                        path, resp.status_code, delay,
+                        path,
+                        resp.status_code,
+                        delay,
                     )
                     await asyncio.sleep(delay)
                     continue
@@ -409,6 +459,7 @@ def _substitute_path(path: str, path_params: dict[str, Any]) -> tuple[str, list[
     out = path
     # Iterate placeholders in declaration order.
     import re
+
     for match in re.findall(r"\{([^}]+)\}", path):
         if match not in path_params or path_params[match] in (None, ""):
             missing.append(match)

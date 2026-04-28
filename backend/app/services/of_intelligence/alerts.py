@@ -75,17 +75,19 @@ async def evaluate_alerts(
         if await _has_open_alert(session, candidate.code, candidate.account_source_id):
             skipped += 1
             continue
-        session.add(OfIntelligenceAlert(
-            code=candidate.code,
-            severity=candidate.severity,
-            status="open",
-            title=candidate.title,
-            message=candidate.message,
-            account_source_id=candidate.account_source_id,
-            chatter_source_id=candidate.chatter_source_id,
-            fan_source_id=candidate.fan_source_id,
-            context=candidate.context,
-        ))
+        session.add(
+            OfIntelligenceAlert(
+                code=candidate.code,
+                severity=candidate.severity,
+                status="open",
+                title=candidate.title,
+                message=candidate.message,
+                account_source_id=candidate.account_source_id,
+                chatter_source_id=candidate.chatter_source_id,
+                fan_source_id=candidate.fan_source_id,
+                context=candidate.context,
+            )
+        )
         created += 1
     if created:
         await session.commit()
@@ -99,15 +101,19 @@ async def evaluate_alerts(
     )
     logger.info(
         "of_intelligence.alerts.evaluated rules=%s created=%s skipped=%s",
-        summary.rules_run, summary.alerts_created, summary.alerts_skipped_existing,
+        summary.rules_run,
+        summary.alerts_created,
+        summary.alerts_skipped_existing,
     )
     return summary
 
 
 async def acknowledge_alert(session: AsyncSession, alert_id: str) -> OfIntelligenceAlert | None:
-    alert = (await session.exec(
-        select(OfIntelligenceAlert).where(OfIntelligenceAlert.id == alert_id)  # type: ignore[arg-type]
-    )).first()
+    alert = (
+        await session.exec(
+            select(OfIntelligenceAlert).where(OfIntelligenceAlert.id == alert_id)  # type: ignore[arg-type]
+        )
+    ).first()
     if not alert:
         return None
     if alert.status == "open":
@@ -120,9 +126,11 @@ async def acknowledge_alert(session: AsyncSession, alert_id: str) -> OfIntellige
 
 
 async def resolve_alert(session: AsyncSession, alert_id: str) -> OfIntelligenceAlert | None:
-    alert = (await session.exec(
-        select(OfIntelligenceAlert).where(OfIntelligenceAlert.id == alert_id)  # type: ignore[arg-type]
-    )).first()
+    alert = (
+        await session.exec(
+            select(OfIntelligenceAlert).where(OfIntelligenceAlert.id == alert_id)  # type: ignore[arg-type]
+        )
+    ).first()
     if not alert:
         return None
     if alert.status != "resolved":
@@ -139,11 +147,13 @@ async def resolve_alert(session: AsyncSession, alert_id: str) -> OfIntelligenceA
 
 async def _rule_sync_failure(session: AsyncSession) -> list[AlertCandidate]:
     cutoff = utcnow() - timedelta(hours=24)
-    rows = (await session.exec(
-        select(OfIntelligenceSyncLog)
-        .where(OfIntelligenceSyncLog.started_at >= cutoff)
-        .where(OfIntelligenceSyncLog.status == "error")
-    )).all()
+    rows = (
+        await session.exec(
+            select(OfIntelligenceSyncLog)
+            .where(OfIntelligenceSyncLog.started_at >= cutoff)
+            .where(OfIntelligenceSyncLog.status == "error")
+        )
+    ).all()
     return [
         AlertCandidate(
             code=f"sync_failure:{row.entity}",
@@ -158,9 +168,11 @@ async def _rule_sync_failure(session: AsyncSession) -> list[AlertCandidate]:
 
 async def _rule_account_stale(session: AsyncSession, hours: int) -> list[AlertCandidate]:
     cutoff = utcnow() - timedelta(hours=hours)
-    rows = (await session.exec(
-        select(OfIntelligenceAccount).where(OfIntelligenceAccount.last_synced_at < cutoff)
-    )).all()
+    rows = (
+        await session.exec(
+            select(OfIntelligenceAccount).where(OfIntelligenceAccount.last_synced_at < cutoff)
+        )
+    ).all()
     return [
         AlertCandidate(
             code="account_stale",
@@ -175,11 +187,13 @@ async def _rule_account_stale(session: AsyncSession, hours: int) -> list[AlertCa
 
 
 async def _rule_account_access(session: AsyncSession) -> list[AlertCandidate]:
-    rows = (await session.exec(
-        select(OfIntelligenceAccount).where(
-            OfIntelligenceAccount.access_status.in_(["lost", "blocked", "expired"])  # type: ignore[attr-defined]
+    rows = (
+        await session.exec(
+            select(OfIntelligenceAccount).where(
+                OfIntelligenceAccount.access_status.in_(["lost", "blocked", "expired"])  # type: ignore[attr-defined]
+            )
         )
-    )).all()
+    ).all()
     return [
         AlertCandidate(
             code="account_access",
@@ -195,29 +209,31 @@ async def _rule_account_access(session: AsyncSession) -> list[AlertCandidate]:
 
 async def _rule_api_disconnected(session: AsyncSession) -> list[AlertCandidate]:
     cutoff = utcnow() - timedelta(hours=24)
-    rows = (await session.exec(
-        select(OfIntelligenceSyncLog)
-        .where(OfIntelligenceSyncLog.status == "success")
-        .where(OfIntelligenceSyncLog.started_at >= cutoff)
-        .limit(1)
-    )).all()
+    rows = (
+        await session.exec(
+            select(OfIntelligenceSyncLog)
+            .where(OfIntelligenceSyncLog.status == "success")
+            .where(OfIntelligenceSyncLog.started_at >= cutoff)
+            .limit(1)
+        )
+    ).all()
     if rows:
         return []
 
     # Only fire if there's been *any* sync activity ever — avoids alerting on
     # a brand-new install before the user has done anything.
-    has_any = (await session.exec(
-        select(OfIntelligenceSyncLog).limit(1)
-    )).first()
+    has_any = (await session.exec(select(OfIntelligenceSyncLog).limit(1))).first()
     if not has_any:
         return []
 
-    return [AlertCandidate(
-        code="api_disconnected",
-        severity="critical",
-        title="OnlyMonster API hasn't returned a successful sync in 24h",
-        message="Check Settings → Integrations → OnlyMonster credentials and run a manual sync.",
-    )]
+    return [
+        AlertCandidate(
+            code="api_disconnected",
+            severity="critical",
+            title="OnlyMonster API hasn't returned a successful sync in 24h",
+            message="Check Settings → Integrations → OnlyMonster credentials and run a manual sync.",
+        )
+    ]
 
 
 # ── Helpers ──────────────────────────────────────────────────────────────────

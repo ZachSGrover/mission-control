@@ -126,25 +126,47 @@ async def run_sync(
 
     for spec in selected:
         if spec.write:
-            await _record_skip(session, run_id, spec, triggered_by, "write_disabled",
-                               "Write endpoint — disabled by policy.")
+            await _record_skip(
+                session,
+                run_id,
+                spec,
+                triggered_by,
+                "write_disabled",
+                "Write endpoint — disabled by policy.",
+            )
             skipped += 1
             continue
         if not spec.available:
-            reason = "dynamic_discovery_required" if spec.requires_dynamic_discovery else "not_available_from_api"
+            reason = (
+                "dynamic_discovery_required"
+                if spec.requires_dynamic_discovery
+                else "not_available_from_api"
+            )
             await _record_skip(session, run_id, spec, triggered_by, reason, spec.description)
             not_available += 1
             continue
 
         if spec.fan_out == "flat":
-            outcome = await _run_one(session, client, spec, ctx, run_id, triggered_by, path_params={})
+            outcome = await _run_one(
+                session, client, spec, ctx, run_id, triggered_by, path_params={}
+            )
             succeeded, failed, not_available, skipped = _tally(
-                outcome, succeeded, failed, not_available, skipped,
+                outcome,
+                succeeded,
+                failed,
+                not_available,
+                skipped,
             )
         elif spec.fan_out == "per_account":
             if not ctx.accounts:
-                await _record_skip(session, run_id, spec, triggered_by, "no_accounts_in_run",
-                                   "Skipped — accounts sync produced no results in this run.")
+                await _record_skip(
+                    session,
+                    run_id,
+                    spec,
+                    triggered_by,
+                    "no_accounts_in_run",
+                    "Skipped — accounts sync produced no results in this run.",
+                )
                 skipped += 1
                 continue
             for account in ctx.accounts:
@@ -152,16 +174,31 @@ async def run_sync(
                 if aid in (None, ""):
                     continue
                 outcome = await _run_one(
-                    session, client, spec, ctx, run_id, triggered_by,
+                    session,
+                    client,
+                    spec,
+                    ctx,
+                    run_id,
+                    triggered_by,
                     path_params={"account_id": aid},
                 )
                 succeeded, failed, not_available, skipped = _tally(
-                    outcome, succeeded, failed, not_available, skipped,
+                    outcome,
+                    succeeded,
+                    failed,
+                    not_available,
+                    skipped,
                 )
         elif spec.fan_out == "per_platform_account":
             if not ctx.accounts:
-                await _record_skip(session, run_id, spec, triggered_by, "no_accounts_in_run",
-                                   "Skipped — accounts sync produced no results in this run.")
+                await _record_skip(
+                    session,
+                    run_id,
+                    spec,
+                    triggered_by,
+                    "no_accounts_in_run",
+                    "Skipped — accounts sync produced no results in this run.",
+                )
                 skipped += 1
                 continue
             for account in ctx.accounts:
@@ -170,26 +207,50 @@ async def run_sync(
                 if not platform or not platform_account_id:
                     continue
                 outcome = await _run_one(
-                    session, client, spec, ctx, run_id, triggered_by,
+                    session,
+                    client,
+                    spec,
+                    ctx,
+                    run_id,
+                    triggered_by,
                     path_params={"platform": platform, "platform_account_id": platform_account_id},
                 )
                 succeeded, failed, not_available, skipped = _tally(
-                    outcome, succeeded, failed, not_available, skipped,
+                    outcome,
+                    succeeded,
+                    failed,
+                    not_available,
+                    skipped,
                 )
         else:
-            await _record_skip(session, run_id, spec, triggered_by, "unsupported_fan_out",
-                               f"Unsupported fan_out={spec.fan_out}")
+            await _record_skip(
+                session,
+                run_id,
+                spec,
+                triggered_by,
+                "unsupported_fan_out",
+                f"Unsupported fan_out={spec.fan_out}",
+            )
             skipped += 1
 
     finished_at = utcnow()
     summary = SyncRunSummary(
-        run_id=run_id, started_at=started_at, finished_at=finished_at,
+        run_id=run_id,
+        started_at=started_at,
+        finished_at=finished_at,
         total_entities=len(selected),
-        succeeded=succeeded, not_available=not_available, failed=failed, skipped=skipped,
+        succeeded=succeeded,
+        not_available=not_available,
+        failed=failed,
+        skipped=skipped,
     )
     logger.info(
         "of_intelligence.sync.finish run_id=%s ok=%s na=%s fail=%s skip=%s elapsed=%.1fs",
-        run_id, succeeded, not_available, failed, skipped,
+        run_id,
+        succeeded,
+        not_available,
+        failed,
+        skipped,
         (finished_at - started_at).total_seconds(),
     )
     return summary
@@ -217,8 +278,13 @@ async def _run_one(
 ) -> str:
     """Fetch + persist a single (entity, path_params) pair.  Returns status."""
     log = OfIntelligenceSyncLog(
-        run_id=run_id, source=SOURCE_ONLYMONSTER, entity=spec.entity, status="running",
-        triggered_by=triggered_by, started_at=utcnow(), source_endpoint=spec.path,
+        run_id=run_id,
+        source=SOURCE_ONLYMONSTER,
+        entity=spec.entity,
+        status="running",
+        triggered_by=triggered_by,
+        started_at=utcnow(),
+        source_endpoint=spec.path,
     )
     session.add(log)
     await session.commit()
@@ -279,9 +345,15 @@ async def _run_one(
     logger.info(
         "of_intelligence.sync.entity.done entity=%s status=%s items=%s "
         "created=%s updated=%s skipped_dup=%s errors=%s pages=%s pp=%s",
-        spec.entity, log.status, log.items_synced,
-        log.created_count, log.updated_count, log.skipped_duplicate_count, log.error_count,
-        result.page_count, path_params,
+        spec.entity,
+        log.status,
+        log.items_synced,
+        log.created_count,
+        log.updated_count,
+        log.skipped_duplicate_count,
+        log.error_count,
+        result.page_count,
+        path_params,
     )
     return "success" if log.status == "success" else log.status or "error"
 
@@ -294,17 +366,26 @@ async def _record_skip(
     reason: str,
     detail: str | None,
 ) -> None:
-    session.add(OfIntelligenceSyncLog(
-        run_id=run_id, source=SOURCE_ONLYMONSTER, entity=spec.entity,
-        status=reason, reason=reason, error=detail,
-        triggered_by=triggered_by, started_at=utcnow(), finished_at=utcnow(),
-        source_endpoint=spec.path,
-    ))
+    session.add(
+        OfIntelligenceSyncLog(
+            run_id=run_id,
+            source=SOURCE_ONLYMONSTER,
+            entity=spec.entity,
+            status=reason,
+            reason=reason,
+            error=detail,
+            triggered_by=triggered_by,
+            started_at=utcnow(),
+            finished_at=utcnow(),
+            source_endpoint=spec.path,
+        )
+    )
     await session.commit()
 
 
-def _tally(outcome: str, succeeded: int, failed: int,
-           not_available: int, skipped: int) -> tuple[int, int, int, int]:
+def _tally(
+    outcome: str, succeeded: int, failed: int, not_available: int, skipped: int
+) -> tuple[int, int, int, int]:
     if outcome == "success":
         succeeded += 1
     elif outcome == "not_available":
@@ -332,8 +413,9 @@ async def _persist_entity(
         # No persister wired for this entity yet — sync_log tracks fetched
         # items in `items_synced` so the audit trail is intact, but we
         # don't accumulate anything in the data tables (so no duplicates).
-        logger.info("of_intelligence.sync.no_persister entity=%s items=%s",
-                    entity, len(result.items))
+        logger.info(
+            "of_intelligence.sync.no_persister entity=%s items=%s", entity, len(result.items)
+        )
         return PersistResult()
     return await handler(session, result.items, result, ctx)
 
@@ -354,12 +436,14 @@ async def _persist_accounts(
             out.errors += 1
             continue
         try:
-            existing = (await session.exec(
-                select(OfIntelligenceAccount).where(
-                    OfIntelligenceAccount.source == SOURCE_ONLYMONSTER,
-                    OfIntelligenceAccount.source_id == source_id,
+            existing = (
+                await session.exec(
+                    select(OfIntelligenceAccount).where(
+                        OfIntelligenceAccount.source == SOURCE_ONLYMONSTER,
+                        OfIntelligenceAccount.source_id == source_id,
+                    )
                 )
-            )).first()
+            ).first()
             access = _account_access_status(item)
             if existing:
                 existing.username = _coerce_str(item.get("username")) or existing.username
@@ -371,20 +455,24 @@ async def _persist_accounts(
                 session.add(existing)
                 out.updated += 1
             else:
-                session.add(OfIntelligenceAccount(
-                    source=SOURCE_ONLYMONSTER,
-                    source_id=source_id,
-                    username=_coerce_str(item.get("username")),
-                    display_name=_coerce_str(item.get("name")),
-                    status=_coerce_str(item.get("platform")),
-                    access_status=access,
-                    raw=item,
-                    first_seen_at=now,
-                    last_synced_at=now,
-                ))
+                session.add(
+                    OfIntelligenceAccount(
+                        source=SOURCE_ONLYMONSTER,
+                        source_id=source_id,
+                        username=_coerce_str(item.get("username")),
+                        display_name=_coerce_str(item.get("name")),
+                        status=_coerce_str(item.get("platform")),
+                        access_status=access,
+                        raw=item,
+                        first_seen_at=now,
+                        last_synced_at=now,
+                    )
+                )
                 out.created += 1
         except Exception as exc:
-            logger.warning("of_intelligence.persist.account.error source_id=%s err=%s", source_id, exc)
+            logger.warning(
+                "of_intelligence.persist.account.error source_id=%s err=%s", source_id, exc
+            )
             out.errors += 1
     await session.commit()
     return out
@@ -407,19 +495,23 @@ async def _persist_account_details(
         if not source_id:
             out.errors += 1
             continue
-        existing = (await session.exec(
-            select(OfIntelligenceAccount).where(
-                OfIntelligenceAccount.source == SOURCE_ONLYMONSTER,
-                OfIntelligenceAccount.source_id == source_id,
+        existing = (
+            await session.exec(
+                select(OfIntelligenceAccount).where(
+                    OfIntelligenceAccount.source == SOURCE_ONLYMONSTER,
+                    OfIntelligenceAccount.source_id == source_id,
+                )
             )
-        )).first()
+        ).first()
         if existing:
             existing.raw = {**(existing.raw or {}), **item}
             existing.last_synced_at = now
             session.add(existing)
             out.updated += 1
         else:
-            out.skipped_duplicate += 1  # account row not found; account_details should run after accounts.
+            out.skipped_duplicate += (
+                1  # account row not found; account_details should run after accounts.
+            )
     await session.commit()
     return out
 
@@ -439,12 +531,14 @@ async def _persist_fans(
         if not source_id:
             out.errors += 1
             continue
-        existing = (await session.exec(
-            select(OfIntelligenceFan).where(
-                OfIntelligenceFan.source == SOURCE_ONLYMONSTER,
-                OfIntelligenceFan.source_id == source_id,
+        existing = (
+            await session.exec(
+                select(OfIntelligenceFan).where(
+                    OfIntelligenceFan.source == SOURCE_ONLYMONSTER,
+                    OfIntelligenceFan.source_id == source_id,
+                )
             )
-        )).first()
+        ).first()
         if existing:
             existing.account_source_id = account_id or existing.account_source_id
             existing.raw = item
@@ -452,14 +546,16 @@ async def _persist_fans(
             session.add(existing)
             out.updated += 1
         else:
-            session.add(OfIntelligenceFan(
-                source=SOURCE_ONLYMONSTER,
-                source_id=source_id,
-                account_source_id=account_id,
-                raw=item,
-                first_seen_at=now,
-                last_synced_at=now,
-            ))
+            session.add(
+                OfIntelligenceFan(
+                    source=SOURCE_ONLYMONSTER,
+                    source_id=source_id,
+                    account_source_id=account_id,
+                    raw=item,
+                    first_seen_at=now,
+                    last_synced_at=now,
+                )
+            )
             out.created += 1
     await session.commit()
     return out
@@ -479,12 +575,14 @@ async def _persist_members(
         if not source_id:
             out.errors += 1
             continue
-        existing = (await session.exec(
-            select(OfIntelligenceChatter).where(
-                OfIntelligenceChatter.source == SOURCE_ONLYMONSTER,
-                OfIntelligenceChatter.source_id == source_id,
+        existing = (
+            await session.exec(
+                select(OfIntelligenceChatter).where(
+                    OfIntelligenceChatter.source == SOURCE_ONLYMONSTER,
+                    OfIntelligenceChatter.source_id == source_id,
+                )
             )
-        )).first()
+        ).first()
         if existing:
             existing.name = _coerce_str(item.get("name")) or existing.name
             existing.email = _coerce_str(item.get("email")) or existing.email
@@ -493,15 +591,17 @@ async def _persist_members(
             session.add(existing)
             out.updated += 1
         else:
-            session.add(OfIntelligenceChatter(
-                source=SOURCE_ONLYMONSTER,
-                source_id=source_id,
-                name=_coerce_str(item.get("name")),
-                email=_coerce_str(item.get("email")),
-                raw=item,
-                first_seen_at=now,
-                last_synced_at=now,
-            ))
+            session.add(
+                OfIntelligenceChatter(
+                    source=SOURCE_ONLYMONSTER,
+                    source_id=source_id,
+                    name=_coerce_str(item.get("name")),
+                    email=_coerce_str(item.get("email")),
+                    raw=item,
+                    first_seen_at=now,
+                    last_synced_at=now,
+                )
+            )
             out.created += 1
     await session.commit()
     return out
@@ -521,7 +621,11 @@ async def _persist_transactions(
     `skipped_duplicate`.
     """
     return await _persist_revenue_events(
-        session, items, result, ctx, kind=None,
+        session,
+        items,
+        result,
+        ctx,
+        kind=None,
     )
 
 
@@ -533,7 +637,11 @@ async def _persist_chargebacks(
 ) -> PersistResult:
     """Chargebacks land in revenue with a negative sign + chargeback marker."""
     return await _persist_revenue_events(
-        session, items, result, ctx, kind="chargeback",
+        session,
+        items,
+        result,
+        ctx,
+        kind="chargeback",
     )
 
 
@@ -548,7 +656,9 @@ async def _persist_revenue_events(
     out = PersistResult()
     now = utcnow()
     platform_account_id = _coerce_str(result.path_params.get("platform_account_id"))
-    account_internal_id = _resolve_account_internal_id(ctx, platform_account_id) or platform_account_id
+    account_internal_id = (
+        _resolve_account_internal_id(ctx, platform_account_id) or platform_account_id
+    )
 
     for item in items:
         external_id = _stable_revenue_key(item, result, kind=kind)
@@ -556,12 +666,14 @@ async def _persist_revenue_events(
             out.errors += 1
             continue
 
-        existing = (await session.exec(
-            select(OfIntelligenceRevenue).where(
-                OfIntelligenceRevenue.source == SOURCE_ONLYMONSTER,
-                OfIntelligenceRevenue.source_external_id == external_id,
+        existing = (
+            await session.exec(
+                select(OfIntelligenceRevenue).where(
+                    OfIntelligenceRevenue.source == SOURCE_ONLYMONSTER,
+                    OfIntelligenceRevenue.source_external_id == external_id,
+                )
             )
-        )).first()
+        ).first()
         if existing:
             out.skipped_duplicate += 1
             continue
@@ -573,8 +685,14 @@ async def _persist_revenue_events(
             cents = 0
         if kind == "chargeback":
             cents = -abs(cents)
-            ts = _coerce_dt(item.get("chargeback_timestamp")) or _coerce_dt(item.get("transaction_timestamp"))
-            breakdown = {"kind": "chargeback", "type": item.get("type"), "status": item.get("status")}
+            ts = _coerce_dt(item.get("chargeback_timestamp")) or _coerce_dt(
+                item.get("transaction_timestamp")
+            )
+            breakdown = {
+                "kind": "chargeback",
+                "type": item.get("type"),
+                "status": item.get("status"),
+            }
             tips_cents = None
             ppv_cents = None
         else:
@@ -584,20 +702,22 @@ async def _persist_revenue_events(
             ppv_cents = cents if "post" in type_str else None
             breakdown = {"type": item.get("type"), "status": item.get("status")}
 
-        session.add(OfIntelligenceRevenue(
-            source=SOURCE_ONLYMONSTER,
-            source_external_id=external_id,
-            account_source_id=account_internal_id,
-            period_start=ts,
-            period_end=ts,
-            revenue_cents=cents,
-            transactions_count=1,
-            tips_cents=tips_cents,
-            ppv_cents=ppv_cents,
-            breakdown=breakdown,
-            raw=item,
-            captured_at=now,
-        ))
+        session.add(
+            OfIntelligenceRevenue(
+                source=SOURCE_ONLYMONSTER,
+                source_external_id=external_id,
+                account_source_id=account_internal_id,
+                period_start=ts,
+                period_end=ts,
+                revenue_cents=cents,
+                transactions_count=1,
+                tips_cents=tips_cents,
+                ppv_cents=ppv_cents,
+                breakdown=breakdown,
+                raw=item,
+                captured_at=now,
+            )
+        )
         out.created += 1
     await session.commit()
     return out
@@ -619,7 +739,9 @@ async def _persist_links(
     now = utcnow()
     kind = "trial" if result.entity == "trial_links" else "tracking"
     platform_account_id = _coerce_str(result.path_params.get("platform_account_id"))
-    account_internal_id = _resolve_account_internal_id(ctx, platform_account_id) or platform_account_id
+    account_internal_id = (
+        _resolve_account_internal_id(ctx, platform_account_id) or platform_account_id
+    )
 
     for item in items:
         upstream_id = _coerce_str(item.get("id"))
@@ -628,12 +750,14 @@ async def _persist_links(
             continue
         source_id = f"{kind}:{upstream_id}"
 
-        existing = (await session.exec(
-            select(OfIntelligenceTrackingLink).where(
-                OfIntelligenceTrackingLink.source == SOURCE_ONLYMONSTER,
-                OfIntelligenceTrackingLink.source_id == source_id,
+        existing = (
+            await session.exec(
+                select(OfIntelligenceTrackingLink).where(
+                    OfIntelligenceTrackingLink.source == SOURCE_ONLYMONSTER,
+                    OfIntelligenceTrackingLink.source_id == source_id,
+                )
             )
-        )).first()
+        ).first()
         clicks = _coerce_int(item.get("clicks"))
         conversions = _coerce_int(item.get("subscribers") or item.get("claims"))
         if existing:
@@ -649,32 +773,34 @@ async def _persist_links(
             session.add(existing)
             out.updated += 1
         else:
-            session.add(OfIntelligenceTrackingLink(
-                source=SOURCE_ONLYMONSTER,
-                source_id=source_id,
-                account_source_id=account_internal_id,
-                name=_coerce_str(item.get("name")),
-                url=_coerce_str(item.get("url")),
-                clicks=clicks,
-                conversions=conversions,
-                revenue_cents=None,
-                raw={**item, "kind": kind},
-                snapshot_at=now,
-            ))
+            session.add(
+                OfIntelligenceTrackingLink(
+                    source=SOURCE_ONLYMONSTER,
+                    source_id=source_id,
+                    account_source_id=account_internal_id,
+                    name=_coerce_str(item.get("name")),
+                    url=_coerce_str(item.get("url")),
+                    clicks=clicks,
+                    conversions=conversions,
+                    revenue_cents=None,
+                    raw={**item, "kind": kind},
+                    snapshot_at=now,
+                )
+            )
             out.created += 1
     await session.commit()
     return out
 
 
 _PERSISTERS = {
-    "accounts":         _persist_accounts,
-    "account_details":  _persist_account_details,
-    "fans":             _persist_fans,
-    "members":          _persist_members,
-    "transactions":     _persist_transactions,
-    "chargebacks":      _persist_chargebacks,
-    "trial_links":      _persist_links,
-    "tracking_links":   _persist_links,
+    "accounts": _persist_accounts,
+    "account_details": _persist_account_details,
+    "fans": _persist_fans,
+    "members": _persist_members,
+    "transactions": _persist_transactions,
+    "chargebacks": _persist_chargebacks,
+    "trial_links": _persist_links,
+    "tracking_links": _persist_links,
     # vault_folders, vault_uploads, trial_link_users, tracking_link_users,
     # user_metrics — fetched + counted in sync_logs but not yet persisted to
     # bespoke tables.  Adding a persister later is purely additive (no
@@ -706,11 +832,14 @@ def _stable_revenue_key(
         return f"{result.entity}:{upstream_id}"
 
     import hashlib
+
     fields = (
         kind or result.entity,
         result.path_params.get("platform"),
         result.path_params.get("platform_account_id") or result.path_params.get("account_id"),
-        item.get("timestamp") or item.get("chargeback_timestamp") or item.get("transaction_timestamp"),
+        item.get("timestamp")
+        or item.get("chargeback_timestamp")
+        or item.get("transaction_timestamp"),
         item.get("amount"),
         (item.get("fan") or {}).get("id") if isinstance(item.get("fan"), dict) else None,
         item.get("type"),
@@ -723,7 +852,9 @@ def _stable_revenue_key(
     return f"{result.entity}:hash:{digest[:32]}"
 
 
-def _resolve_account_internal_id(ctx: SyncRunContext, platform_account_id: str | None) -> str | None:
+def _resolve_account_internal_id(
+    ctx: SyncRunContext, platform_account_id: str | None
+) -> str | None:
     """Find the internal numeric account id for a given platform_account_id."""
     if not platform_account_id:
         return None

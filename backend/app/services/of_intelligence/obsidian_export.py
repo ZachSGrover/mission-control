@@ -108,7 +108,9 @@ async def export_memory(
 
     logger.info(
         "of_intelligence.export.done files=%s written=%s skipped=%s",
-        len(files), len(written), len(skipped),
+        len(files),
+        len(written),
+        len(skipped),
     )
     return ExportResult(
         generated_at=utcnow(),
@@ -122,13 +124,17 @@ async def export_memory(
 
 
 async def _gather_daily_summary(session: AsyncSession, when: datetime) -> dict[str, Any]:
-    qc = (await session.exec(
-        select(OfIntelligenceQcReport).order_by(OfIntelligenceQcReport.generated_at.desc()).limit(1)
-    )).first()
+    qc = (
+        await session.exec(
+            select(OfIntelligenceQcReport)
+            .order_by(OfIntelligenceQcReport.generated_at.desc())
+            .limit(1)
+        )
+    ).first()
     accounts = (await session.exec(select(OfIntelligenceAccount))).all()
-    alerts = (await session.exec(
-        select(OfIntelligenceAlert).where(OfIntelligenceAlert.status == "open")
-    )).all()
+    alerts = (
+        await session.exec(select(OfIntelligenceAlert).where(OfIntelligenceAlert.status == "open"))
+    ).all()
     return {
         "qc": qc,
         "accounts": list(accounts),
@@ -157,35 +163,40 @@ def _render_daily_note(when: datetime, summary: dict[str, Any]) -> ExportedFile:
     for a in accounts[:10]:
         lines.append(f"  - [[Accounts/{(a.username or a.source_id)}]] (status={a.status})")
 
-    lines.extend([
-        "",
-        "## Revenue summary",
-        "_Skeleton — wire up daily revenue rollups here once the OnlyMonster revenue endpoint is connected._",
-        "",
-        "## Best performing accounts",
-        "_Skeleton._",
-        "",
-        "## Worst performing accounts",
-        "_Skeleton._",
-        "",
-        "## Chatter issues",
-        "_Skeleton._",
-        "",
-        "## Fan issues",
-        "_Skeleton._",
-        "",
-        "## Mass message performance",
-        "_Skeleton._",
-        "",
-        "## Posting performance",
-        "_Skeleton._",
-        "",
-        "## Access issues",
-    ])
+    lines.extend(
+        [
+            "",
+            "## Revenue summary",
+            "_Skeleton — wire up daily revenue rollups here once the OnlyMonster revenue endpoint is connected._",
+            "",
+            "## Best performing accounts",
+            "_Skeleton._",
+            "",
+            "## Worst performing accounts",
+            "_Skeleton._",
+            "",
+            "## Chatter issues",
+            "_Skeleton._",
+            "",
+            "## Fan issues",
+            "_Skeleton._",
+            "",
+            "## Mass message performance",
+            "_Skeleton._",
+            "",
+            "## Posting performance",
+            "_Skeleton._",
+            "",
+            "## Access issues",
+        ]
+    )
     for a in accounts:
         if a.access_status and a.access_status.lower() in {"lost", "blocked", "expired"}:
             lines.append(f"- [[Accounts/{a.username or a.source_id}]] — {a.access_status}")
-    if not any(a.access_status and a.access_status.lower() in {"lost", "blocked", "expired"} for a in accounts):
+    if not any(
+        a.access_status and a.access_status.lower() in {"lost", "blocked", "expired"}
+        for a in accounts
+    ):
         lines.append("- None")
 
     lines.extend(["", "## Important alerts"])
@@ -220,47 +231,60 @@ async def _render_accounts(session: AsyncSession) -> list[ExportedFile]:
     files: list[ExportedFile] = []
     for a in accounts:
         slug = _safe_filename(a.username or a.source_id)
-        body = "\n".join([
-            "---",
-            f"id: {a.source_id}",
-            f"source: {a.source}",
-            f"username: {a.username or ''}",
-            f"status: {a.status or ''}",
-            f"access_status: {a.access_status or ''}",
-            f"last_synced_at: {a.last_synced_at.isoformat()}",
-            "tags: [of-intelligence, account]",
-            "---",
-            "",
-            f"# {a.username or a.source_id}",
-            "",
-            f"- **Status:** {a.status or 'unknown'}",
-            f"- **Access:** {a.access_status or 'unknown'}",
-            f"- **Last synced:** {a.last_synced_at.isoformat()}",
-        ])
-        files.append(ExportedFile(
-            relative_path=f"{OBSIDIAN_ROOT}/Accounts/{slug}.md",
-            content=body,
-        ))
+        body = "\n".join(
+            [
+                "---",
+                f"id: {a.source_id}",
+                f"source: {a.source}",
+                f"username: {a.username or ''}",
+                f"status: {a.status or ''}",
+                f"access_status: {a.access_status or ''}",
+                f"last_synced_at: {a.last_synced_at.isoformat()}",
+                "tags: [of-intelligence, account]",
+                "---",
+                "",
+                f"# {a.username or a.source_id}",
+                "",
+                f"- **Status:** {a.status or 'unknown'}",
+                f"- **Access:** {a.access_status or 'unknown'}",
+                f"- **Last synced:** {a.last_synced_at.isoformat()}",
+            ]
+        )
+        files.append(
+            ExportedFile(
+                relative_path=f"{OBSIDIAN_ROOT}/Accounts/{slug}.md",
+                content=body,
+            )
+        )
     return files
 
 
 async def _render_qc_reports(session: AsyncSession) -> list[ExportedFile]:
-    rows = (await session.exec(
-        select(OfIntelligenceQcReport).order_by(OfIntelligenceQcReport.generated_at.desc()).limit(30)
-    )).all()
+    rows = (
+        await session.exec(
+            select(OfIntelligenceQcReport)
+            .order_by(OfIntelligenceQcReport.generated_at.desc())
+            .limit(30)
+        )
+    ).all()
     return [
         ExportedFile(
             relative_path=f"{OBSIDIAN_ROOT}/QC Reports/{r.report_date.date().isoformat()}.md",
-            content=(r.markdown or f"# QC Report — {r.report_date.date().isoformat()}\n\n_No markdown rendered._"),
+            content=(
+                r.markdown
+                or f"# QC Report — {r.report_date.date().isoformat()}\n\n_No markdown rendered._"
+            ),
         )
         for r in rows
     ]
 
 
 async def _render_alerts(session: AsyncSession) -> list[ExportedFile]:
-    rows = (await session.exec(
-        select(OfIntelligenceAlert).order_by(OfIntelligenceAlert.created_at.desc()).limit(100)
-    )).all()
+    rows = (
+        await session.exec(
+            select(OfIntelligenceAlert).order_by(OfIntelligenceAlert.created_at.desc()).limit(100)
+        )
+    ).all()
     files: list[ExportedFile] = []
     grouped: dict[str, list[OfIntelligenceAlert]] = {}
     for r in rows:
@@ -277,22 +301,24 @@ async def _render_alerts(session: AsyncSession) -> list[ExportedFile]:
             "",
         ]
         for a in alerts:
-            lines.append(
-                f"- **{a.created_at.isoformat()}** ({a.severity}/{a.status}) — {a.title}"
+            lines.append(f"- **{a.created_at.isoformat()}** ({a.severity}/{a.status}) — {a.title}")
+        files.append(
+            ExportedFile(
+                relative_path=f"{OBSIDIAN_ROOT}/Alerts/{slug}.md",
+                content="\n".join(lines),
             )
-        files.append(ExportedFile(
-            relative_path=f"{OBSIDIAN_ROOT}/Alerts/{slug}.md",
-            content="\n".join(lines),
-        ))
+        )
     return files
 
 
 async def _render_mass_messages(session: AsyncSession) -> list[ExportedFile]:
-    rows = (await session.exec(
-        select(OfIntelligenceMassMessage)
-        .order_by(OfIntelligenceMassMessage.snapshot_at.desc())
-        .limit(50)
-    )).all()
+    rows = (
+        await session.exec(
+            select(OfIntelligenceMassMessage)
+            .order_by(OfIntelligenceMassMessage.snapshot_at.desc())
+            .limit(50)
+        )
+    ).all()
     if not rows:
         return []
     lines = [
@@ -310,10 +336,12 @@ async def _render_mass_messages(session: AsyncSession) -> list[ExportedFile]:
             f"recipients={r.recipients_count} purchases={r.purchases_count} "
             f"revenue=${(r.revenue_cents or 0) / 100:.2f}"
         )
-    return [ExportedFile(
-        relative_path=f"{OBSIDIAN_ROOT}/Mass Messages/recent.md",
-        content="\n".join(lines),
-    )]
+    return [
+        ExportedFile(
+            relative_path=f"{OBSIDIAN_ROOT}/Mass Messages/recent.md",
+            content="\n".join(lines),
+        )
+    ]
 
 
 # ── Memory mirror (writes BusinessMemoryEntry rows for each export) ──────────
@@ -323,14 +351,16 @@ async def mirror_export_to_memory(session: AsyncSession, result: ExportResult) -
     """Write a BusinessMemoryEntry per exported file so AI can search it."""
     written = 0
     for f in result.files:
-        session.add(BusinessMemoryEntry(
-            product="of_intelligence",
-            kind="obsidian_export",
-            title=os.path.basename(f.relative_path),
-            body=f.content,
-            tags=["obsidian", "export"],
-            obsidian_path=f.relative_path,
-        ))
+        session.add(
+            BusinessMemoryEntry(
+                product="of_intelligence",
+                kind="obsidian_export",
+                title=os.path.basename(f.relative_path),
+                body=f.content,
+                tags=["obsidian", "export"],
+                obsidian_path=f.relative_path,
+            )
+        )
         written += 1
     if written:
         await session.commit()

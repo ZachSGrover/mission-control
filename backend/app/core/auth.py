@@ -503,9 +503,7 @@ async def _check_allowlist(
             pending_role = (email_row.pending_role or "").strip()
             if pending_role:
                 existing_role = await session.exec(
-                    sql_select(MCUserRole).where(
-                        MCUserRole.clerk_user_id == clerk_user_id
-                    )
+                    sql_select(MCUserRole).where(MCUserRole.clerk_user_id == clerk_user_id)
                 )
                 role_row = existing_role.first()
                 if role_row is None:

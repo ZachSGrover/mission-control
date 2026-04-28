@@ -134,9 +134,7 @@ class OfIntelligenceChatter(SQLModel, table=True):
     """Team-member chatter (the human or agent operating an account)."""
 
     __tablename__ = "of_intelligence_chatters"  # pyright: ignore[reportAssignmentType]
-    __table_args__ = (
-        UniqueConstraint("source", "source_id", name="uq_ofi_chatters_source_id"),
-    )
+    __table_args__ = (UniqueConstraint("source", "source_id", name="uq_ofi_chatters_source_id"),)
 
     id: UUID = Field(default_factory=uuid4, primary_key=True)
     source: str = Field(default=SOURCE_ONLYMONSTER, index=True, max_length=64)
@@ -254,9 +252,7 @@ class OfIntelligenceQcReport(SQLModel, table=True):
     """Daily QC bot output — one row per generated report."""
 
     __tablename__ = "of_intelligence_qc_reports"  # pyright: ignore[reportAssignmentType]
-    __table_args__ = (
-        Index("ix_ofi_qc_generated", "generated_at"),
-    )
+    __table_args__ = (Index("ix_ofi_qc_generated", "generated_at"),)
 
     id: UUID = Field(default_factory=uuid4, primary_key=True)
     report_date: datetime = Field(index=True)

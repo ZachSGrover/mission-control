@@ -12,6 +12,7 @@ import {
   type OverviewMetrics,
   type AlertRow,
   type QcReportRow,
+  type SyncLogRow,
   formatCents,
   formatRelative,
 } from "@/lib/of-intelligence/api";
@@ -21,6 +22,7 @@ export default function OfIntelligenceOverviewPage() {
   const [overview, setOverview] = useState<OverviewMetrics | null>(null);
   const [alerts, setAlerts] = useState<AlertRow[]>([]);
   const [latestQc, setLatestQc] = useState<QcReportRow | null>(null);
+  const [syncLogs, setSyncLogs] = useState<SyncLogRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [syncBusy, setSyncBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -28,14 +30,16 @@ export default function OfIntelligenceOverviewPage() {
   const refresh = useCallback(async () => {
     setError(null);
     try {
-      const [ov, a, qcs] = await Promise.all([
+      const [ov, a, qcs, logs] = await Promise.all([
         ofiApi.overview(fetchWithAuth),
         ofiApi.alerts(fetchWithAuth, { onlyOpen: true, limit: 10 }),
         ofiApi.qcReports(fetchWithAuth, 1),
+        ofiApi.syncLogs(fetchWithAuth, 200),
       ]);
       setOverview(ov);
       setAlerts(a);
       setLatestQc(qcs[0] ?? null);
+      setSyncLogs(logs);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
@@ -154,6 +158,87 @@ export default function OfIntelligenceOverviewPage() {
                 ))}
               </ul>
             )}
+          </section>
+
+          <section
+            className="rounded-xl border p-5"
+            style={{ background: "var(--surface)", borderColor: "var(--border)" }}
+          >
+            <div className="flex items-center justify-between mb-3">
+              <h2 className="text-sm font-semibold" style={{ color: "var(--text)" }}>Last sync — per-entity</h2>
+              <span className="text-xs" style={{ color: "var(--text-quiet)" }}>
+                created · updated · skipped duplicates · errors
+              </span>
+            </div>
+            {(() => {
+              const latestRunId = syncLogs[0]?.run_id;
+              if (!latestRunId) {
+                return <p className="text-sm" style={{ color: "var(--text-muted)" }}>No sync runs yet.</p>;
+              }
+              // Aggregate per-entity (per-account fan-out yields multiple rows for the same entity)
+              const byEntity = new Map<string, {
+                rows: number; got: number; created: number; updated: number;
+                skipped: number; errors: number; statuses: Set<string>; endpoint: string | null;
+              }>();
+              for (const log of syncLogs) {
+                if (log.run_id !== latestRunId) continue;
+                const cur = byEntity.get(log.entity) ?? {
+                  rows: 0, got: 0, created: 0, updated: 0, skipped: 0, errors: 0,
+                  statuses: new Set<string>(), endpoint: log.source_endpoint,
+                };
+                cur.rows += 1;
+                cur.got += log.items_synced;
+                cur.created += log.created_count;
+                cur.updated += log.updated_count;
+                cur.skipped += log.skipped_duplicate_count;
+                cur.errors += log.error_count;
+                cur.statuses.add(log.status);
+                cur.endpoint = log.source_endpoint || cur.endpoint;
+                byEntity.set(log.entity, cur);
+              }
+              const entries = Array.from(byEntity.entries()).sort(([a], [b]) => a.localeCompare(b));
+              return (
+                <div className="overflow-x-auto">
+                  <table className="w-full text-xs">
+                    <thead style={{ color: "var(--text-quiet)" }}>
+                      <tr className="text-left">
+                        <th className="px-2 py-1 font-medium">Entity</th>
+                        <th className="px-2 py-1 font-medium">Status</th>
+                        <th className="px-2 py-1 font-medium text-right">Got</th>
+                        <th className="px-2 py-1 font-medium text-right">+New</th>
+                        <th className="px-2 py-1 font-medium text-right">~Upd</th>
+                        <th className="px-2 py-1 font-medium text-right">=Dup</th>
+                        <th className="px-2 py-1 font-medium text-right">!Err</th>
+                        <th className="px-2 py-1 font-medium">Endpoint</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {entries.map(([entity, c]) => {
+                        const status = c.statuses.has("error") ? "error"
+                          : c.statuses.has("write_disabled") ? "write_disabled"
+                          : c.statuses.has("dynamic_discovery_required") ? "discovery_pending"
+                          : c.statuses.has("not_configured") ? "not_configured"
+                          : c.statuses.has("not_available_from_api") ? "not_available"
+                          : c.statuses.has("partial") ? "partial"
+                          : "success";
+                        return (
+                          <tr key={entity} className="border-t" style={{ borderColor: "var(--border)" }}>
+                            <td className="px-2 py-1" style={{ color: "var(--text)" }}>{entity}</td>
+                            <td className="px-2 py-1" style={{ color: "var(--text-muted)" }}>{status}</td>
+                            <td className="px-2 py-1 text-right" style={{ color: "var(--text-muted)" }}>{c.got}</td>
+                            <td className="px-2 py-1 text-right" style={{ color: c.created > 0 ? "var(--accent-strong)" : "var(--text-quiet)" }}>{c.created}</td>
+                            <td className="px-2 py-1 text-right" style={{ color: "var(--text-muted)" }}>{c.updated}</td>
+                            <td className="px-2 py-1 text-right" style={{ color: "var(--text-quiet)" }}>{c.skipped}</td>
+                            <td className="px-2 py-1 text-right" style={{ color: c.errors > 0 ? "rgb(225,29,72)" : "var(--text-quiet)" }}>{c.errors}</td>
+                            <td className="px-2 py-1 font-mono text-[10px]" style={{ color: "var(--text-quiet)" }}>{c.endpoint || "—"}</td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              );
+            })()}
           </section>
 
           <section

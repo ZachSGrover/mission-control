@@ -47,9 +47,14 @@ export type SyncLogRow = {
   entity: string;
   status: string;
   items_synced: number;
+  created_count: number;
+  updated_count: number;
+  skipped_duplicate_count: number;
+  error_count: number;
   pages_fetched: number;
   reason: string | null;
   error: string | null;
+  source_endpoint: string | null;
   started_at: string;
   finished_at: string | null;
   triggered_by: string | null;

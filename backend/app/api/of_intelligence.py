@@ -144,9 +144,14 @@ class SyncLogRow(BaseModel):
     entity: str
     status: str
     items_synced: int
+    created_count: int = 0
+    updated_count: int = 0
+    skipped_duplicate_count: int = 0
+    error_count: int = 0
     pages_fetched: int
     reason: str | None
     error: str | None
+    source_endpoint: str | None = None
     started_at: datetime
     finished_at: datetime | None
     triggered_by: str | None
@@ -503,13 +508,21 @@ async def overview_metrics(
         .where(OfIntelligenceAlert.severity == "critical")
     )).all()
 
+    # Bucket revenue by *transaction time* (period_start), not by when we
+    # synced it — otherwise "Revenue Today" reports the full 30-day backfill
+    # on the day of first sync.  Falls back to captured_at when period_start
+    # is missing (legacy rows pre-source_external_id).
     revenue_rows = (await session.exec(
         select(OfIntelligenceRevenue).order_by(OfIntelligenceRevenue.captured_at.desc()).limit(10_000)
     )).all()
     now = utcnow()
-    revenue_today = sum(r.revenue_cents for r in revenue_rows if (now - r.captured_at).days < 1)
-    revenue_7d = sum(r.revenue_cents for r in revenue_rows if (now - r.captured_at).days < 7)
-    revenue_30d = sum(r.revenue_cents for r in revenue_rows if (now - r.captured_at).days < 30)
+
+    def _txn_time(row: OfIntelligenceRevenue) -> datetime:
+        return row.period_start or row.captured_at
+
+    revenue_today = sum(r.revenue_cents for r in revenue_rows if (now - _txn_time(r)).days < 1)
+    revenue_7d    = sum(r.revenue_cents for r in revenue_rows if (now - _txn_time(r)).days < 7)
+    revenue_30d   = sum(r.revenue_cents for r in revenue_rows if (now - _txn_time(r)).days < 30)
 
     last_log = (await session.exec(
         select(OfIntelligenceSyncLog).order_by(OfIntelligenceSyncLog.started_at.desc()).limit(1)

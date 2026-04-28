@@ -70,6 +70,7 @@ ENDPOINT_CATALOG: tuple[EndpointSpec, ...] = (
         description="Organisation members (chatters, managers).",
         pagination="offset",
         items_key="users",
+        page_limit=50,  # OnlyMonster enforces limit <= 50 on this endpoint.
     ),
     EndpointSpec(
         entity="user_metrics",
@@ -112,6 +113,7 @@ ENDPOINT_CATALOG: tuple[EndpointSpec, ...] = (
         items_key="items",
         path_params=("account_id",),
         fan_out="per_account",
+        page_limit=10,  # OnlyMonster enforces limit <= 10 on this endpoint.
     ),
     EndpointSpec(
         entity="vault_uploads",
@@ -141,6 +143,7 @@ ENDPOINT_CATALOG: tuple[EndpointSpec, ...] = (
         items_key="items",
         path_params=("account_id", "folder_id"),
         fan_out="per_account",
+        page_limit=10,  # OnlyMonster enforces limit <= 10 on this endpoint.
     ),
 
     # ── Per-platform-account endpoints (fan out over (platform, platform_account_id)) ──

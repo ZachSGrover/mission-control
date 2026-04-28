@@ -219,7 +219,15 @@ class OfIntelligenceTrackingLink(SQLModel, table=True):
 
 
 class OfIntelligenceRevenue(SQLModel, table=True):
-    """Append-only revenue snapshots — never overwritten."""
+    """Per-event revenue rows.  Made idempotent via `source_external_id`.
+
+    Historically append-only.  As of migration `b1f2e3d4c5a6`, rows
+    originating from a known upstream identifier (transactions, chargebacks)
+    are deduplicated through `source_external_id` — a partial unique index
+    enforces `(source, source_external_id)` uniqueness when the column is
+    set.  Rows without an upstream id (e.g. computed roll-ups) remain
+    append-only.
+    """
 
     __tablename__ = "of_intelligence_revenue"  # pyright: ignore[reportAssignmentType]
     __table_args__ = (
@@ -228,6 +236,7 @@ class OfIntelligenceRevenue(SQLModel, table=True):
 
     id: UUID = Field(default_factory=uuid4, primary_key=True)
     source: str = Field(default=SOURCE_ONLYMONSTER, index=True, max_length=64)
+    source_external_id: str | None = Field(default=None, max_length=255, index=True)
     account_source_id: str | None = Field(default=None, max_length=255, index=True)
     period_start: datetime | None = Field(default=None, index=True)
     period_end: datetime | None = Field(default=None, index=True)
@@ -300,9 +309,17 @@ class OfIntelligenceSyncLog(SQLModel, table=True):
     status: str = Field(default="pending", max_length=32, index=True)
     # pending | running | success | partial | error | not_available_from_api | skipped
     items_synced: int = Field(default=0)
+    # Idempotent-sync counters — populated by `_run_one`.  `items_synced`
+    # remains the gross "rows we received" count for backward compat;
+    # the per-bucket counters describe what actually happened on persist.
+    created_count: int = Field(default=0)
+    updated_count: int = Field(default=0)
+    skipped_duplicate_count: int = Field(default=0)
+    error_count: int = Field(default=0)
     pages_fetched: int = Field(default=0)
     error: str | None = Field(default=None, sa_column=Column(Text))
     reason: str | None = Field(default=None, max_length=64)
+    source_endpoint: str | None = Field(default=None, max_length=255)
     started_at: datetime = Field(default_factory=utcnow, index=True)
     finished_at: datetime | None = Field(default=None)
     triggered_by: str | None = Field(default=None, max_length=64)  # 'manual' | 'scheduled'

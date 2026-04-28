@@ -227,6 +227,85 @@ export type ExportResponse = {
   obsidian_root: string;
 };
 
+export type CreatorProfileStats = {
+  fans_count: number;
+  messages_count: number;
+  posts_count: number;
+  revenue_30d_cents: number;
+  revenue_total_cents: number;
+  open_alert_count: number;
+  last_message_at: string | null;
+};
+
+export type CreatorProfileRow = {
+  id: string;
+  source: string;
+  source_account_id: string;
+  username: string | null;
+  display_name: string | null;
+  avatar_url: string | null;
+  platform: string | null;
+  organisation_id: string | null;
+  subscribe_price_cents: number | null;
+  subscription_expiration_date: string | null;
+  access_status: string | null;
+  status: string | null;
+  last_account_sync_at: string | null;
+  brand_persona: string | null;
+  content_pillars: string | null;
+  voice_tone: string | null;
+  audience_summary: string | null;
+  monetization_focus: string | null;
+  posting_cadence: string | null;
+  strategy_summary: string | null;
+  off_limits: string | null;
+  vault_notes: string | null;
+  agency_notes: string | null;
+  onlyfans_url: string | null;
+  instagram_url: string | null;
+  twitter_url: string | null;
+  tiktok_url: string | null;
+  threads_url: string | null;
+  reddit_url: string | null;
+  created_at: string;
+  updated_at: string;
+  stats: CreatorProfileStats;
+};
+
+export type CreatorProfileUpdate = Partial<{
+  brand_persona: string | null;
+  content_pillars: string | null;
+  voice_tone: string | null;
+  audience_summary: string | null;
+  monetization_focus: string | null;
+  posting_cadence: string | null;
+  strategy_summary: string | null;
+  off_limits: string | null;
+  vault_notes: string | null;
+  agency_notes: string | null;
+  onlyfans_url: string | null;
+  instagram_url: string | null;
+  twitter_url: string | null;
+  tiktok_url: string | null;
+  threads_url: string | null;
+  reddit_url: string | null;
+}>;
+
+export type AccountAuditSection = {
+  title: string;
+  body: string;
+};
+
+export type AccountAuditResponse = {
+  profile_id: string;
+  source: string;
+  source_account_id: string;
+  generated_at: string;
+  summary: string;
+  sections: AccountAuditSection[];
+  markdown: string;
+};
+
 // ── Helper ────────────────────────────────────────────────────────────────────
 
 const BASE = "/api/v1/of-intelligence";
@@ -347,6 +426,18 @@ export const ofiApi = {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body),
     }),
+
+  creatorProfiles:    (f: FetchFn) => jsonRequest<CreatorProfileRow[]>(f, "/creator-profiles"),
+  creatorProfile:     (f: FetchFn, id: string) =>
+    jsonRequest<CreatorProfileRow>(f, `/creator-profiles/${id}`),
+  updateCreatorProfile: (f: FetchFn, id: string, body: CreatorProfileUpdate) =>
+    jsonRequest<CreatorProfileRow>(f, `/creator-profiles/${id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    }),
+  generateAccountAudit: (f: FetchFn, id: string) =>
+    jsonRequest<AccountAuditResponse>(f, `/creator-profiles/${id}/audit`, { method: "POST" }),
 };
 
 // ── Display helpers ───────────────────────────────────────────────────────────

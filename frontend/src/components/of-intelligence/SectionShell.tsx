@@ -21,6 +21,7 @@ import { cn } from "@/lib/utils";
 const SUB_NAV: ReadonlyArray<{ href: string; label: string }> = [
   { href: "/of-intelligence",                    label: "Overview" },
   { href: "/of-intelligence/accounts",           label: "Accounts" },
+  { href: "/of-intelligence/account-intelligence", label: "Account Intelligence" },
   { href: "/of-intelligence/chatters",           label: "Chatters" },
   { href: "/of-intelligence/fans",               label: "Fans" },
   { href: "/of-intelligence/messages",           label: "Messages" },

@@ -29,6 +29,10 @@ Surface:
   POST   /api/v1/of-intelligence/alerts/{id}/resolve — resolve alert
   GET    /api/v1/of-intelligence/memory            — list memory bank entries
   POST   /api/v1/of-intelligence/memory/export     — generate Obsidian export (owner)
+  GET    /api/v1/of-intelligence/creator-profiles  — list creator profiles + stats
+  GET    /api/v1/of-intelligence/creator-profiles/{id}    — fetch one
+  PATCH  /api/v1/of-intelligence/creator-profiles/{id}    — update operator fields (owner)
+  POST   /api/v1/of-intelligence/creator-profiles/{id}/audit — generate audit (owner)
 """
 
 from __future__ import annotations
@@ -940,3 +944,222 @@ async def list_chats(
         }
         for r in rows
     ]
+
+
+# ── Creator Account Intelligence Profiles ────────────────────────────────────
+
+
+class CreatorProfileStatsModel(BaseModel):
+    fans_count: int
+    messages_count: int
+    posts_count: int
+    revenue_30d_cents: int
+    revenue_total_cents: int
+    open_alert_count: int
+    last_message_at: datetime | None
+
+
+class CreatorProfileRow(BaseModel):
+    id: UUID
+    source: str
+    source_account_id: str
+    username: str | None
+    display_name: str | None
+    avatar_url: str | None
+    platform: str | None
+    organisation_id: str | None
+    subscribe_price_cents: int | None
+    subscription_expiration_date: datetime | None
+    access_status: str | None
+    status: str | None
+    last_account_sync_at: datetime | None
+    # Operator fields included so the list page can preview if any have been
+    # filled in (used to drive the "Notes" column / completeness indicator).
+    brand_persona: str | None
+    content_pillars: str | None
+    voice_tone: str | None
+    audience_summary: str | None
+    monetization_focus: str | None
+    posting_cadence: str | None
+    strategy_summary: str | None
+    off_limits: str | None
+    vault_notes: str | None
+    agency_notes: str | None
+    onlyfans_url: str | None
+    instagram_url: str | None
+    twitter_url: str | None
+    tiktok_url: str | None
+    threads_url: str | None
+    reddit_url: str | None
+    created_at: datetime
+    updated_at: datetime
+    stats: CreatorProfileStatsModel
+
+
+class CreatorProfileUpdate(BaseModel):
+    """Operator-editable subset.
+
+    All fields optional — only keys explicitly present in the request are
+    updated.  `None` clears a field; missing keys are left untouched.
+    """
+
+    brand_persona: str | None = None
+    content_pillars: str | None = None
+    voice_tone: str | None = None
+    audience_summary: str | None = None
+    monetization_focus: str | None = None
+    posting_cadence: str | None = None
+    strategy_summary: str | None = None
+    off_limits: str | None = None
+    vault_notes: str | None = None
+    agency_notes: str | None = None
+    onlyfans_url: str | None = None
+    instagram_url: str | None = None
+    twitter_url: str | None = None
+    tiktok_url: str | None = None
+    threads_url: str | None = None
+    reddit_url: str | None = None
+
+
+class AccountAuditSectionModel(BaseModel):
+    title: str
+    body: str
+
+
+class AccountAuditResponse(BaseModel):
+    profile_id: UUID
+    source: str
+    source_account_id: str
+    generated_at: datetime
+    summary: str
+    sections: list[AccountAuditSectionModel]
+    markdown: str
+
+
+def _profile_to_row(
+    profile: Any,
+    stats: Any,
+) -> CreatorProfileRow:
+    return CreatorProfileRow(
+        id=profile.id,
+        source=profile.source,
+        source_account_id=profile.source_account_id,
+        username=profile.username,
+        display_name=profile.display_name,
+        avatar_url=profile.avatar_url,
+        platform=profile.platform,
+        organisation_id=profile.organisation_id,
+        subscribe_price_cents=profile.subscribe_price_cents,
+        subscription_expiration_date=profile.subscription_expiration_date,
+        access_status=profile.access_status,
+        status=profile.status,
+        last_account_sync_at=profile.last_account_sync_at,
+        brand_persona=profile.brand_persona,
+        content_pillars=profile.content_pillars,
+        voice_tone=profile.voice_tone,
+        audience_summary=profile.audience_summary,
+        monetization_focus=profile.monetization_focus,
+        posting_cadence=profile.posting_cadence,
+        strategy_summary=profile.strategy_summary,
+        off_limits=profile.off_limits,
+        vault_notes=profile.vault_notes,
+        agency_notes=profile.agency_notes,
+        onlyfans_url=profile.onlyfans_url,
+        instagram_url=profile.instagram_url,
+        twitter_url=profile.twitter_url,
+        tiktok_url=profile.tiktok_url,
+        threads_url=profile.threads_url,
+        reddit_url=profile.reddit_url,
+        created_at=profile.created_at,
+        updated_at=profile.updated_at,
+        stats=CreatorProfileStatsModel(
+            fans_count=stats.fans_count,
+            messages_count=stats.messages_count,
+            posts_count=stats.posts_count,
+            revenue_30d_cents=stats.revenue_30d_cents,
+            revenue_total_cents=stats.revenue_total_cents,
+            open_alert_count=stats.open_alert_count,
+            last_message_at=stats.last_message_at,
+        ),
+    )
+
+
+@router.get("/creator-profiles", response_model=list[CreatorProfileRow])
+async def list_creator_profiles(
+    _: AuthContext = AUTH_DEP,
+    session: AsyncSession = SESSION_DEP,
+) -> list[CreatorProfileRow]:
+    """List every creator profile with live stats; lazy-reconciles first."""
+    from app.services.of_intelligence.creator_profiles import list_profiles
+
+    bundles = await list_profiles(session)
+    return [_profile_to_row(b.profile, b.stats) for b in bundles]
+
+
+@router.get("/creator-profiles/{profile_id}", response_model=CreatorProfileRow)
+async def get_creator_profile(
+    profile_id: UUID,
+    _: AuthContext = AUTH_DEP,
+    session: AsyncSession = SESSION_DEP,
+) -> CreatorProfileRow:
+    from app.services.of_intelligence.creator_profiles import get_profile
+
+    bundle = await get_profile(session, profile_id)
+    if not bundle:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Creator profile not found.",
+        )
+    return _profile_to_row(bundle.profile, bundle.stats)
+
+
+@router.patch("/creator-profiles/{profile_id}", response_model=CreatorProfileRow)
+async def patch_creator_profile(
+    profile_id: UUID,
+    body: CreatorProfileUpdate,
+    _role: str = OWNER_DEP,
+    session: AsyncSession = SESSION_DEP,
+) -> CreatorProfileRow:
+    from app.services.of_intelligence.creator_profiles import (
+        get_profile,
+        update_profile,
+    )
+
+    # `model_dump(exclude_unset=True)` so omitted keys aren't treated as
+    # `None` (clearing a field) — only keys explicitly sent by the client
+    # are persisted.
+    fields = body.model_dump(exclude_unset=True)
+    profile = await update_profile(session, profile_id, fields)
+    if not profile:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Creator profile not found.",
+        )
+    bundle = await get_profile(session, profile_id)
+    assert bundle is not None  # just refreshed
+    return _profile_to_row(bundle.profile, bundle.stats)
+
+
+@router.post("/creator-profiles/{profile_id}/audit", response_model=AccountAuditResponse)
+async def post_creator_profile_audit(
+    profile_id: UUID,
+    _role: str = OWNER_DEP,
+    session: AsyncSession = SESSION_DEP,
+) -> AccountAuditResponse:
+    from app.services.of_intelligence.creator_profiles import generate_account_audit
+
+    audit = await generate_account_audit(session, profile_id)
+    if not audit:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Creator profile not found.",
+        )
+    return AccountAuditResponse(
+        profile_id=audit.profile_id,
+        source=audit.source,
+        source_account_id=audit.source_account_id,
+        generated_at=audit.generated_at,
+        summary=audit.summary,
+        sections=[AccountAuditSectionModel(title=s.title, body=s.body) for s in audit.sections],
+        markdown=audit.markdown,
+    )

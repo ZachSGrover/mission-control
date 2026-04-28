@@ -62,6 +62,69 @@ class OfIntelligenceAccount(SQLModel, table=True):
     last_synced_at: datetime = Field(default_factory=utcnow, index=True)
 
 
+class OfIntelligenceCreatorProfile(SQLModel, table=True):
+    """Permanent intelligence profile for a creator account.
+
+    One row per `(source, source_account_id)`.  Identity columns are
+    auto-populated from `of_intelligence_accounts` on each sync (or via
+    lazy reconcile on read).  Strategy / brand / notes columns are
+    operator-managed and never touched by sync.
+
+    Linked back to `of_intelligence_accounts` by
+    `(source, source_account_id) → (source, source_id)`.
+    """
+
+    __tablename__ = "of_intelligence_creator_profiles"  # pyright: ignore[reportAssignmentType]
+    __table_args__ = (
+        UniqueConstraint(
+            "source",
+            "source_account_id",
+            name="uq_ofi_creator_profiles_source_account",
+        ),
+        Index("ix_ofi_creator_profiles_username", "username"),
+    )
+
+    id: UUID = Field(default_factory=uuid4, primary_key=True)
+    # ── Linkage / identity (auto) ────────────────────────────────────────
+    source: str = Field(default=SOURCE_ONLYMONSTER, index=True, max_length=64)
+    source_account_id: str = Field(index=True, max_length=255)
+    username: str | None = Field(default=None, max_length=255)
+    display_name: str | None = Field(default=None, max_length=255)
+    avatar_url: str | None = Field(default=None, sa_column=Column(Text))
+    platform: str | None = Field(default=None, max_length=64)
+    organisation_id: str | None = Field(default=None, max_length=255)
+    subscribe_price_cents: int | None = Field(default=None)
+    subscription_expiration_date: datetime | None = Field(default=None)
+    access_status: str | None = Field(default=None, max_length=64)
+    status: str | None = Field(default=None, max_length=64)
+    last_account_sync_at: datetime | None = Field(default=None)
+
+    # ── Operator-managed strategy / brand fields ─────────────────────────
+    brand_persona: str | None = Field(default=None, sa_column=Column(Text))
+    content_pillars: str | None = Field(default=None, sa_column=Column(Text))
+    voice_tone: str | None = Field(default=None, sa_column=Column(Text))
+    audience_summary: str | None = Field(default=None, sa_column=Column(Text))
+    monetization_focus: str | None = Field(default=None, sa_column=Column(Text))
+    posting_cadence: str | None = Field(default=None, sa_column=Column(Text))
+    strategy_summary: str | None = Field(default=None, sa_column=Column(Text))
+    off_limits: str | None = Field(default=None, sa_column=Column(Text))
+    vault_notes: str | None = Field(default=None, sa_column=Column(Text))
+    agency_notes: str | None = Field(default=None, sa_column=Column(Text))
+
+    # ── External presence (manual) ───────────────────────────────────────
+    onlyfans_url: str | None = Field(default=None, sa_column=Column(Text))
+    instagram_url: str | None = Field(default=None, sa_column=Column(Text))
+    twitter_url: str | None = Field(default=None, sa_column=Column(Text))
+    tiktok_url: str | None = Field(default=None, sa_column=Column(Text))
+    threads_url: str | None = Field(default=None, sa_column=Column(Text))
+    reddit_url: str | None = Field(default=None, sa_column=Column(Text))
+
+    # ── Audit / lineage ──────────────────────────────────────────────────
+    raw_source_payload: dict[str, Any] | None = Field(default=None, sa_column=Column(JSON))
+    created_at: datetime = Field(default_factory=utcnow, index=True)
+    updated_at: datetime = Field(default_factory=utcnow, index=True)
+
+
 class OfIntelligenceFan(SQLModel, table=True):
     """Fan / subscriber record."""
 

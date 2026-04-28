@@ -69,6 +69,7 @@ async def evaluate_alerts(
     candidates.extend(await _rule_account_stale(session, stale_sync_hours))
     candidates.extend(await _rule_account_access(session))
     candidates.extend(await _rule_api_disconnected(session))
+    candidates.extend(await _rule_chatter_qc_critical(session))
 
     created = skipped = 0
     for candidate in candidates:
@@ -94,7 +95,7 @@ async def evaluate_alerts(
 
     summary = AlertEvaluationSummary(
         evaluated_at=utcnow(),
-        rules_run=4,
+        rules_run=5,
         alerts_created=created,
         alerts_skipped_existing=skipped,
         candidates=candidates,
@@ -230,6 +231,51 @@ async def _rule_api_disconnected(session: AsyncSession) -> list[AlertCandidate]:
             message="Check Settings → Integrations → OnlyMonster credentials and run a manual sync.",
         )
     ]
+
+
+async def _rule_chatter_qc_critical(session: AsyncSession) -> list[AlertCandidate]:
+    """Surface critical-severity Chat QC v1 findings as `of_intelligence_alerts`.
+
+    Reuses the same `evaluate_chatter_findings()` function the QC report calls
+    so the alerts table never disagrees with the report.  Only critical
+    findings are persisted as alerts (warn / info stay in the report only —
+    they would otherwise drown the alerts surface).  Discord delivery is
+    explicitly NOT wired here; alerts land in the DB, the existing UI
+    surfaces them, and Discord becomes a separate downstream consumer.
+
+    Dedup: the existing `_has_open_alert(code, account_source_id)` check
+    handles within-window deduping while alerts are still in `status="open"`.
+    To dedup *per-chatter* (since these alerts attach to a chatter, not an
+    account), the candidate's `code` is namespaced with the chatter id —
+    e.g. `chatter_qc:slow_reply_critical:12345`.  Same chatter, same rule,
+    same open status → no duplicate insert.
+    """
+    from app.services.of_intelligence.chatter_qc import evaluate_chatter_findings
+
+    out: list[AlertCandidate] = []
+    results = await evaluate_chatter_findings(session)
+    for r in results:
+        for f in r.findings:
+            if f.severity != "critical":
+                continue
+            display_name = r.name or r.chatter_source_id
+            out.append(
+                AlertCandidate(
+                    code=f"chatter_qc:{f.rule_id}:{r.chatter_source_id}",
+                    severity="critical",
+                    title=f"{display_name} — {f.title}",
+                    message=(f"{f.why_it_matters}  Action: {f.recommended_action}"),
+                    chatter_source_id=r.chatter_source_id,
+                    context={
+                        "rule_id": f.rule_id,
+                        "metric": f.metric,
+                        "needs_immediate_review": f.needs_immediate_review,
+                        "period_start": r.period_start.isoformat() if r.period_start else None,
+                        "period_end": r.period_end.isoformat() if r.period_end else None,
+                    },
+                )
+            )
+    return out
 
 
 # ── Helpers ──────────────────────────────────────────────────────────────────

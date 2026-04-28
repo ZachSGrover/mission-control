@@ -509,7 +509,9 @@ async def overview_metrics(
     accounts_synced = (await session.exec(select(OfIntelligenceAccount))).all()
     fans_count = len((await session.exec(select(OfIntelligenceFan))).all())
     messages_count = len((await session.exec(select(OfIntelligenceMessage))).all())
-    chatters = (await session.exec(select(OfIntelligenceChatter))).all()
+    # Chatters list itself is no longer used directly here — chatter_qc loads
+    # them with their metrics in evaluate_chatter_findings().  Kept the import
+    # for the model class because earlier schema/typing references it.
     open_critical_alerts = (
         await session.exec(
             select(OfIntelligenceAlert)
@@ -560,6 +562,17 @@ async def overview_metrics(
         or (now - a.last_synced_at).total_seconds() > 6 * 3600
     )
 
+    # `chatters_to_review` reflects Chat QC v1: count of chatters whose
+    # latest user_metrics row triggered any warn or critical finding.
+    # Imported lazily because chatter_qc itself imports model classes that
+    # transitively import this module's schemas during startup.
+    from app.services.of_intelligence.chatter_qc import evaluate_chatter_findings
+
+    chatter_results = await evaluate_chatter_findings(session)
+    chatters_to_review_count = sum(
+        1 for r in chatter_results if r.severity_max in ("warn", "critical")
+    )
+
     return OverviewMetrics(
         api_connected=bool(creds.api_key),
         api_key_source=creds.api_key_source,
@@ -572,7 +585,7 @@ async def overview_metrics(
         revenue_7d_cents=revenue_7d,
         revenue_30d_cents=revenue_30d,
         accounts_needing_attention=accounts_needing_attention,
-        chatters_to_review=sum(1 for c in chatters if c.active),
+        chatters_to_review=chatters_to_review_count,
         critical_alerts=len(open_critical_alerts),
         latest_qc_report_id=str(latest_qc.id) if latest_qc else None,
         latest_qc_report_date=latest_qc.report_date if latest_qc else None,

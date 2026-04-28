@@ -31,7 +31,11 @@ from app.models.of_intelligence import (
     OfIntelligenceRevenue,
     OfIntelligenceSyncLog,
     OfIntelligenceTrackingLink,
-    OfIntelligenceUserMetrics,
+)
+from app.services.of_intelligence.chatter_qc import (
+    CHATTER_QC_LIMITATIONS_NOTE,
+    ChatterQcResult,
+    evaluate_chatter_findings,
 )
 
 # Constants for "interesting" thresholds.  Kept conservative so a quiet
@@ -153,12 +157,7 @@ async def _build_payload(session: AsyncSession, *, target_date: datetime) -> QcR
         ),
         accounts_reviewed=len(accounts),
         chatters_reviewed=len(chatters),
-        chatter_qc_note=(
-            "Message-level chatter QC unavailable until chat discovery is wired. "
-            "Counts and access-status flags below come from the accounts/members "
-            "endpoints; response-time and conversation-depth metrics will activate "
-            "once the OnlyMonster `/chats` listing is exposed."
-        ),
+        chatter_qc_note=CHATTER_QC_LIMITATIONS_NOTE,
     )
 
     payload.critical_alerts.extend(await _detect_sync_failures(session))
@@ -294,95 +293,47 @@ async def _summarize_chatters(
     session: AsyncSession,
     chatters: Sequence[OfIntelligenceChatter],
 ) -> list[dict[str, Any]]:
-    """Per-chatter QC rollup pulled from `of_intelligence_user_metrics`.
+    """Per-chatter QC rollup — Chat QC v1 rules from `chatter_qc.evaluate_chatter_findings`.
 
-    Joins `OfIntelligenceChatter.source_id` (the OnlyMonster member id) to
-    `OfIntelligenceUserMetrics.user_id` (the same id surfaced by the
-    `users/metrics` endpoint).  When metrics exist we surface
-    `reply_time_avg`, `paid_messages_price_sum_cents`, `tips_amount_sum_cents`,
-    `work_time`, and the template-vs-AI-vs-copied breakdown — that's
-    operator-level QC available today, even without per-message visibility.
-
-    Limitations are kept honest in `payload.chatter_qc_note`:
-    message-level QC (e.g. per-fan thread depth, copy-paste detection,
-    per-message conversion) still requires chat enumeration which is not
-    yet available from OnlyMonster v0.30.0.
+    Single source of truth for the rules lives in
+    `app.services.of_intelligence.chatter_qc`; this function just turns
+    each `ChatterQcResult` into the dict shape the QC report payload /
+    markdown renderer expects.  The alerts engine uses the SAME function
+    so report and alerts can never drift apart.
     """
     if not chatters:
         return []
 
-    # Pull the most-recent user_metrics row per user_id (one row per UTC day).
-    rows = (
-        await session.exec(
-            select(OfIntelligenceUserMetrics)
-            .order_by(col(OfIntelligenceUserMetrics.period_end).desc())
-            .limit(1000)
-        )
-    ).all()
-    latest_by_user: dict[str, OfIntelligenceUserMetrics] = {}
-    for row in rows:
-        if row.user_id not in latest_by_user:
-            latest_by_user[row.user_id] = row
+    results = await evaluate_chatter_findings(session)
+    return [_chatter_result_to_dict(r) for r in results]
 
-    out: list[dict[str, Any]] = []
-    for c in chatters:
-        m = latest_by_user.get(c.source_id)
-        review: dict[str, Any] = {
-            "chatter_source_id": c.source_id,
-            "name": c.name,
-            "active": c.active,
-            "metrics_available": m is not None,
-            "issues": [],
-            "examples": [],
-            "recommended_fix": None,
-        }
-        if m is None:
-            review["note"] = "No user_metrics row for this chatter yet. Run a sync to populate."
-            out.append(review)
-            continue
 
-        review["period_start"] = m.period_start.isoformat() if m.period_start else None
-        review["period_end"] = m.period_end.isoformat() if m.period_end else None
-        review["messages_count"] = m.messages_count
-        review["template_messages_count"] = m.template_messages_count
-        review["ai_generated_messages_count"] = m.ai_generated_messages_count
-        review["copied_messages_count"] = m.copied_messages_count
-        review["reply_time_avg_seconds"] = m.reply_time_avg_seconds
-        review["work_time_seconds"] = m.work_time_seconds
-        review["break_time_seconds"] = m.break_time_seconds
-        review["paid_messages_price_sum_cents"] = m.paid_messages_price_sum_cents
-        review["sold_messages_price_sum_cents"] = m.sold_messages_price_sum_cents
-        review["tips_amount_sum_cents"] = m.tips_amount_sum_cents
-        review["chargedback_messages_count"] = m.chargedback_messages_count
-        review["chargedback_messages_price_sum_cents"] = m.chargedback_messages_price_sum_cents
-
-        # Light heuristics over the metrics so the report has actionable signal.
-        issues: list[str] = []
-        msgs = m.messages_count or 0
-        if msgs:
-            tmpl_pct = 100.0 * (m.template_messages_count or 0) / msgs
-            ai_pct = 100.0 * (m.ai_generated_messages_count or 0) / msgs
-            copy_pct = 100.0 * (m.copied_messages_count or 0) / msgs
-            review["template_pct"] = round(tmpl_pct, 1)
-            review["ai_pct"] = round(ai_pct, 1)
-            review["copied_pct"] = round(copy_pct, 1)
-            if copy_pct >= 30:
-                issues.append(f"copy/paste rate {copy_pct:.0f}% (>=30%)")
-            if tmpl_pct >= 60:
-                issues.append(f"template rate {tmpl_pct:.0f}% (>=60%)")
-        if (m.reply_time_avg_seconds or 0) >= 600:
-            issues.append(f"reply_time_avg {m.reply_time_avg_seconds}s (>=10min)")
-        cb = m.chargedback_messages_count or 0
-        sold = m.sold_messages_count or 0
-        if sold >= 10 and cb / max(sold, 1) >= 0.05:
-            issues.append(f"chargeback rate {100.0 * cb / sold:.0f}% on sold messages")
-        review["issues"] = issues
-        if issues:
-            review["recommended_fix"] = (
-                "Review with chatter; check templates/AI usage and reply pace."
-            )
-        out.append(review)
-    return out
+def _chatter_result_to_dict(r: ChatterQcResult) -> dict[str, Any]:
+    """Flatten a ChatterQcResult into the shape the markdown renderer reads."""
+    return {
+        "chatter_source_id": r.chatter_source_id,
+        "name": r.name,
+        "email": r.email,
+        "active": r.active,
+        "metrics_available": r.metrics_available,
+        "severity_max": r.severity_max,
+        "needs_immediate_review": r.needs_immediate_review,
+        "findings": [f.to_dict() for f in r.findings],
+        "period_start": r.period_start.isoformat() if r.period_start else None,
+        "period_end": r.period_end.isoformat() if r.period_end else None,
+        "messages_count": r.messages_count,
+        "paid_messages_count": r.paid_messages_count,
+        "sold_messages_count": r.sold_messages_count,
+        "paid_messages_price_sum_cents": r.paid_messages_price_sum_cents,
+        "tips_amount_sum_cents": r.tips_amount_sum_cents,
+        "work_time_seconds": r.work_time_seconds,
+        "reply_time_avg_seconds": r.reply_time_avg_seconds,
+        "template_pct": r.template_pct,
+        "ai_pct": r.ai_pct,
+        "copied_pct": r.copied_pct,
+        "chargedback_messages_count": r.chargedback_messages_count,
+        "chargedback_messages_price_sum_cents": r.chargedback_messages_price_sum_cents,
+    }
 
 
 async def _summarize_mass_messages(session: AsyncSession) -> dict[str, Any]:
@@ -734,12 +685,26 @@ def _render_markdown(payload: QcReportPayload) -> str:
     if payload.chatter_qc_note:
         lines.append(f"_{payload.chatter_qc_note}_")
         lines.append("")
+
+    # Roll-up tally line so an operator can see at a glance how many chatters
+    # are flagged before scrolling.
+    crit_count = sum(1 for c in payload.chatter_reviews if c.get("severity_max") == "critical")
+    warn_count = sum(1 for c in payload.chatter_reviews if c.get("severity_max") == "warn")
+    info_count = sum(1 for c in payload.chatter_reviews if c.get("severity_max") == "info")
+    no_metrics_count = sum(1 for c in payload.chatter_reviews if not c.get("metrics_available"))
+    lines.append(
+        f"**Tally:** {crit_count} critical · {warn_count} warn · {info_count} info · "
+        f"{no_metrics_count} no-metrics"
+    )
+
     if not payload.chatter_reviews:
+        lines.append("")
         lines.append("- No chatters synced.")
     else:
         for chatter in payload.chatter_reviews:
             name = chatter.get("name") or chatter["chatter_source_id"]
             if not chatter.get("metrics_available"):
+                lines.append("")
                 lines.append(f"- **{name}** — no user_metrics yet")
                 continue
             mc = chatter.get("messages_count") or 0
@@ -752,18 +717,41 @@ def _render_markdown(payload: QcReportPayload) -> str:
             wt = chatter.get("work_time_seconds")
             wt_min = f"{wt // 60}m" if isinstance(wt, int) else "—"
             reply_min = f"{reply // 60}m{reply % 60:02d}s" if isinstance(reply, int) else "—"
+
+            sev_badge = {
+                "critical": "🔴",
+                "warn": "🟡",
+                "info": "ℹ️",
+                "none": "✅",
+            }.get(chatter.get("severity_max", "none"), "")
+
+            lines.append("")  # blank line per chatter for readability
             line = (
-                f"- **{name}** — {mc} msgs · reply {reply_min} · work {wt_min} · "
+                f"- {sev_badge} **{name}** — {mc} msgs · reply {reply_min} · work {wt_min} · "
                 f"paid ${paid:.2f} · tips ${tips:.2f}"
             )
             if tmpl_pct is not None and ai_pct is not None and copy_pct is not None:
                 line += f" · style {tmpl_pct:.0f}% tmpl / {ai_pct:.0f}% AI / {copy_pct:.0f}% copy"
             lines.append(line)
-            issues = chatter.get("issues") or []
-            for iss in issues:
-                lines.append(f"  - ⚠ {iss}")
-            if chatter.get("recommended_fix"):
-                lines.append(f"  - → {chatter['recommended_fix']}")
+
+            for finding in chatter.get("findings") or []:
+                sev = finding.get("severity", "info")
+                sev_label = {
+                    "critical": "🔴 **CRITICAL**",
+                    "warn": "🟡 **WARN**",
+                    "info": "ℹ️ **INFO**",
+                }.get(sev, sev.upper())
+                title = finding.get("title", "Finding")
+                immediate = (
+                    " · *needs immediate review*" if finding.get("needs_immediate_review") else ""
+                )
+                lines.append(f"  - {sev_label} · {title}{immediate}")
+                why = finding.get("why_it_matters")
+                if why:
+                    lines.append(f"    - *Why:* {why}")
+                action = finding.get("recommended_action")
+                if action:
+                    lines.append(f"    - *Action:* {action}")
 
     lines.extend(
         [

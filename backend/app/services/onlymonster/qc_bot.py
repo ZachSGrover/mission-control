@@ -11,11 +11,12 @@ Tone: direct and operational — short sentences, action-oriented.
 from __future__ import annotations
 
 import logging
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from typing import Any
 
-from sqlmodel import select
+from sqlmodel import col, select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.core.time import utcnow
@@ -171,7 +172,7 @@ async def _detect_sync_failures(session: AsyncSession) -> list[dict[str, Any]]:
 
 async def _detect_access_issues(
     session: AsyncSession,
-    accounts: list[OfIntelligenceAccount],
+    accounts: Sequence[OfIntelligenceAccount],
 ) -> list[dict[str, Any]]:
     issues: list[dict[str, Any]] = []
     stale_cutoff = utcnow() - timedelta(hours=6)
@@ -201,7 +202,7 @@ async def _detect_access_issues(
 
 async def _summarize_accounts(
     session: AsyncSession,
-    accounts: list[OfIntelligenceAccount],
+    accounts: Sequence[OfIntelligenceAccount],
 ) -> list[dict[str, Any]]:
     summaries: list[dict[str, Any]] = []
     if not accounts:
@@ -246,7 +247,7 @@ async def _summarize_accounts(
     return summaries
 
 
-def _summarize_chatters(chatters: list[OfIntelligenceChatter]) -> list[dict[str, Any]]:
+def _summarize_chatters(chatters: Sequence[OfIntelligenceChatter]) -> list[dict[str, Any]]:
     if not chatters:
         return []
     return [
@@ -267,7 +268,7 @@ async def _summarize_mass_messages(session: AsyncSession) -> dict[str, Any]:
     rows = (
         await session.exec(
             select(OfIntelligenceMassMessage)
-            .order_by(OfIntelligenceMassMessage.snapshot_at.desc())
+            .order_by(col(OfIntelligenceMassMessage.snapshot_at).desc())
             .limit(50)
         )
     ).all()

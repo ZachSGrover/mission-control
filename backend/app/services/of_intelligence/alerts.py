@@ -19,7 +19,7 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta
 from typing import Any
 
-from sqlmodel import select
+from sqlmodel import col, select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.core.time import utcnow
@@ -110,9 +110,7 @@ async def evaluate_alerts(
 
 async def acknowledge_alert(session: AsyncSession, alert_id: str) -> OfIntelligenceAlert | None:
     alert = (
-        await session.exec(
-            select(OfIntelligenceAlert).where(OfIntelligenceAlert.id == alert_id)  # type: ignore[arg-type]
-        )
+        await session.exec(select(OfIntelligenceAlert).where(OfIntelligenceAlert.id == alert_id))
     ).first()
     if not alert:
         return None
@@ -127,9 +125,7 @@ async def acknowledge_alert(session: AsyncSession, alert_id: str) -> OfIntellige
 
 async def resolve_alert(session: AsyncSession, alert_id: str) -> OfIntelligenceAlert | None:
     alert = (
-        await session.exec(
-            select(OfIntelligenceAlert).where(OfIntelligenceAlert.id == alert_id)  # type: ignore[arg-type]
-        )
+        await session.exec(select(OfIntelligenceAlert).where(OfIntelligenceAlert.id == alert_id))
     ).first()
     if not alert:
         return None
@@ -190,7 +186,7 @@ async def _rule_account_access(session: AsyncSession) -> list[AlertCandidate]:
     rows = (
         await session.exec(
             select(OfIntelligenceAccount).where(
-                OfIntelligenceAccount.access_status.in_(["lost", "blocked", "expired"])  # type: ignore[attr-defined]
+                col(OfIntelligenceAccount.access_status).in_(["lost", "blocked", "expired"])
             )
         )
     ).all()

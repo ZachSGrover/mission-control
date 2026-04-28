@@ -31,7 +31,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-from sqlmodel import select
+from sqlmodel import col, select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.core.time import utcnow
@@ -127,7 +127,7 @@ async def _gather_daily_summary(session: AsyncSession, when: datetime) -> dict[s
     qc = (
         await session.exec(
             select(OfIntelligenceQcReport)
-            .order_by(OfIntelligenceQcReport.generated_at.desc())
+            .order_by(col(OfIntelligenceQcReport.generated_at).desc())
             .limit(1)
         )
     ).first()
@@ -263,7 +263,7 @@ async def _render_qc_reports(session: AsyncSession) -> list[ExportedFile]:
     rows = (
         await session.exec(
             select(OfIntelligenceQcReport)
-            .order_by(OfIntelligenceQcReport.generated_at.desc())
+            .order_by(col(OfIntelligenceQcReport.generated_at).desc())
             .limit(30)
         )
     ).all()
@@ -282,7 +282,9 @@ async def _render_qc_reports(session: AsyncSession) -> list[ExportedFile]:
 async def _render_alerts(session: AsyncSession) -> list[ExportedFile]:
     rows = (
         await session.exec(
-            select(OfIntelligenceAlert).order_by(OfIntelligenceAlert.created_at.desc()).limit(100)
+            select(OfIntelligenceAlert)
+            .order_by(col(OfIntelligenceAlert.created_at).desc())
+            .limit(100)
         )
     ).all()
     files: list[ExportedFile] = []
@@ -315,7 +317,7 @@ async def _render_mass_messages(session: AsyncSession) -> list[ExportedFile]:
     rows = (
         await session.exec(
             select(OfIntelligenceMassMessage)
-            .order_by(OfIntelligenceMassMessage.snapshot_at.desc())
+            .order_by(col(OfIntelligenceMassMessage.snapshot_at).desc())
             .limit(50)
         )
     ).all()

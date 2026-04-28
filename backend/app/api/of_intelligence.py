@@ -41,7 +41,7 @@ from uuid import UUID
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, status
 from pydantic import BaseModel, Field
-from sqlmodel import select
+from sqlmodel import col, select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.api.mc_roles import require_owner
@@ -378,7 +378,7 @@ async def save_credentials(
         else:
             await delete_secret(session, ONLYMONSTER_BASE_URL_DB_KEY)
         logger.info("of_intelligence.credentials.base_url.updated")
-    return await get_credentials(session=session)  # type: ignore[arg-type]
+    return await get_credentials(session=session)
 
 
 @router.delete("/credentials", status_code=status.HTTP_204_NO_CONTENT)
@@ -489,7 +489,7 @@ async def list_sync_logs(
     rows = (
         await session.exec(
             select(OfIntelligenceSyncLog)
-            .order_by(OfIntelligenceSyncLog.started_at.desc())
+            .order_by(col(OfIntelligenceSyncLog.started_at).desc())
             .limit(limit)
         )
     ).all()
@@ -525,7 +525,7 @@ async def overview_metrics(
     revenue_rows = (
         await session.exec(
             select(OfIntelligenceRevenue)
-            .order_by(OfIntelligenceRevenue.captured_at.desc())
+            .order_by(col(OfIntelligenceRevenue.captured_at).desc())
             .limit(10_000)
         )
     ).all()
@@ -540,13 +540,15 @@ async def overview_metrics(
 
     last_log = (
         await session.exec(
-            select(OfIntelligenceSyncLog).order_by(OfIntelligenceSyncLog.started_at.desc()).limit(1)
+            select(OfIntelligenceSyncLog)
+            .order_by(col(OfIntelligenceSyncLog.started_at).desc())
+            .limit(1)
         )
     ).first()
     latest_qc = (
         await session.exec(
             select(OfIntelligenceQcReport)
-            .order_by(OfIntelligenceQcReport.generated_at.desc())
+            .order_by(col(OfIntelligenceQcReport.generated_at).desc())
             .limit(1)
         )
     ).first()
@@ -588,7 +590,7 @@ async def list_accounts(
     rows = (
         await session.exec(
             select(OfIntelligenceAccount)
-            .order_by(OfIntelligenceAccount.last_synced_at.desc())
+            .order_by(col(OfIntelligenceAccount.last_synced_at).desc())
             .limit(500)
         )
     ).all()
@@ -631,7 +633,7 @@ async def list_chatters(
     rows = (
         await session.exec(
             select(OfIntelligenceChatter)
-            .order_by(OfIntelligenceChatter.last_synced_at.desc())
+            .order_by(col(OfIntelligenceChatter.last_synced_at).desc())
             .limit(500)
         )
     ).all()
@@ -647,7 +649,7 @@ async def list_mass_messages(
     rows = (
         await session.exec(
             select(OfIntelligenceMassMessage)
-            .order_by(OfIntelligenceMassMessage.snapshot_at.desc())
+            .order_by(col(OfIntelligenceMassMessage.snapshot_at).desc())
             .limit(limit)
         )
     ).all()
@@ -662,7 +664,9 @@ async def list_posts(
 ) -> list[PostRow]:
     rows = (
         await session.exec(
-            select(OfIntelligencePost).order_by(OfIntelligencePost.snapshot_at.desc()).limit(limit)
+            select(OfIntelligencePost)
+            .order_by(col(OfIntelligencePost.snapshot_at).desc())
+            .limit(limit)
         )
     ).all()
     return [PostRow.model_validate(r, from_attributes=True) for r in rows]
@@ -677,7 +681,7 @@ async def list_revenue(
     rows = (
         await session.exec(
             select(OfIntelligenceRevenue)
-            .order_by(OfIntelligenceRevenue.captured_at.desc())
+            .order_by(col(OfIntelligenceRevenue.captured_at).desc())
             .limit(limit)
         )
     ).all()
@@ -696,7 +700,7 @@ async def list_qc_reports(
     rows = (
         await session.exec(
             select(OfIntelligenceQcReport)
-            .order_by(OfIntelligenceQcReport.generated_at.desc())
+            .order_by(col(OfIntelligenceQcReport.generated_at).desc())
             .limit(limit)
         )
     ).all()
@@ -738,7 +742,11 @@ async def list_alerts(
     only_open: bool = Query(default=False),
     limit: int = Query(default=100, ge=1, le=500),
 ) -> list[AlertRow]:
-    stmt = select(OfIntelligenceAlert).order_by(OfIntelligenceAlert.created_at.desc()).limit(limit)
+    stmt = (
+        select(OfIntelligenceAlert)
+        .order_by(col(OfIntelligenceAlert.created_at).desc())
+        .limit(limit)
+    )
     if only_open:
         stmt = stmt.where(OfIntelligenceAlert.status == "open")
     rows = (await session.exec(stmt)).all()
@@ -796,7 +804,7 @@ async def list_memory(
         await session.exec(
             select(BusinessMemoryEntry)
             .where(BusinessMemoryEntry.product == "of_intelligence")
-            .order_by(BusinessMemoryEntry.created_at.desc())
+            .order_by(col(BusinessMemoryEntry.created_at).desc())
             .limit(limit)
         )
     ).all()
@@ -828,7 +836,7 @@ async def export_memory_endpoint(
 # ── Chats listing helper (read-only convenience for UI) ──────────────────────
 
 
-@router.get("/chats", response_model=list[dict])
+@router.get("/chats", response_model=list[dict[str, Any]])
 async def list_chats(
     _: AuthContext = AUTH_DEP,
     session: AsyncSession = SESSION_DEP,

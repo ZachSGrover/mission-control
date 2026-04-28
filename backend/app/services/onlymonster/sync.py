@@ -36,8 +36,7 @@ from datetime import datetime
 from typing import Any
 from uuid import UUID, uuid4
 
-from sqlalchemy import select as sa_select
-from sqlmodel import select
+from sqlmodel import col, select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.core.time import utcnow
@@ -680,7 +679,7 @@ async def _persist_revenue_events(
 
         amount = item.get("amount")
         try:
-            cents = int(round(float(amount) * 100))
+            cents = 0 if amount is None else int(round(float(amount) * 100))
         except (TypeError, ValueError):
             cents = 0
         if kind == "chargeback":
@@ -882,11 +881,11 @@ def _account_access_status(account: dict[str, Any]) -> str:
 
 async def fetch_latest_sync_state(session: AsyncSession) -> dict[str, Any]:
     stmt = (
-        sa_select(OfIntelligenceSyncLog)
-        .order_by(OfIntelligenceSyncLog.started_at.desc())
+        select(OfIntelligenceSyncLog)
+        .order_by(col(OfIntelligenceSyncLog.started_at).desc())
         .limit(500)
     )
-    rows = (await session.exec(stmt)).scalars().all()  # type: ignore[attr-defined]
+    rows = (await session.exec(stmt)).all()
 
     latest_per_entity: dict[str, OfIntelligenceSyncLog] = {}
     last_run_id: UUID | None = None

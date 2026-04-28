@@ -34,6 +34,14 @@ PROVIDER_KEYS: dict[str, str] = {
     "anthropic": "api_key.anthropic",
 }
 
+# Admin / billing keys used only by the Usage Tracker collectors.  Separate
+# from the inference keys above — admin keys can read org-wide usage/cost
+# but are not interchangeable with regular API keys.
+ADMIN_PROVIDER_KEYS: dict[str, str] = {
+    "openai": "admin_key.openai",
+    "anthropic": "admin_key.anthropic",
+}
+
 GITHUB_KEYS: dict[str, str] = {
     "github_username": "github.username",
     "github_pat": "github.pat",

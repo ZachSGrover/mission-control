@@ -49,6 +49,7 @@ from app.api.tags import router as tags_router
 from app.api.task_custom_fields import router as task_custom_fields_router
 from app.api.tasks import router as tasks_router
 from app.api.telegram import router as telegram_router
+from app.api.usage import router as usage_router
 from app.api.users import router as users_router
 from app.api.workflows import router as workflows_router
 from app.core.config import settings
@@ -145,6 +146,13 @@ OPENAPI_TAGS = [
     {
         "name": "tags",
         "description": "Tag catalog and task-tag association management endpoints.",
+    },
+    {
+        "name": "usage",
+        "description": (
+            "AI / API usage and spend tracking — read-only dashboards plus "
+            "manual refresh and alert-threshold configuration."
+        ),
     },
     {
         "name": "users",
@@ -662,6 +670,7 @@ api_v1.include_router(control_agents_router)
 api_v1.include_router(control_devices_router)
 api_v1.include_router(control_tasks_router)
 api_v1.include_router(system_node_router)
+api_v1.include_router(usage_router)
 app.include_router(api_v1)
 
 add_pagination(app)

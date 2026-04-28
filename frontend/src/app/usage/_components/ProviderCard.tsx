@@ -29,6 +29,13 @@ export function ProviderCard({ totals }: { totals: ProviderTotals }) {
     totals.last_status === "not_configured" && totals.last_error
       ? totals.last_error
       : null;
+  // For successful collections the backend joins any collector notes (e.g.
+  // "Cost shown is estimated locally…") into the same field.  Surface them
+  // as a quiet info note so the user can see when a number is approximate.
+  const liveNote =
+    totals.last_status === "ok" && totals.last_error ? totals.last_error : null;
+  const costEstimated =
+    !!liveNote && /estimated/i.test(liveNote);
 
   return (
     <div
@@ -62,7 +69,10 @@ export function ProviderCard({ totals }: { totals: ProviderTotals }) {
       </div>
 
       <dl className="grid grid-cols-2 gap-3">
-        <Stat label="Cost" value={formatUsd(totals.cost_usd)} />
+        <Stat
+          label={costEstimated ? "Cost (estimated)" : "Cost"}
+          value={formatUsd(totals.cost_usd)}
+        />
         <Stat label="Requests" value={formatTokens(totals.requests)} />
         <Stat label="Input tokens" value={formatTokens(totals.input_tokens)} />
         <Stat label="Output tokens" value={formatTokens(totals.output_tokens)} />
@@ -92,6 +102,15 @@ export function ProviderCard({ totals }: { totals: ProviderTotals }) {
           style={{ color: "var(--text-muted)" }}
         >
           {placeholderHint}
+        </p>
+      )}
+
+      {!showError && !placeholderHint && liveNote && (
+        <p
+          className="text-xs leading-relaxed"
+          style={{ color: "var(--text-muted)" }}
+        >
+          {liveNote}
         </p>
       )}
     </div>

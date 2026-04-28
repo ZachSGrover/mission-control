@@ -1,34 +1,253 @@
 """OpenAI usage collector — Admin API based, read-only.
 
-Reads aggregated usage and cost from the OpenAI Admin API
-(``GET /v1/organization/usage/completions`` and ``/v1/organization/costs``).
+Reads aggregated usage and cost from the OpenAI Admin API:
 
-Never makes a chat or completion call — those would create spend.  If the
-admin key (``OPENAI_ADMIN_KEY``) or org id (``OPENAI_ORG_ID``) is not
-configured, returns a ``not_configured`` placeholder result.
+  * ``GET https://api.openai.com/v1/organization/usage/completions``
+  * ``GET https://api.openai.com/v1/organization/costs``
 
-Phase 1 stub: this module knows *how* to talk to the API but ships in
-"skeleton" mode — the live HTTP call is intentionally gated on a real admin
-key being present, and we ship without exercising it.  The collector
-framework is what's being delivered here.
+Both endpoints are read-only and free to call.  The collector NEVER touches
+chat / completions / embeddings inference endpoints — those would create
+spend.  When admin credentials (``OPENAI_ADMIN_KEY`` + ``OPENAI_ORG_ID``)
+are missing it short-circuits with ``status="not_configured"`` BEFORE any
+HTTP attempt.
+
+Defensive choices:
+
+* The admin key is NEVER logged or echoed in error strings (``mask_key``).
+* The organization id IS logged (it is a public identifier).
+* Response parsing uses ``dict.get`` everywhere — missing fields just
+  count as zero rather than raising.
+* Top-level response keys are logged once per process for observability
+  (``object`` / ``data`` / ``has_more``).  Per-bucket results are not
+  logged in full because they contain ``project_id`` / ``user_id`` /
+  ``api_key_id`` values that are organization-private.
+* Pagination is intentionally NOT followed in Phase 3A — we set a small
+  ``limit`` and surface ``has_more`` in notes.  Phase 3B will paginate.
 """
 
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timedelta
-from typing import TYPE_CHECKING
+from datetime import timedelta
+from typing import TYPE_CHECKING, Any
+
+import httpx
 
 from app.core.time import utcnow
 from app.services.usage.base import CollectorResult
+from app.services.usage.pricing import estimate_cost, is_priced
 
 if TYPE_CHECKING:
     from sqlmodel.ext.asyncio.session import AsyncSession
 
 logger = logging.getLogger(__name__)
 
-
 PROVIDER = "openai"
+
+# OpenAI Admin API endpoints — read-only, no inference cost.
+_USAGE_BASE = "https://api.openai.com/v1/organization"
+_USAGE_COMPLETIONS_PATH = "/usage/completions"
+_USAGE_COSTS_PATH = "/costs"
+
+# Conservative timeouts so a slow OpenAI response cannot block a refresh.
+_HTTP_TIMEOUT = httpx.Timeout(connect=5.0, read=10.0, write=5.0, pool=5.0)
+
+# Per-call result limit.  With bucket_width="1d" and a 24h window this is
+# always more than enough — OpenAI returns at most 2 daily buckets.  Set
+# small to avoid pulling more data than we need.
+_MAX_BUCKETS = 8
+
+# Module-level flag so we only log the response *shape* once per worker
+# process; subsequent calls run quietly.
+_logged_completions_shape: bool = False
+_logged_costs_shape: bool = False
+
+
+# ── Helpers ──────────────────────────────────────────────────────────────────
+
+
+def _shape_summary(payload: Any) -> str:
+    """Return a short, value-free summary of a JSON response shape."""
+    if not isinstance(payload, dict):
+        return f"non-object ({type(payload).__name__})"
+    keys = sorted(payload.keys())
+    data_field = payload.get("data")
+    if isinstance(data_field, list):
+        first = data_field[0] if data_field else None
+        sub_keys = sorted(first.keys()) if isinstance(first, dict) else []
+        return f"keys={keys} data_len={len(data_field)} bucket_keys={sub_keys}"
+    return f"keys={keys}"
+
+
+def _classify_http_error(status_code: int) -> str:
+    if status_code == 401:
+        return (
+            "OpenAI rejected the admin key (401). "
+            "Verify the key in Settings → Usage and that it is an admin key "
+            "(sk-admin-…), not a regular API key."
+        )
+    if status_code == 403:
+        return (
+            "OpenAI denied the request (403). "
+            "The admin key may be missing the 'Usage and cost' read scope, or "
+            "OPENAI_ORG_ID may be wrong for this key."
+        )
+    if status_code == 404:
+        return (
+            "OpenAI returned 404 for the usage endpoint. "
+            "If you recently changed organization, re-check OPENAI_ORG_ID."
+        )
+    if status_code == 429:
+        return (
+            "OpenAI rate-limited the usage request (429). "
+            "Try Refresh again in a minute; the local throttle is unrelated."
+        )
+    if 500 <= status_code < 600:
+        return (
+            f"OpenAI returned a server error ({status_code}). "
+            "This is on OpenAI's side — try again later."
+        )
+    return f"OpenAI returned an unexpected status ({status_code})."
+
+
+async def _request(
+    client: httpx.AsyncClient,
+    *,
+    path: str,
+    params: dict[str, Any],
+    admin_key: str,
+    org_id: str,
+) -> tuple[dict[str, Any] | None, str | None]:
+    """Issue one Admin API GET.
+
+    Returns ``(payload, error)`` where exactly one is non-None.  Never raises.
+    Never includes the admin key in the error string.
+    """
+    headers = {
+        "Authorization": f"Bearer {admin_key}",
+        # OpenAI scopes the admin key to its organization, but this header is
+        # also accepted and helps avoid surprises if the key has access to
+        # multiple orgs in the future.
+        "OpenAI-Organization": org_id,
+        "Accept": "application/json",
+    }
+    url = f"{_USAGE_BASE}{path}"
+    try:
+        response = await client.get(url, params=params, headers=headers)
+    except httpx.TimeoutException:
+        return None, "OpenAI usage API timed out — network or service slow."
+    except httpx.RequestError as exc:
+        # Strip the URL in case it ever ends up containing query-string secrets
+        # in a future refactor; we know the admin key is in headers, not URLs.
+        return None, f"Could not reach OpenAI usage API ({type(exc).__name__})."
+
+    if response.status_code != 200:
+        return None, _classify_http_error(response.status_code)
+
+    try:
+        body = response.json()
+    except ValueError:
+        return None, "OpenAI returned a non-JSON usage response."
+    if not isinstance(body, dict):
+        return None, "OpenAI returned an unexpected (non-object) usage response."
+    return body, None
+
+
+def _safe_int(value: Any) -> int:
+    """Coerce *value* to int, returning 0 on any failure (None, str, …)."""
+    if value is None:
+        return 0
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return 0
+
+
+def _aggregate_completions(payload: dict[str, Any]) -> dict[str, Any]:
+    """Sum tokens / requests across all buckets.
+
+    Also returns a model→tokens map so cost can be estimated when the
+    /costs endpoint isn't available.
+    """
+    total_input = 0
+    total_output = 0
+    total_requests = 0
+    by_model: dict[str, dict[str, int]] = {}
+
+    data = payload.get("data") or []
+    if not isinstance(data, list):
+        return {
+            "input_tokens": 0,
+            "output_tokens": 0,
+            "requests": 0,
+            "by_model": by_model,
+            "has_more": bool(payload.get("has_more")),
+        }
+
+    for bucket in data:
+        if not isinstance(bucket, dict):
+            continue
+        results = bucket.get("results") or []
+        if not isinstance(results, list):
+            continue
+        for row in results:
+            if not isinstance(row, dict):
+                continue
+            input_tokens = _safe_int(row.get("input_tokens"))
+            output_tokens = _safe_int(row.get("output_tokens"))
+            requests = _safe_int(row.get("num_model_requests"))
+            model = str(row.get("model") or "").strip().lower() or "unknown"
+            total_input += input_tokens
+            total_output += output_tokens
+            total_requests += requests
+            slot = by_model.setdefault(
+                model, {"input_tokens": 0, "output_tokens": 0}
+            )
+            slot["input_tokens"] += input_tokens
+            slot["output_tokens"] += output_tokens
+
+    return {
+        "input_tokens": total_input,
+        "output_tokens": total_output,
+        "requests": total_requests,
+        "by_model": by_model,
+        "has_more": bool(payload.get("has_more")),
+    }
+
+
+def _aggregate_costs(payload: dict[str, Any]) -> tuple[float, bool]:
+    """Sum USD cost across all buckets.  Returns (total, saw_non_usd)."""
+    total = 0.0
+    saw_non_usd = False
+    data = payload.get("data") or []
+    if not isinstance(data, list):
+        return 0.0, False
+
+    for bucket in data:
+        if not isinstance(bucket, dict):
+            continue
+        results = bucket.get("results") or []
+        if not isinstance(results, list):
+            continue
+        for row in results:
+            if not isinstance(row, dict):
+                continue
+            amount = row.get("amount")
+            if not isinstance(amount, dict):
+                continue
+            currency = str(amount.get("currency") or "").lower()
+            value = amount.get("value")
+            if currency != "usd":
+                saw_non_usd = True
+                continue
+            try:
+                total += float(value or 0)
+            except (TypeError, ValueError):
+                continue
+    return total, saw_non_usd
+
+
+# ── Entry point ──────────────────────────────────────────────────────────────
 
 
 async def collect(
@@ -41,6 +260,8 @@ async def collect(
     Returns ``CollectorResult(status="not_configured")`` when admin
     credentials are missing — never raises, never makes an inference call.
     """
+    global _logged_completions_shape, _logged_costs_shape
+
     from app.core.config import settings
     from app.core.secrets_store import get_secret_with_source
 
@@ -54,6 +275,7 @@ async def collect(
     end = utcnow()
     start = end - timedelta(hours=window_hours)
 
+    # ── No credentials → no HTTP call.  Return early. ───────────────────────
     if not admin_key.strip() or not org_id:
         missing = []
         if not admin_key.strip():
@@ -73,18 +295,144 @@ async def collect(
             ],
         )
 
-    # Phase 1: skeleton only.  Do not perform live HTTP calls until Phase 2
-    # has been reviewed.  Returning a placeholder keeps refresh idempotent
-    # and avoids any risk of making a billable call from this code path.
-    logger.info("usage.openai.skeleton org_id_set=%s admin_key_set=true", bool(org_id))
+    # ── Live read-only call. ───────────────────────────────────────────────
+    start_unix = int(start.timestamp())
+    params = {
+        "start_time": start_unix,
+        "bucket_width": "1d",
+        "limit": _MAX_BUCKETS,
+    }
+
+    notes: list[str] = []
+    logger.info(
+        "usage.openai.fetch.start org_id=%s window_hours=%d start_unix=%d",
+        org_id,
+        window_hours,
+        start_unix,
+    )
+
+    async with httpx.AsyncClient(timeout=_HTTP_TIMEOUT) as client:
+        completions_payload, completions_err = await _request(
+            client,
+            path=_USAGE_COMPLETIONS_PATH,
+            params=params,
+            admin_key=admin_key,
+            org_id=org_id,
+        )
+        costs_payload, costs_err = await _request(
+            client,
+            path=_USAGE_COSTS_PATH,
+            params=params,
+            admin_key=admin_key,
+            org_id=org_id,
+        )
+
+    # If the completions endpoint failed, surface that — without it we have
+    # nothing meaningful to store.
+    if completions_payload is None:
+        logger.warning(
+            "usage.openai.completions_failed err=%r org_id=%s",
+            completions_err,
+            org_id,
+        )
+        return CollectorResult(
+            provider=PROVIDER,
+            status="error",
+            source="placeholder",
+            period_start=start,
+            period_end=end,
+            error=completions_err,
+        )
+
+    if not _logged_completions_shape:
+        logger.info(
+            "usage.openai.completions_shape %s",
+            _shape_summary(completions_payload),
+        )
+        _logged_completions_shape = True
+
+    completions = _aggregate_completions(completions_payload)
+    if completions["has_more"]:
+        notes.append(
+            "OpenAI reported more usage buckets than fetched. Phase 3B will "
+            "paginate; recent totals shown."
+        )
+
+    # Determine cost path.
+    cost_actual: float | None = None
+    cost_estimated: float = 0.0
+    if costs_payload is not None:
+        if not _logged_costs_shape:
+            logger.info("usage.openai.costs_shape %s", _shape_summary(costs_payload))
+            _logged_costs_shape = True
+        cost_actual, saw_non_usd = _aggregate_costs(costs_payload)
+        if saw_non_usd:
+            notes.append("Some cost rows used non-USD currency and were skipped.")
+    else:
+        logger.info(
+            "usage.openai.costs_unavailable err=%r — falling back to local estimate.",
+            costs_err,
+        )
+        notes.append(
+            f"Cost endpoint unavailable ({costs_err}). "
+            "Cost shown is estimated locally from token counts."
+        )
+
+    # If costs_payload is unavailable OR returned $0 with non-zero tokens, also
+    # compute an estimate so the UI never shows blank.  The note above tells
+    # the user when the displayed value is estimated.
+    if completions["by_model"]:
+        unpriced_models: list[str] = []
+        for model_name, tokens in completions["by_model"].items():
+            in_t = int(tokens["input_tokens"])
+            out_t = int(tokens["output_tokens"])
+            if not is_priced(model_name) and (in_t or out_t):
+                unpriced_models.append(model_name)
+            cost_estimated += estimate_cost(
+                model_name, input_tokens=in_t, output_tokens=out_t
+            )
+        if unpriced_models:
+            notes.append(
+                "No local price for: "
+                + ", ".join(sorted(set(unpriced_models)))
+                + ". Their tokens are not included in the estimate."
+            )
+
+    if cost_actual is not None:
+        cost_for_snapshot = cost_actual
+        # Disambiguate when local estimate diverges materially from actual.
+        if cost_estimated > 0 and cost_actual > 0:
+            ratio = cost_estimated / cost_actual
+            if ratio < 0.5 or ratio > 2.0:
+                notes.append(
+                    f"Note: local estimate (${cost_estimated:.4f}) diverged "
+                    f"≥2× from OpenAI's reported cost (${cost_actual:.4f}); "
+                    "the local pricing table may be stale."
+                )
+    else:
+        cost_for_snapshot = cost_estimated
+
+    total_tokens = completions["input_tokens"] + completions["output_tokens"]
+    logger.info(
+        "usage.openai.fetch.ok requests=%d input_tokens=%d output_tokens=%d "
+        "cost_actual=%s cost_estimated=%.4f",
+        completions["requests"],
+        completions["input_tokens"],
+        completions["output_tokens"],
+        f"{cost_actual:.4f}" if cost_actual is not None else "n/a",
+        cost_estimated,
+    )
+
     return CollectorResult(
         provider=PROVIDER,
-        status="not_configured",
-        source="placeholder",
+        status="ok",
+        source="live",
         period_start=start,
         period_end=end,
-        notes=[
-            "OpenAI admin credentials present, but live collection is disabled "
-            "in Phase 1.  Will be enabled after Phase 2 review.",
-        ],
+        input_tokens=completions["input_tokens"],
+        output_tokens=completions["output_tokens"],
+        total_tokens=total_tokens,
+        requests=completions["requests"],
+        cost_usd=cost_for_snapshot,
+        notes=notes,
     )

@@ -88,6 +88,11 @@ class EndpointResult:
     error: str | None = None
     reason: str | None = None
     path_params: dict[str, Any] = field(default_factory=dict)
+    # Final query parameters used in the request (after date-range
+    # injection / strategy snapping).  Persisters that key off the
+    # request window (e.g. user_metrics) read this to know exactly which
+    # `from`/`to` produced the rows.
+    query_params: dict[str, Any] = field(default_factory=dict)
 
 
 # ── Credential resolution ────────────────────────────────────────────────────
@@ -128,6 +133,14 @@ class OnlyMonsterClient:
         self._credentials = credentials
         self._timeout = timeout
         self._rate_limiter = rate_limiter or OnlyMonsterRateLimiter()
+        # Apply per-endpoint rate-limit overrides from the catalog so paths
+        # like `/api/v0/accounts/{id}/fans` (1 req/sec) don't get hammered
+        # at the default 15/sec.  Lazy: only buckets created after this
+        # call see the override, but that's every bucket since none have
+        # been created until the first acquire().
+        for spec in ENDPOINT_CATALOG:
+            if spec.per_endpoint_rate is not None:
+                self._rate_limiter.set_endpoint_rate(spec.path, spec.per_endpoint_rate)
 
     @property
     def credentials(self) -> OnlyMonsterCredentials:
@@ -311,10 +324,16 @@ class OnlyMonsterClient:
         if spec.requires_date_range:
             start_key, end_key = spec.date_range_keys
             now = datetime.now(timezone.utc)
-            base_params.setdefault(
-                start_key, (now - timedelta(days=DEFAULT_DATE_RANGE_DAYS)).isoformat()
-            )
-            base_params.setdefault(end_key, now.isoformat())
+            if spec.date_range_strategy == "utc_day":
+                # Snap right edge to today's UTC 00:00 so re-runs in the
+                # same calendar day produce identical query windows.
+                end_at = now.replace(hour=0, minute=0, second=0, microsecond=0)
+                start_at = end_at - timedelta(days=DEFAULT_DATE_RANGE_DAYS)
+            else:
+                end_at = now
+                start_at = now - timedelta(days=DEFAULT_DATE_RANGE_DAYS)
+            base_params.setdefault(start_key, start_at.isoformat())
+            base_params.setdefault(end_key, end_at.isoformat())
         if query:
             base_params.update(query)
 
@@ -348,6 +367,7 @@ class OnlyMonsterClient:
                         reason="network_error",
                         error="Network error after retries.",
                         path_params=path_params or {},
+                        query_params=dict(base_params),
                     )
                 if resp.status_code in (401, 403):
                     return EndpointResult(
@@ -358,6 +378,7 @@ class OnlyMonsterClient:
                         reason="auth_error",
                         error=f"HTTP {resp.status_code}: authentication failed.",
                         path_params=path_params or {},
+                        query_params=dict(base_params),
                     )
                 if resp.status_code >= 400:
                     return EndpointResult(
@@ -368,6 +389,7 @@ class OnlyMonsterClient:
                         reason="http_error",
                         error=f"HTTP {resp.status_code}: {resp.text[:200]}",
                         path_params=path_params or {},
+                        query_params=dict(base_params),
                     )
 
                 try:
@@ -381,6 +403,7 @@ class OnlyMonsterClient:
                         reason="invalid_json",
                         error="OnlyMonster returned non-JSON content.",
                         path_params=path_params or {},
+                        query_params=dict(base_params),
                     )
 
                 page_items, next_cursor = _paginate_response(payload, spec)
@@ -405,6 +428,7 @@ class OnlyMonsterClient:
             page_count=pages,
             next_cursor=cursor,
             path_params=path_params or {},
+            query_params=dict(base_params),
         )
 
     # ── HTTP retry helper ────────────────────────────────────────────────

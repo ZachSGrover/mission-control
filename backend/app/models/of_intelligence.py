@@ -248,6 +248,89 @@ class OfIntelligenceRevenue(SQLModel, table=True):
     captured_at: datetime = Field(default_factory=utcnow, index=True)
 
 
+class OfIntelligenceUserMetrics(SQLModel, table=True):
+    """Per-user activity / sales / chargeback metrics over a window.
+
+    Sourced from `GET /api/v0/users/metrics`.  The API aggregates over a
+    `from`/`to` window and returns one item per user.  We store one row
+    per `(source, user_id, period_start, period_end)`; same-day re-runs
+    upsert because the client snaps the window to UTC-day boundaries.
+
+    Money fields are stored as **cents** (int) to match the convention
+    in `of_intelligence_revenue`.  Time fields (`reply_time_avg`,
+    `work_time`, `break_time`) are stored as integer seconds.
+    """
+
+    __tablename__ = "of_intelligence_user_metrics"  # pyright: ignore[reportAssignmentType]
+    __table_args__ = (
+        UniqueConstraint(
+            "source",
+            "user_id",
+            "period_start",
+            "period_end",
+            name="uq_ofi_user_metrics_window",
+        ),
+        Index("ix_ofi_user_metrics_user_period", "user_id", "period_start"),
+        Index("ix_ofi_user_metrics_period_end", "period_end"),
+    )
+
+    id: UUID = Field(default_factory=uuid4, primary_key=True)
+    source: str = Field(default=SOURCE_ONLYMONSTER, index=True, max_length=64)
+    source_external_id: str | None = Field(
+        default=None,
+        max_length=255,
+        index=True,
+        description=(
+            "Deterministic SHA-256 of (source, user_id, period_start, period_end) — "
+            "kept as a stable backup signal even though the unique constraint above "
+            "is the authoritative dedup."
+        ),
+    )
+    user_id: str = Field(max_length=64, index=True)
+    creator_ids: list[Any] | None = Field(default=None, sa_column=Column(JSON))
+    period_start: datetime = Field(index=True)
+    period_end: datetime = Field(index=True)
+
+    # Top-line activity
+    fans_count: int | None = Field(default=None)
+    messages_count: int | None = Field(default=None)
+    posts_count: int | None = Field(default=None)
+    deleted_posts_count: int | None = Field(default=None)
+
+    # Style breakdown
+    template_messages_count: int | None = Field(default=None)
+    ai_generated_messages_count: int | None = Field(default=None)
+    copied_messages_count: int | None = Field(default=None)
+    media_messages_count: int | None = Field(default=None)
+
+    # Speed / quality
+    reply_time_avg_seconds: int | None = Field(default=None)
+    purchase_interval_avg_seconds: int | None = Field(default=None)
+    work_time_seconds: int | None = Field(default=None)
+    break_time_seconds: int | None = Field(default=None)
+    words_count_sum: int | None = Field(default=None)
+    unsent_messages_count: int | None = Field(default=None)
+
+    # Sales (cents)
+    paid_messages_count: int | None = Field(default=None)
+    paid_messages_price_sum_cents: int | None = Field(default=None)
+    sold_messages_count: int | None = Field(default=None)
+    sold_messages_price_sum_cents: int | None = Field(default=None)
+    sold_posts_count: int | None = Field(default=None)
+    sold_posts_price_sum_cents: int | None = Field(default=None)
+    tips_amount_sum_cents: int | None = Field(default=None)
+
+    # Chargebacks (cents / counts)
+    chargedback_messages_count: int | None = Field(default=None)
+    chargedback_messages_price_sum_cents: int | None = Field(default=None)
+    chargedback_posts_count: int | None = Field(default=None)
+    chargedback_posts_price_sum_cents: int | None = Field(default=None)
+    chargedback_tips_amount_sum_cents: int | None = Field(default=None)
+
+    raw: dict[str, Any] | None = Field(default=None, sa_column=Column(JSON))
+    captured_at: datetime = Field(default_factory=utcnow, index=True)
+
+
 class OfIntelligenceQcReport(SQLModel, table=True):
     """Daily QC bot output — one row per generated report."""
 

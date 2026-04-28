@@ -32,7 +32,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Any
 from uuid import UUID, uuid4
 
@@ -56,6 +56,7 @@ from app.models.of_intelligence import (
     OfIntelligenceRevenue,
     OfIntelligenceSyncLog,
     OfIntelligenceTrackingLink,
+    OfIntelligenceUserMetrics,
 )
 
 logger = logging.getLogger(__name__)
@@ -791,6 +792,133 @@ async def _persist_links(
     return out
 
 
+async def _persist_user_metrics(
+    session: AsyncSession,
+    items: list[dict[str, Any]],
+    result: EndpointResult,
+    ctx: SyncRunContext,
+) -> PersistResult:
+    """Upsert per-user metrics into of_intelligence_user_metrics.
+
+    Dedup key: `(source, user_id, period_start, period_end)`.  Because
+    the catalog sets `date_range_strategy="utc_day"` for this endpoint,
+    `period_start` and `period_end` are stable across re-runs in the
+    same UTC calendar day — so a re-run UPDATEs the same row with the
+    latest aggregates rather than appending a duplicate.
+
+    Money fields come back as integer cents from OnlyMonster (verified
+    against a live response); we store them as cents directly.  Time
+    fields (`reply_time_avg`, `work_time`, `break_time`) are stored
+    as integer seconds.
+
+    A `source_external_id` is computed as a SHA-256 over the dedup
+    tuple — purely informational (the unique constraint above is the
+    authoritative dedup); useful when a future query wants a single
+    stable string id per row.
+    """
+    import hashlib
+
+    out = PersistResult()
+    captured = utcnow()
+
+    period_start = _coerce_dt(result.query_params.get("from"))
+    period_end = _coerce_dt(result.query_params.get("to"))
+    if period_start is None or period_end is None:
+        # Fallback: derive from now (matches `utc_day` strategy in client.py).
+        end = captured.replace(hour=0, minute=0, second=0, microsecond=0)
+        start = end - timedelta(days=30)
+        period_start = start
+        period_end = end
+
+    for item in items:
+        user_id = _coerce_str(item.get("user_id"))
+        if not user_id:
+            out.errors += 1
+            continue
+
+        external_id = hashlib.sha256(
+            f"{SOURCE_ONLYMONSTER}|user_metrics|{user_id}|{period_start.isoformat()}|{period_end.isoformat()}".encode()
+        ).hexdigest()[:32]
+
+        existing = (
+            await session.exec(
+                select(OfIntelligenceUserMetrics).where(
+                    OfIntelligenceUserMetrics.source == SOURCE_ONLYMONSTER,
+                    OfIntelligenceUserMetrics.user_id == user_id,
+                    OfIntelligenceUserMetrics.period_start == period_start,
+                    OfIntelligenceUserMetrics.period_end == period_end,
+                )
+            )
+        ).first()
+
+        creators = item.get("creator_ids")
+        if isinstance(creators, list):
+            creator_ids: list[Any] | None = [str(c) for c in creators]
+        else:
+            creator_ids = None
+
+        # Promote money fields as-is (already cents per live response).
+        fields = {
+            "creator_ids": creator_ids,
+            "fans_count": _coerce_int(item.get("fans_count")),
+            "messages_count": _coerce_int(item.get("messages_count")),
+            "posts_count": _coerce_int(item.get("posts_count")),
+            "deleted_posts_count": _coerce_int(item.get("deleted_posts_count")),
+            "template_messages_count": _coerce_int(item.get("template_messages_count")),
+            "ai_generated_messages_count": _coerce_int(item.get("ai_generated_messages_count")),
+            "copied_messages_count": _coerce_int(item.get("copied_messages_count")),
+            "media_messages_count": _coerce_int(item.get("media_messages_count")),
+            "reply_time_avg_seconds": _coerce_int(item.get("reply_time_avg")),
+            "purchase_interval_avg_seconds": _coerce_int(item.get("purchase_interval_avg")),
+            "work_time_seconds": _coerce_int(item.get("work_time")),
+            "break_time_seconds": _coerce_int(item.get("break_time")),
+            "words_count_sum": _coerce_int(item.get("words_count_sum")),
+            "unsent_messages_count": _coerce_int(item.get("unsent_messages_count")),
+            "paid_messages_count": _coerce_int(item.get("paid_messages_count")),
+            "paid_messages_price_sum_cents": _coerce_int(item.get("paid_messages_price_sum")),
+            "sold_messages_count": _coerce_int(item.get("sold_messages_count")),
+            "sold_messages_price_sum_cents": _coerce_int(item.get("sold_messages_price_sum")),
+            "sold_posts_count": _coerce_int(item.get("sold_posts_count")),
+            "sold_posts_price_sum_cents": _coerce_int(item.get("sold_posts_price_sum")),
+            "tips_amount_sum_cents": _coerce_int(item.get("tips_amount_sum")),
+            "chargedback_messages_count": _coerce_int(item.get("chargedback_messages_count")),
+            "chargedback_messages_price_sum_cents": _coerce_int(
+                item.get("chargedback_messages_price_sum")
+            ),
+            "chargedback_posts_count": _coerce_int(item.get("chargedback_posts_count")),
+            "chargedback_posts_price_sum_cents": _coerce_int(
+                item.get("chargedback_posts_price_sum")
+            ),
+            "chargedback_tips_amount_sum_cents": _coerce_int(
+                item.get("chargedback_tips_amount_sum")
+            ),
+            "raw": item,
+            "captured_at": captured,
+        }
+
+        if existing:
+            existing.source_external_id = external_id
+            for k, v in fields.items():
+                setattr(existing, k, v)
+            session.add(existing)
+            out.updated += 1
+        else:
+            session.add(
+                OfIntelligenceUserMetrics(
+                    source=SOURCE_ONLYMONSTER,
+                    source_external_id=external_id,
+                    user_id=user_id,
+                    period_start=period_start,
+                    period_end=period_end,
+                    **fields,
+                )
+            )
+            out.created += 1
+
+    await session.commit()
+    return out
+
+
 _PERSISTERS = {
     "accounts": _persist_accounts,
     "account_details": _persist_account_details,
@@ -800,10 +928,10 @@ _PERSISTERS = {
     "chargebacks": _persist_chargebacks,
     "trial_links": _persist_links,
     "tracking_links": _persist_links,
-    # vault_folders, vault_uploads, trial_link_users, tracking_link_users,
-    # user_metrics — fetched + counted in sync_logs but not yet persisted to
-    # bespoke tables.  Adding a persister later is purely additive (no
-    # migration needed for sync_log tracking; a new table would need one).
+    "user_metrics": _persist_user_metrics,
+    # vault_folders, vault_uploads, trial_link_users, tracking_link_users
+    # are still fetched + counted in sync_logs but not persisted.  Adding
+    # those persisters is purely additive (each needs a new table).
 }
 
 

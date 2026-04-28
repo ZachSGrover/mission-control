@@ -36,13 +36,25 @@ class EndpointSpec:
     cursor_key: str = "cursor"
     page_limit: int = 100
 
+    # Per-endpoint rate-limit override (requests / second).  None means use
+    # the client's default 15/sec.  Set this for endpoints that OnlyMonster
+    # documents at a stricter rate (each endpoint description in the
+    # OpenAPI carries its own "Rate limit:" line).
+    per_endpoint_rate: int | None = None
+
     # Path parameters and fan-out behaviour
     path_params: tuple[str, ...] = ()
     fan_out: str = "flat"  # "flat" | "per_account" | "per_platform_account"
 
     # Query parameter handling
-    requires_date_range: bool = False  # injects start/end (or from/to) defaulting to last 30d
+    requires_date_range: bool = False  # injects start/end (or from/to)
     date_range_keys: tuple[str, str] = ("start", "end")
+    # "exact" — use `now()` for the right edge of the window.
+    # "utc_day" — snap right edge to today's UTC 00:00 and left edge 30 days
+    # earlier.  Use this when the window itself is part of the dedup key
+    # (e.g. user_metrics) so re-runs in the same UTC day match the same
+    # row and UPDATE rather than appending.
+    date_range_strategy: str = "exact"
     default_query: tuple[tuple[str, str], ...] = field(default_factory=tuple)
 
 
@@ -81,6 +93,10 @@ ENDPOINT_CATALOG: tuple[EndpointSpec, ...] = (
         items_key="items",
         requires_date_range=True,
         date_range_keys=("from", "to"),
+        # Window itself is part of the row dedup key — snap to UTC day so
+        # re-runs in the same calendar day produce identical query windows
+        # and UPDATE the existing row instead of inserting a duplicate.
+        date_range_strategy="utc_day",
     ),
     # ── Per-account endpoints (fan out over synced accounts) ───────────────
     EndpointSpec(
@@ -102,6 +118,7 @@ ENDPOINT_CATALOG: tuple[EndpointSpec, ...] = (
         items_key="fan_ids",
         path_params=("account_id",),
         fan_out="per_account",
+        per_endpoint_rate=1,  # OnlyMonster: 1 request per second per endpoint.
     ),
     EndpointSpec(
         entity="vault_folders",
@@ -113,6 +130,7 @@ ENDPOINT_CATALOG: tuple[EndpointSpec, ...] = (
         path_params=("account_id",),
         fan_out="per_account",
         page_limit=10,  # OnlyMonster enforces limit <= 10 on this endpoint.
+        per_endpoint_rate=5,  # OnlyMonster: 5 requests per second.
     ),
     EndpointSpec(
         entity="vault_uploads",
@@ -123,6 +141,7 @@ ENDPOINT_CATALOG: tuple[EndpointSpec, ...] = (
         items_key="items",
         path_params=("account_id",),
         fan_out="per_account",
+        per_endpoint_rate=3,  # OnlyMonster: 3 requests per second.
     ),
     # ── Folder-scoped — needs vault_folder.id discovered in this run ──────
     # Currently disabled because the sync orchestrator only fans out over
@@ -142,6 +161,7 @@ ENDPOINT_CATALOG: tuple[EndpointSpec, ...] = (
         path_params=("account_id", "folder_id"),
         fan_out="per_account",
         page_limit=10,  # OnlyMonster enforces limit <= 10 on this endpoint.
+        per_endpoint_rate=5,  # OnlyMonster: 5 requests per second.
     ),
     # ── Per-platform-account endpoints (fan out over (platform, platform_account_id)) ──
     EndpointSpec(
@@ -235,6 +255,7 @@ ENDPOINT_CATALOG: tuple[EndpointSpec, ...] = (
         cursor_key="cursor",
         path_params=("account_id", "chat_id"),
         fan_out="per_account",
+        per_endpoint_rate=1,  # OnlyMonster: 1 request per second.
     ),
     # ── Write endpoints — INVENTORY ONLY, never fired by sync ──────────────
     EndpointSpec(

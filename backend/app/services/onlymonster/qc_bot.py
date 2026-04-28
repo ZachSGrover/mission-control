@@ -31,6 +31,7 @@ from app.models.of_intelligence import (
     OfIntelligenceRevenue,
     OfIntelligenceSyncLog,
     OfIntelligenceTrackingLink,
+    OfIntelligenceUserMetrics,
 )
 
 # Constants for "interesting" thresholds.  Kept conservative so a quiet
@@ -164,7 +165,7 @@ async def _build_payload(session: AsyncSession, *, target_date: datetime) -> QcR
     payload.critical_alerts.extend(await _detect_access_issues(session, accounts))
 
     payload.account_reviews = await _summarize_accounts(session, accounts)
-    payload.chatter_reviews = _summarize_chatters(chatters)
+    payload.chatter_reviews = await _summarize_chatters(session, chatters)
     payload.mass_message_insights = await _summarize_mass_messages(session)
     payload.posting_insights = {
         "best_windows": [],
@@ -289,21 +290,99 @@ async def _summarize_accounts(
     return summaries
 
 
-def _summarize_chatters(chatters: Sequence[OfIntelligenceChatter]) -> list[dict[str, Any]]:
+async def _summarize_chatters(
+    session: AsyncSession,
+    chatters: Sequence[OfIntelligenceChatter],
+) -> list[dict[str, Any]]:
+    """Per-chatter QC rollup pulled from `of_intelligence_user_metrics`.
+
+    Joins `OfIntelligenceChatter.source_id` (the OnlyMonster member id) to
+    `OfIntelligenceUserMetrics.user_id` (the same id surfaced by the
+    `users/metrics` endpoint).  When metrics exist we surface
+    `reply_time_avg`, `paid_messages_price_sum_cents`, `tips_amount_sum_cents`,
+    `work_time`, and the template-vs-AI-vs-copied breakdown — that's
+    operator-level QC available today, even without per-message visibility.
+
+    Limitations are kept honest in `payload.chatter_qc_note`:
+    message-level QC (e.g. per-fan thread depth, copy-paste detection,
+    per-message conversion) still requires chat enumeration which is not
+    yet available from OnlyMonster v0.30.0.
+    """
     if not chatters:
         return []
-    return [
-        {
+
+    # Pull the most-recent user_metrics row per user_id (one row per UTC day).
+    rows = (
+        await session.exec(
+            select(OfIntelligenceUserMetrics)
+            .order_by(col(OfIntelligenceUserMetrics.period_end).desc())
+            .limit(1000)
+        )
+    ).all()
+    latest_by_user: dict[str, OfIntelligenceUserMetrics] = {}
+    for row in rows:
+        if row.user_id not in latest_by_user:
+            latest_by_user[row.user_id] = row
+
+    out: list[dict[str, Any]] = []
+    for c in chatters:
+        m = latest_by_user.get(c.source_id)
+        review: dict[str, Any] = {
             "chatter_source_id": c.source_id,
             "name": c.name,
             "active": c.active,
-            "score": None,  # populated once response-time + conversion heuristics land
+            "metrics_available": m is not None,
             "issues": [],
             "examples": [],
             "recommended_fix": None,
         }
-        for c in chatters
-    ]
+        if m is None:
+            review["note"] = "No user_metrics row for this chatter yet. Run a sync to populate."
+            out.append(review)
+            continue
+
+        review["period_start"] = m.period_start.isoformat() if m.period_start else None
+        review["period_end"] = m.period_end.isoformat() if m.period_end else None
+        review["messages_count"] = m.messages_count
+        review["template_messages_count"] = m.template_messages_count
+        review["ai_generated_messages_count"] = m.ai_generated_messages_count
+        review["copied_messages_count"] = m.copied_messages_count
+        review["reply_time_avg_seconds"] = m.reply_time_avg_seconds
+        review["work_time_seconds"] = m.work_time_seconds
+        review["break_time_seconds"] = m.break_time_seconds
+        review["paid_messages_price_sum_cents"] = m.paid_messages_price_sum_cents
+        review["sold_messages_price_sum_cents"] = m.sold_messages_price_sum_cents
+        review["tips_amount_sum_cents"] = m.tips_amount_sum_cents
+        review["chargedback_messages_count"] = m.chargedback_messages_count
+        review["chargedback_messages_price_sum_cents"] = m.chargedback_messages_price_sum_cents
+
+        # Light heuristics over the metrics so the report has actionable signal.
+        issues: list[str] = []
+        msgs = m.messages_count or 0
+        if msgs:
+            tmpl_pct = 100.0 * (m.template_messages_count or 0) / msgs
+            ai_pct = 100.0 * (m.ai_generated_messages_count or 0) / msgs
+            copy_pct = 100.0 * (m.copied_messages_count or 0) / msgs
+            review["template_pct"] = round(tmpl_pct, 1)
+            review["ai_pct"] = round(ai_pct, 1)
+            review["copied_pct"] = round(copy_pct, 1)
+            if copy_pct >= 30:
+                issues.append(f"copy/paste rate {copy_pct:.0f}% (>=30%)")
+            if tmpl_pct >= 60:
+                issues.append(f"template rate {tmpl_pct:.0f}% (>=60%)")
+        if (m.reply_time_avg_seconds or 0) >= 600:
+            issues.append(f"reply_time_avg {m.reply_time_avg_seconds}s (>=10min)")
+        cb = m.chargedback_messages_count or 0
+        sold = m.sold_messages_count or 0
+        if sold >= 10 and cb / max(sold, 1) >= 0.05:
+            issues.append(f"chargeback rate {100.0 * cb / sold:.0f}% on sold messages")
+        review["issues"] = issues
+        if issues:
+            review["recommended_fix"] = (
+                "Review with chatter; check templates/AI usage and reply pace."
+            )
+        out.append(review)
+    return out
 
 
 async def _summarize_mass_messages(session: AsyncSession) -> dict[str, Any]:
@@ -659,7 +738,32 @@ def _render_markdown(payload: QcReportPayload) -> str:
         lines.append("- No chatters synced.")
     else:
         for chatter in payload.chatter_reviews:
-            lines.append(f"- {chatter.get('name') or chatter['chatter_source_id']} (score=pending)")
+            name = chatter.get("name") or chatter["chatter_source_id"]
+            if not chatter.get("metrics_available"):
+                lines.append(f"- **{name}** — no user_metrics yet")
+                continue
+            mc = chatter.get("messages_count") or 0
+            reply = chatter.get("reply_time_avg_seconds")
+            paid = (chatter.get("paid_messages_price_sum_cents") or 0) / 100
+            tips = (chatter.get("tips_amount_sum_cents") or 0) / 100
+            tmpl_pct = chatter.get("template_pct")
+            ai_pct = chatter.get("ai_pct")
+            copy_pct = chatter.get("copied_pct")
+            wt = chatter.get("work_time_seconds")
+            wt_min = f"{wt // 60}m" if isinstance(wt, int) else "—"
+            reply_min = f"{reply // 60}m{reply % 60:02d}s" if isinstance(reply, int) else "—"
+            line = (
+                f"- **{name}** — {mc} msgs · reply {reply_min} · work {wt_min} · "
+                f"paid ${paid:.2f} · tips ${tips:.2f}"
+            )
+            if tmpl_pct is not None and ai_pct is not None and copy_pct is not None:
+                line += f" · style {tmpl_pct:.0f}% tmpl / {ai_pct:.0f}% AI / {copy_pct:.0f}% copy"
+            lines.append(line)
+            issues = chatter.get("issues") or []
+            for iss in issues:
+                lines.append(f"  - ⚠ {iss}")
+            if chatter.get("recommended_fix"):
+                lines.append(f"  - → {chatter['recommended_fix']}")
 
     lines.extend(
         [

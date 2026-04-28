@@ -27,6 +27,7 @@ from app.models.of_intelligence import (
     OfIntelligenceRevenue,
     OfIntelligenceSyncLog,
     OfIntelligenceTrackingLink,
+    OfIntelligenceUserMetrics,
 )
 from app.models.organization_board_access import OrganizationBoardAccess
 from app.models.organization_invite_board_access import OrganizationInviteBoardAccess
@@ -77,6 +78,7 @@ __all__ = [
     "OfIntelligenceRevenue",
     "OfIntelligenceSyncLog",
     "OfIntelligenceTrackingLink",
+    "OfIntelligenceUserMetrics",
     "BoardTaskCustomField",
     "TaskCustomFieldDefinition",
     "TaskCustomFieldValue",

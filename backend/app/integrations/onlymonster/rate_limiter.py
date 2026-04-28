@@ -51,13 +51,32 @@ class _SlidingWindow:
 
 
 class OnlyMonsterRateLimiter:
-    """Combined global + per-endpoint sliding-window limiter."""
+    """Combined global + per-endpoint sliding-window limiter.
 
-    def __init__(self, *, global_rate: int = 25, per_endpoint_rate: int = 15) -> None:
+    Some OnlyMonster endpoints are stricter than the per-endpoint default
+    (`/api/v0/accounts/{id}/fans` is 1/sec, vault endpoints are 3–5/sec,
+    etc.).  Use `set_endpoint_rate(path, n)` or pass `endpoint_rate_overrides`
+    at construction to register a tighter limit for a specific path.
+    Bucket creation is lazy — call `set_endpoint_rate` before the first
+    `acquire(...)` for an endpoint (catalog wiring time).
+    """
+
+    def __init__(
+        self,
+        *,
+        global_rate: int = 25,
+        per_endpoint_rate: int = 15,
+        endpoint_rate_overrides: dict[str, int] | None = None,
+    ) -> None:
         self._global = _SlidingWindow(global_rate)
         self._per_endpoint: dict[str, _SlidingWindow] = {}
         self._per_endpoint_rate = per_endpoint_rate
+        self._overrides: dict[str, int] = dict(endpoint_rate_overrides or {})
         self._dict_lock = asyncio.Lock()
+
+    def set_endpoint_rate(self, endpoint_key: str, rate: int) -> None:
+        """Register a stricter (or looser) rate for a specific endpoint key."""
+        self._overrides[endpoint_key] = max(int(rate), 1)
 
     async def acquire(self, endpoint_key: str) -> None:
         await self._global.acquire()
@@ -72,6 +91,7 @@ class OnlyMonsterRateLimiter:
         async with self._dict_lock:
             bucket = self._per_endpoint.get(key)
             if bucket is None:
-                bucket = _SlidingWindow(self._per_endpoint_rate)
+                rate = self._overrides.get(key, self._per_endpoint_rate)
+                bucket = _SlidingWindow(rate)
                 self._per_endpoint[key] = bucket
             return bucket

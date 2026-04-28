@@ -1,20 +1,27 @@
 """Async OnlyMonster API client.
 
-Thin httpx adapter that resolves credentials from the encrypted secrets store
-(with env-var fallback), exposes a `ping()` for the connection-test endpoint,
-and a `fetch_entity()` method the sync orchestrator drives off the
-`endpoints.ENDPOINT_CATALOG`.
+Wired to the live OpenAPI spec at https://omapi.onlymonster.ai/docs/json.
 
-The key never leaves this module — callers receive structured results, never
-the raw token.  Decisions about retries and rate-limit handling live here so
-every caller benefits uniformly.
+Responsibilities:
+  • Resolve credentials (DB-encrypted with env-var fallback).
+  • Authenticate with the `x-om-auth-token` header (NOT Bearer).
+  • Substitute path parameters (account_id, platform, etc.).
+  • Drive three pagination shapes used by the API:
+       - "cursor"  : `{<items_key>: [...], <cursor_key>: "..."}` — accounts, transactions, links, …
+       - "offset"  : `{items: [...]}` — drive `offset` & `limit`, stop when a short page is returned
+       - "none"    : single object or short list, no paging
+  • Inject default query params (e.g. start/end date ranges).
+  • Honour the documented rate limits (25/s global, 15/s per endpoint).
+  • Refuse to fire any endpoint flagged `write=True`.
 """
 
 from __future__ import annotations
 
 import asyncio
 import logging
+import time
 from dataclasses import dataclass, field
+from datetime import datetime, timedelta, timezone
 from typing import Any
 
 import httpx
@@ -23,6 +30,7 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 from app.core.config import settings
 from app.core.secrets_store import get_secret_with_source
 from app.integrations.onlymonster.endpoints import ENDPOINT_CATALOG, EndpointSpec, find
+from app.integrations.onlymonster.rate_limiter import OnlyMonsterRateLimiter
 
 logger = logging.getLogger(__name__)
 
@@ -33,6 +41,8 @@ DEFAULT_TIMEOUT_SECONDS = 30.0
 DEFAULT_PAGE_LIMIT = 100
 MAX_RETRIES = 3
 RETRY_BACKOFF_SECONDS = (1.0, 3.0, 8.0)
+DEFAULT_DATE_RANGE_DAYS = 30
+AUTH_HEADER = "x-om-auth-token"
 
 
 # ── Result containers ────────────────────────────────────────────────────────
@@ -40,8 +50,6 @@ RETRY_BACKOFF_SECONDS = (1.0, 3.0, 8.0)
 
 @dataclass
 class OnlyMonsterCredentials:
-    """Resolved credential bundle.  Source is one of 'db' | 'env' | 'none'."""
-
     api_key: str
     api_key_source: str
     base_url: str
@@ -54,8 +62,6 @@ class OnlyMonsterCredentials:
 
 @dataclass
 class PingResult:
-    """Outcome of a connection test."""
-
     ok: bool
     status_code: int | None = None
     latency_ms: float | None = None
@@ -67,35 +73,25 @@ class PingResult:
 
 @dataclass
 class EndpointResult:
-    """Outcome of a single entity fetch."""
-
     entity: str
     available: bool
     items: list[dict[str, Any]] = field(default_factory=list)
     page_count: int = 0
     next_cursor: str | None = None
     error: str | None = None
-    reason: str | None = None  # 'not_available_from_api' | 'http_error' | 'auth_error' | etc.
+    reason: str | None = None
+    path_params: dict[str, Any] = field(default_factory=dict)
 
 
 # ── Credential resolution ────────────────────────────────────────────────────
 
 
 async def resolve_credentials(session: AsyncSession) -> OnlyMonsterCredentials:
-    """Resolve the active OnlyMonster API key + base URL.
-
-    DB-stored values win over env vars so production keys can be rotated via
-    the UI without redeploying the backend.
-    """
     api_key, key_source = await get_secret_with_source(
-        session,
-        ONLYMONSTER_API_KEY_DB_KEY,
-        fallback=settings.onlymonster_api_key,
+        session, ONLYMONSTER_API_KEY_DB_KEY, fallback=settings.onlymonster_api_key,
     )
     base_url, url_source = await get_secret_with_source(
-        session,
-        ONLYMONSTER_BASE_URL_DB_KEY,
-        fallback=settings.onlymonster_api_base_url,
+        session, ONLYMONSTER_BASE_URL_DB_KEY, fallback=settings.onlymonster_api_base_url,
     )
     return OnlyMonsterCredentials(
         api_key=api_key.strip(),
@@ -109,26 +105,32 @@ async def resolve_credentials(session: AsyncSession) -> OnlyMonsterCredentials:
 
 
 class OnlyMonsterClient:
-    """Async client for the OnlyMonster API.
+    """Thin async client.  Construct with already-resolved credentials."""
 
-    Constructed with already-resolved credentials so callers do not have to
-    pass an `AsyncSession` around — keeps the sync orchestrator decoupled
-    from request lifecycle.
-    """
-
-    def __init__(self, credentials: OnlyMonsterCredentials, *, timeout: float = DEFAULT_TIMEOUT_SECONDS) -> None:
+    def __init__(
+        self,
+        credentials: OnlyMonsterCredentials,
+        *,
+        timeout: float = DEFAULT_TIMEOUT_SECONDS,
+        rate_limiter: OnlyMonsterRateLimiter | None = None,
+    ) -> None:
         self._credentials = credentials
         self._timeout = timeout
+        self._rate_limiter = rate_limiter or OnlyMonsterRateLimiter()
 
     @property
     def credentials(self) -> OnlyMonsterCredentials:
         return self._credentials
 
+    @property
+    def rate_limiter(self) -> OnlyMonsterRateLimiter:
+        return self._rate_limiter
+
     def _headers(self) -> dict[str, str]:
         return {
-            "Authorization": f"Bearer {self._credentials.api_key}",
+            AUTH_HEADER: self._credentials.api_key,
             "Accept": "application/json",
-            "User-Agent": "MissionControl-OFI/0.1",
+            "User-Agent": "MissionControl-OFI/0.2",
         }
 
     def _url(self, path: str) -> str:
@@ -136,11 +138,13 @@ class OnlyMonsterClient:
             path = "/" + path
         return f"{self._credentials.base_url}{path}"
 
-    async def ping(self) -> PingResult:
-        """Connection test against the OnlyMonster API.
+    # ── Connection test ──────────────────────────────────────────────────
 
-        Tries `/health`, falls back to `/` if that 404s.  We never fail loudly
-        here — the UI reads `ok` and `error` and renders accordingly.
+    async def ping(self) -> PingResult:
+        """Connection test — calls `GET /api/v0/accounts?limit=1`.
+
+        That endpoint exists, requires auth, returns a tiny payload, and
+        does not mutate state — perfect heartbeat.
         """
         if not self._credentials.configured:
             return PingResult(
@@ -150,61 +154,58 @@ class OnlyMonsterClient:
                 error="No API key configured. Set ONLYMONSTER_API_KEY or save via Settings.",
             )
 
+        await self._rate_limiter.acquire("/api/v0/accounts")
         async with httpx.AsyncClient(timeout=self._timeout, headers=self._headers()) as client:
-            for path in ("/health", "/"):
-                started = asyncio.get_event_loop().time()
-                try:
-                    resp = await client.get(self._url(path))
-                except httpx.RequestError as exc:
-                    logger.warning("onlymonster.ping.network_error path=%s err=%s", path, exc)
-                    return PingResult(
-                        ok=False,
-                        base_url=self._credentials.base_url,
-                        api_key_source=self._credentials.api_key_source,
-                        error=f"Network error contacting OnlyMonster: {exc}",
-                    )
-                latency_ms = (asyncio.get_event_loop().time() - started) * 1000.0
-
-                if resp.status_code == 404 and path == "/health":
-                    continue
-
-                ok = 200 <= resp.status_code < 300
-                payload: dict[str, Any] | None
-                try:
-                    payload = resp.json() if resp.content else None
-                except ValueError:
-                    payload = None
-
+            started = time.monotonic()
+            try:
+                resp = await client.get(self._url("/api/v0/accounts"), params={"limit": 1})
+            except httpx.RequestError as exc:
+                logger.warning("onlymonster.ping.network_error err=%s", exc)
                 return PingResult(
-                    ok=ok,
-                    status_code=resp.status_code,
-                    latency_ms=latency_ms,
+                    ok=False,
                     base_url=self._credentials.base_url,
                     api_key_source=self._credentials.api_key_source,
-                    error=None if ok else f"HTTP {resp.status_code}: {resp.text[:200]}",
-                    raw=payload if isinstance(payload, dict) else None,
+                    error=f"Network error contacting OnlyMonster: {exc}",
                 )
+            latency_ms = (time.monotonic() - started) * 1000.0
 
-        return PingResult(
-            ok=False,
-            base_url=self._credentials.base_url,
-            api_key_source=self._credentials.api_key_source,
-            error="No reachable health endpoint.",
-        )
+            ok = 200 <= resp.status_code < 300
+            payload: dict[str, Any] | None
+            try:
+                payload = resp.json() if resp.content else None
+            except ValueError:
+                payload = None
+
+            error: str | None = None
+            if not ok:
+                if resp.status_code in (401, 403):
+                    error = f"HTTP {resp.status_code}: API key rejected by OnlyMonster."
+                elif resp.status_code == 429:
+                    error = "HTTP 429: rate-limited (the rate-limiter should normally prevent this)."
+                else:
+                    error = f"HTTP {resp.status_code}: {resp.text[:200]}"
+
+            return PingResult(
+                ok=ok,
+                status_code=resp.status_code,
+                latency_ms=latency_ms,
+                base_url=self._credentials.base_url,
+                api_key_source=self._credentials.api_key_source,
+                error=error,
+                raw=payload if isinstance(payload, dict) else None,
+            )
+
+    # ── Entity fetch ─────────────────────────────────────────────────────
 
     async def fetch_entity(
         self,
         entity: str,
         *,
-        params: dict[str, Any] | None = None,
+        path_params: dict[str, Any] | None = None,
+        query: dict[str, Any] | None = None,
         max_pages: int = 50,
     ) -> EndpointResult:
-        """Fetch all pages for *entity* up to *max_pages*.
-
-        Returns an `EndpointResult`.  When the catalog marks an entity as
-        unavailable, the result short-circuits with `reason='not_available_from_api'`
-        — the caller (sync orchestrator) records a placeholder sync_log entry.
-        """
+        """Fetch all pages for *entity*.  Hard-refuses write endpoints."""
         spec = find(entity)
         if spec is None:
             return EndpointResult(
@@ -212,107 +213,131 @@ class OnlyMonsterClient:
                 available=False,
                 reason="unknown_entity",
                 error=f"Entity '{entity}' is not in the OnlyMonster endpoint catalog.",
+                path_params=path_params or {},
+            )
+        if spec.write:
+            return EndpointResult(
+                entity=entity, available=False, reason="write_disabled",
+                error="This endpoint mutates OnlyMonster data and is disabled by policy.",
+                path_params=path_params or {},
             )
         if not spec.available:
             return EndpointResult(
-                entity=entity,
-                available=False,
-                reason="not_available_from_api",
-                error=(
-                    "OnlyMonster endpoint not yet wired up in app.integrations.onlymonster.endpoints — "
-                    "flip `available=True` and set the real path once docs are confirmed."
-                ),
+                entity=entity, available=False,
+                reason="dynamic_discovery_required" if spec.requires_dynamic_discovery else "not_available_from_api",
+                error=spec.description or "Endpoint is not currently enabled.",
+                path_params=path_params or {},
             )
         if not self._credentials.configured:
             return EndpointResult(
-                entity=entity,
-                available=False,
-                reason="not_configured",
+                entity=entity, available=False, reason="not_configured",
                 error="No API key configured.",
+                path_params=path_params or {},
             )
 
+        # Substitute path parameters.
+        effective_path, missing = _substitute_path(spec.path, path_params or {})
+        if missing:
+            return EndpointResult(
+                entity=entity, available=True, reason="missing_path_params",
+                error=f"Missing path params: {missing}",
+                path_params=path_params or {},
+            )
+
+        # Build query baseline.
+        base_params = dict(spec.default_query)
+        if spec.requires_date_range:
+            start_key, end_key = spec.date_range_keys
+            now = datetime.now(timezone.utc)
+            base_params.setdefault(start_key, (now - timedelta(days=DEFAULT_DATE_RANGE_DAYS)).isoformat())
+            base_params.setdefault(end_key, now.isoformat())
+        if query:
+            base_params.update(query)
+
+        # Drive pagination.
         items: list[dict[str, Any]] = []
         cursor: str | None = None
-        pages_fetched = 0
+        offset = 0
+        pages = 0
 
         async with httpx.AsyncClient(timeout=self._timeout, headers=self._headers()) as client:
-            while pages_fetched < max_pages:
-                page_params: dict[str, Any] = dict(params or {})
-                page_params.setdefault("limit", DEFAULT_PAGE_LIMIT)
-                if cursor:
-                    page_params["cursor"] = cursor
+            while pages < max_pages:
+                page_params: dict[str, Any] = dict(base_params)
+                page_params.setdefault("limit", spec.page_limit or DEFAULT_PAGE_LIMIT)
 
-                resp = await self._request_with_retry(client, spec, page_params)
+                if spec.pagination == "cursor":
+                    if cursor:
+                        page_params[spec.cursor_key] = cursor
+                elif spec.pagination == "offset":
+                    page_params["offset"] = offset
+
+                await self._rate_limiter.acquire(spec.path)
+                resp = await self._request_with_retry(client, spec.method, effective_path, page_params)
                 if resp is None:
                     return EndpointResult(
-                        entity=entity,
-                        available=True,
-                        items=items,
-                        page_count=pages_fetched,
-                        reason="network_error",
-                        error="Network error after retries.",
+                        entity=entity, available=True, items=items, page_count=pages,
+                        reason="network_error", error="Network error after retries.",
+                        path_params=path_params or {},
                     )
                 if resp.status_code in (401, 403):
                     return EndpointResult(
-                        entity=entity,
-                        available=True,
-                        items=items,
-                        page_count=pages_fetched,
-                        reason="auth_error",
-                        error=f"HTTP {resp.status_code}: authentication failed.",
+                        entity=entity, available=True, items=items, page_count=pages,
+                        reason="auth_error", error=f"HTTP {resp.status_code}: authentication failed.",
+                        path_params=path_params or {},
                     )
                 if resp.status_code >= 400:
                     return EndpointResult(
-                        entity=entity,
-                        available=True,
-                        items=items,
-                        page_count=pages_fetched,
+                        entity=entity, available=True, items=items, page_count=pages,
                         reason="http_error",
                         error=f"HTTP {resp.status_code}: {resp.text[:200]}",
+                        path_params=path_params or {},
                     )
 
-                payload: Any
                 try:
                     payload = resp.json()
                 except ValueError:
                     return EndpointResult(
-                        entity=entity,
-                        available=True,
-                        items=items,
-                        page_count=pages_fetched,
-                        reason="invalid_json",
-                        error="OnlyMonster returned non-JSON content.",
+                        entity=entity, available=True, items=items, page_count=pages,
+                        reason="invalid_json", error="OnlyMonster returned non-JSON content.",
+                        path_params=path_params or {},
                     )
 
-                page_items, cursor = _extract_items_and_cursor(payload)
+                page_items, next_cursor = _paginate_response(payload, spec)
                 items.extend(page_items)
-                pages_fetched += 1
+                pages += 1
 
-                if not spec.paginated or not cursor:
+                if spec.pagination == "cursor":
+                    if not next_cursor:
+                        break
+                    cursor = next_cursor
+                elif spec.pagination == "offset":
+                    if len(page_items) < (page_params.get("limit") or spec.page_limit):
+                        break
+                    offset += len(page_items)
+                else:
                     break
 
         return EndpointResult(
-            entity=entity,
-            available=True,
-            items=items,
-            page_count=pages_fetched,
-            next_cursor=cursor,
+            entity=entity, available=True, items=items, page_count=pages,
+            next_cursor=cursor, path_params=path_params or {},
         )
+
+    # ── HTTP retry helper ────────────────────────────────────────────────
 
     async def _request_with_retry(
         self,
         client: httpx.AsyncClient,
-        spec: EndpointSpec,
+        method: str,
+        path: str,
         params: dict[str, Any],
     ) -> httpx.Response | None:
-        """GET with simple exponential backoff on network errors and 429/5xx."""
         for attempt in range(MAX_RETRIES):
             try:
-                resp = await client.request(spec.method, self._url(spec.path), params=params)
+                resp = await client.request(method, self._url(path), params=params)
             except httpx.RequestError as exc:
                 logger.warning(
-                    "onlymonster.request.network_error entity=%s attempt=%s err=%s",
-                    spec.entity, attempt + 1, exc,
+                    "onlymonster.request.network_error path=%s attempt=%s err=%s",
+                    path, attempt + 1, exc,
                 )
                 if attempt + 1 < MAX_RETRIES:
                     await asyncio.sleep(RETRY_BACKOFF_SECONDS[attempt])
@@ -326,8 +351,8 @@ class OnlyMonsterClient:
                     if retry_after and retry_after.isdigit():
                         delay = max(delay, float(retry_after))
                     logger.info(
-                        "onlymonster.request.retry entity=%s status=%s sleep=%.1fs",
-                        spec.entity, resp.status_code, delay,
+                        "onlymonster.request.retry path=%s status=%s sleep=%.1fs",
+                        path, resp.status_code, delay,
                     )
                     await asyncio.sleep(delay)
                     continue
@@ -339,33 +364,65 @@ class OnlyMonsterClient:
 # ── Helpers ──────────────────────────────────────────────────────────────────
 
 
-def _extract_items_and_cursor(payload: Any) -> tuple[list[dict[str, Any]], str | None]:
-    """Extract items + next-cursor from a generic OnlyMonster response shape.
+def _substitute_path(path: str, path_params: dict[str, Any]) -> tuple[str, list[str]]:
+    """Replace `{name}` placeholders.  Returns (path, missing_param_names)."""
+    missing: list[str] = []
+    out = path
+    # Iterate placeholders in declaration order.
+    import re
+    for match in re.findall(r"\{([^}]+)\}", path):
+        if match not in path_params or path_params[match] in (None, ""):
+            missing.append(match)
+            continue
+        out = out.replace("{" + match + "}", str(path_params[match]))
+    return out, missing
 
-    OnlyMonster's exact response shape isn't yet documented; we try a few
-    common shapes (`{data: [...], next_cursor: ...}`, `{items: [...]}`,
-    bare list) and fall back to wrapping the payload itself.
-    """
+
+def _paginate_response(payload: Any, spec: EndpointSpec) -> tuple[list[dict[str, Any]], str | None]:
+    """Extract (items, next_cursor) according to *spec.pagination* rules."""
+    if spec.items_key == "fan_ids" and isinstance(payload, dict):
+        # Special case: /fans returns `{fan_ids: ["str", ...]}`. Wrap each id.
+        ids = payload.get("fan_ids")
+        if isinstance(ids, list):
+            return [{"fan_id": i} for i in ids if isinstance(i, str)], None
+        return [], None
+
+    if spec.items_key == "account" and isinstance(payload, dict):
+        # Single-object endpoint.
+        account = payload.get("account")
+        if isinstance(account, dict):
+            return [account], None
+        return [], None
+
     if isinstance(payload, list):
         return [item for item in payload if isinstance(item, dict)], None
 
-    if isinstance(payload, dict):
-        for key in ("data", "items", "results"):
-            value = payload.get(key)
-            if isinstance(value, list):
-                items = [item for item in value if isinstance(item, dict)]
-                cursor = (
-                    payload.get("next_cursor")
-                    or payload.get("cursor")
-                    or (payload.get("paging") or {}).get("next_cursor")
-                )
-                return items, cursor if isinstance(cursor, str) and cursor else None
-        # Single-object response — wrap as a one-item page.
-        return [payload], None
+    if not isinstance(payload, dict):
+        return [], None
 
-    return [], None
+    raw_items = payload.get(spec.items_key)
+    if not isinstance(raw_items, list):
+        # Tolerate unexpected shapes by also checking common alternatives.
+        for fallback in ("data", "items", "results"):
+            if isinstance(payload.get(fallback), list):
+                raw_items = payload[fallback]
+                break
+        else:
+            return [], None
+
+    items = [item for item in raw_items if isinstance(item, dict)]
+
+    cursor: Any = None
+    if spec.pagination == "cursor":
+        cursor = payload.get(spec.cursor_key)
+        # Tolerate alternative spellings.
+        if not cursor:
+            for alt in ("nextCursor", "cursor", "next_cursor"):
+                if payload.get(alt):
+                    cursor = payload[alt]
+                    break
+    return items, cursor if isinstance(cursor, str) and cursor else None
 
 
 def supported_entities() -> list[str]:
-    """Convenience for the API status endpoint."""
     return [spec.entity for spec in ENDPOINT_CATALOG]

@@ -80,7 +80,7 @@ class Settings(BaseSettings):
     # Both fall back to encrypted DB storage at runtime — see
     # app.integrations.onlymonster.client.resolve_credentials.
     onlymonster_api_key: str = ""
-    onlymonster_api_base_url: str = "https://api.onlymonster.ai/v1"
+    onlymonster_api_base_url: str = "https://omapi.onlymonster.ai"
 
     # Security response headers (set to blank to disable a specific header)
     security_header_x_content_type_options: str = "nosniff"

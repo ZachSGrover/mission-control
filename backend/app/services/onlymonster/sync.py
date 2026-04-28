@@ -1,19 +1,30 @@
 """OnlyMonster sync orchestrator.
 
-Phase 1 design: a single foreground async function `run_sync()` that walks the
-endpoint catalog, fetches each entity, persists items, and writes one row per
-entity into `of_intelligence_sync_logs`.  A background-task wrapper is also
-exposed so the API can fire-and-forget while the UI polls sync log status.
+Wired to the live om-api-service v0.30.0 catalog (see
+`app.integrations.onlymonster.endpoints`).  Sync is strictly read-only:
+the client refuses to fire any endpoint flagged `write=True`, and the
+orchestrator never asks for one.
 
-Entities marked unavailable in `endpoints.ENDPOINT_CATALOG` record a
-placeholder log row (`status="not_available_from_api"`) — this lets the UI
-truthfully report which entities are wired up and which are still stubs.
+Flow:
+  1. Walk `ENDPOINT_CATALOG` in declaration order.
+  2. For `flat` entities, call once and persist.
+  3. For `per_account` entities, iterate over the accounts captured during
+     this run (collected from step 1's `accounts` call) and call once per
+     account.  If `accounts` produced nothing, the per-account entities
+     short-circuit with a clear sync_log row.
+  4. For `per_platform_account` entities, iterate over the same accounts but
+     pass `platform` and `platform_account_id` from each account record.
+  5. Disabled / write / dynamic-discovery entities never make a network
+     call; they get a sync_log row stamped with the reason.
+
+Every entity, regardless of outcome, produces exactly one row in
+`of_intelligence_sync_logs` for the run.  The UI uses those rows verbatim.
 """
 
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any
 from uuid import UUID, uuid4
@@ -30,21 +41,26 @@ from app.integrations.onlymonster.client import (
     resolve_credentials,
 )
 from app.integrations.onlymonster.endpoints import ENDPOINT_CATALOG, EndpointSpec
+from app.integrations.onlymonster.rate_limiter import OnlyMonsterRateLimiter
 from app.models.of_intelligence import (
     SOURCE_ONLYMONSTER,
     OfIntelligenceAccount,
-    OfIntelligenceChat,
     OfIntelligenceChatter,
     OfIntelligenceFan,
-    OfIntelligenceMassMessage,
-    OfIntelligenceMessage,
-    OfIntelligencePost,
     OfIntelligenceRevenue,
     OfIntelligenceSyncLog,
     OfIntelligenceTrackingLink,
 )
 
 logger = logging.getLogger(__name__)
+
+
+@dataclass
+class SyncRunContext:
+    """In-memory state shared across a single sync run."""
+
+    run_id: UUID
+    accounts: list[dict[str, Any]] = field(default_factory=list)
 
 
 @dataclass
@@ -56,6 +72,7 @@ class SyncRunSummary:
     succeeded: int
     not_available: int
     failed: int
+    skipped: int
 
 
 # ── Entrypoints ──────────────────────────────────────────────────────────────
@@ -67,113 +84,100 @@ async def run_sync(
     triggered_by: str = "manual",
     only: list[str] | None = None,
 ) -> SyncRunSummary:
-    """Run a full OnlyMonster sync.  Returns a summary the caller can log."""
     run_id = uuid4()
     started_at = utcnow()
     logger.info("of_intelligence.sync.start run_id=%s triggered_by=%s", run_id, triggered_by)
 
     credentials = await resolve_credentials(session)
-    client = OnlyMonsterClient(credentials)
+    client = OnlyMonsterClient(credentials, rate_limiter=OnlyMonsterRateLimiter())
+    ctx = SyncRunContext(run_id=run_id)
 
-    succeeded = not_available = failed = 0
     selected: tuple[EndpointSpec, ...] = (
         ENDPOINT_CATALOG
         if not only
         else tuple(spec for spec in ENDPOINT_CATALOG if spec.entity in set(only))
     )
 
-    for spec in selected:
-        log = OfIntelligenceSyncLog(
-            run_id=run_id,
-            source=SOURCE_ONLYMONSTER,
-            entity=spec.entity,
-            status="running",
-            triggered_by=triggered_by,
-            started_at=utcnow(),
-        )
-        session.add(log)
-        await session.commit()
-        await session.refresh(log)
+    succeeded = not_available = failed = skipped = 0
 
-        try:
-            result = await client.fetch_entity(spec.entity)
-        except Exception as exc:  # defensive — never let one entity kill the run
-            logger.exception("of_intelligence.sync.entity.crash entity=%s", spec.entity)
-            log.status = "error"
-            log.error = f"unhandled: {exc!r}"
-            log.finished_at = utcnow()
-            session.add(log)
-            await session.commit()
-            failed += 1
+    for spec in selected:
+        # ── Reasons to never make a network call ──────────────────────────
+        if spec.write:
+            await _record_skip(session, run_id, spec, triggered_by, "write_disabled",
+                               "Write endpoint — disabled by policy.")
+            skipped += 1
+            continue
+        if not spec.available:
+            reason = "dynamic_discovery_required" if spec.requires_dynamic_discovery else "not_available_from_api"
+            await _record_skip(session, run_id, spec, triggered_by, reason, spec.description)
+            not_available += 1
             continue
 
-        items_written = 0
-        if not result.available and result.reason == "not_available_from_api":
-            log.status = "not_available_from_api"
-            log.reason = "not_available_from_api"
-            not_available += 1
-        elif not result.available:
-            log.status = "error"
-            log.reason = result.reason
-            log.error = result.error
-            failed += 1
-        elif result.error and not result.items:
-            log.status = "error"
-            log.reason = result.reason
-            log.error = result.error
-            failed += 1
+        # ── Fan-out planning ──────────────────────────────────────────────
+        if spec.fan_out == "flat":
+            outcome = await _run_one(session, client, spec, ctx, run_id, triggered_by, path_params={})
+            _tally(outcome, succeeded_l := [succeeded], failed_l := [failed],
+                   not_available_l := [not_available], skipped_l := [skipped])
+            succeeded, failed, not_available, skipped = succeeded_l[0], failed_l[0], not_available_l[0], skipped_l[0]
+        elif spec.fan_out == "per_account":
+            if not ctx.accounts:
+                await _record_skip(session, run_id, spec, triggered_by, "no_accounts_in_run",
+                                   "Skipped — accounts sync produced no results in this run.")
+                skipped += 1
+                continue
+            for account in ctx.accounts:
+                aid = account.get("id")
+                if aid in (None, ""):
+                    continue
+                outcome = await _run_one(
+                    session, client, spec, ctx, run_id, triggered_by,
+                    path_params={"account_id": aid},
+                )
+                _tally(outcome, succeeded_l := [succeeded], failed_l := [failed],
+                       not_available_l := [not_available], skipped_l := [skipped])
+                succeeded, failed, not_available, skipped = (
+                    succeeded_l[0], failed_l[0], not_available_l[0], skipped_l[0]
+                )
+        elif spec.fan_out == "per_platform_account":
+            if not ctx.accounts:
+                await _record_skip(session, run_id, spec, triggered_by, "no_accounts_in_run",
+                                   "Skipped — accounts sync produced no results in this run.")
+                skipped += 1
+                continue
+            for account in ctx.accounts:
+                platform = account.get("platform")
+                platform_account_id = account.get("platform_account_id")
+                if not platform or not platform_account_id:
+                    continue
+                outcome = await _run_one(
+                    session, client, spec, ctx, run_id, triggered_by,
+                    path_params={"platform": platform, "platform_account_id": platform_account_id},
+                )
+                _tally(outcome, succeeded_l := [succeeded], failed_l := [failed],
+                       not_available_l := [not_available], skipped_l := [skipped])
+                succeeded, failed, not_available, skipped = (
+                    succeeded_l[0], failed_l[0], not_available_l[0], skipped_l[0]
+                )
         else:
-            try:
-                items_written = await _persist_entity(session, spec.entity, result)
-                log.status = "success" if not result.error else "partial"
-                log.items_synced = items_written
-                log.pages_fetched = result.page_count
-                log.reason = result.reason
-                log.error = result.error
-                if log.status == "success":
-                    succeeded += 1
-                else:
-                    failed += 1
-            except Exception as exc:
-                logger.exception("of_intelligence.sync.persist.crash entity=%s", spec.entity)
-                log.status = "error"
-                log.reason = "persist_error"
-                log.error = f"{exc!r}"
-                failed += 1
-
-        log.finished_at = utcnow()
-        session.add(log)
-        await session.commit()
-        logger.info(
-            "of_intelligence.sync.entity.done entity=%s status=%s items=%s pages=%s",
-            spec.entity, log.status, items_written, result.page_count,
-        )
+            await _record_skip(session, run_id, spec, triggered_by, "unsupported_fan_out",
+                               f"Unsupported fan_out={spec.fan_out}")
+            skipped += 1
 
     finished_at = utcnow()
     summary = SyncRunSummary(
-        run_id=run_id,
-        started_at=started_at,
-        finished_at=finished_at,
+        run_id=run_id, started_at=started_at, finished_at=finished_at,
         total_entities=len(selected),
-        succeeded=succeeded,
-        not_available=not_available,
-        failed=failed,
+        succeeded=succeeded, not_available=not_available, failed=failed, skipped=skipped,
     )
     logger.info(
-        "of_intelligence.sync.finish run_id=%s ok=%s na=%s fail=%s elapsed=%.1fs",
-        run_id, succeeded, not_available, failed,
+        "of_intelligence.sync.finish run_id=%s ok=%s na=%s fail=%s skip=%s elapsed=%.1fs",
+        run_id, succeeded, not_available, failed, skipped,
         (finished_at - started_at).total_seconds(),
     )
     return summary
 
 
 async def run_sync_in_background(*, triggered_by: str = "manual") -> None:
-    """Fire-and-forget wrapper that opens its own session.
-
-    Used by the manual-sync endpoint so the HTTP request returns immediately
-    while the sync continues server-side.  All progress is observable via
-    `of_intelligence_sync_logs`.
-    """
     async with async_session_maker() as session:
         try:
             await run_sync(session, triggered_by=triggered_by)
@@ -181,28 +185,186 @@ async def run_sync_in_background(*, triggered_by: str = "manual") -> None:
             logger.exception("of_intelligence.sync.background.crash")
 
 
-# ── Persistence helpers (one branch per entity) ──────────────────────────────
+# ── Single-entity execution ──────────────────────────────────────────────────
 
 
-async def _persist_entity(session: AsyncSession, entity: str, result: EndpointResult) -> int:
-    """Persist `result.items` into the right table.  Returns rows written."""
+async def _run_one(
+    session: AsyncSession,
+    client: OnlyMonsterClient,
+    spec: EndpointSpec,
+    ctx: SyncRunContext,
+    run_id: UUID,
+    triggered_by: str,
+    path_params: dict[str, Any],
+) -> str:
+    """Fetch + persist a single (entity, path_params) pair.  Returns status."""
+    log = OfIntelligenceSyncLog(
+        run_id=run_id, source=SOURCE_ONLYMONSTER, entity=spec.entity, status="running",
+        triggered_by=triggered_by, started_at=utcnow(),
+    )
+    session.add(log)
+    await session.commit()
+    await session.refresh(log)
+
+    try:
+        result = await client.fetch_entity(spec.entity, path_params=path_params)
+    except Exception as exc:
+        logger.exception("of_intelligence.sync.entity.crash entity=%s", spec.entity)
+        log.status = "error"
+        log.error = f"unhandled: {exc!r}"
+        log.finished_at = utcnow()
+        session.add(log)
+        await session.commit()
+        return "error"
+
+    items_written = 0
+    if not result.available:
+        log.status = result.reason or "not_available_from_api"
+        log.reason = result.reason
+        log.error = result.error
+        log.finished_at = utcnow()
+        session.add(log)
+        await session.commit()
+        return "not_available"
+
+    if result.error and not result.items:
+        log.status = "error"
+        log.reason = result.reason
+        log.error = result.error
+        log.finished_at = utcnow()
+        session.add(log)
+        await session.commit()
+        return "error"
+
+    try:
+        items_written = await _persist_entity(session, spec.entity, result, ctx)
+        log.items_synced = items_written
+        log.pages_fetched = result.page_count
+        log.reason = result.reason
+        log.error = result.error
+        log.status = "partial" if result.error else "success"
+    except Exception as exc:
+        logger.exception("of_intelligence.sync.persist.crash entity=%s", spec.entity)
+        log.status = "error"
+        log.reason = "persist_error"
+        log.error = f"{exc!r}"
+    log.finished_at = utcnow()
+    session.add(log)
+    await session.commit()
+    logger.info(
+        "of_intelligence.sync.entity.done entity=%s status=%s items=%s pages=%s pp=%s",
+        spec.entity, log.status, items_written, result.page_count, path_params,
+    )
+    return "success" if log.status == "success" else log.status or "error"
+
+
+async def _record_skip(
+    session: AsyncSession,
+    run_id: UUID,
+    spec: EndpointSpec,
+    triggered_by: str,
+    reason: str,
+    detail: str | None,
+) -> None:
+    session.add(OfIntelligenceSyncLog(
+        run_id=run_id, source=SOURCE_ONLYMONSTER, entity=spec.entity,
+        status=reason, reason=reason, error=detail,
+        triggered_by=triggered_by, started_at=utcnow(), finished_at=utcnow(),
+    ))
+    await session.commit()
+
+
+def _tally(outcome: str, succeeded: list[int], failed: list[int],
+           not_available: list[int], skipped: list[int]) -> None:
+    if outcome == "success":
+        succeeded[0] += 1
+    elif outcome == "not_available":
+        not_available[0] += 1
+    elif outcome in ("partial", "error"):
+        failed[0] += 1
+    else:
+        skipped[0] += 1
+
+
+# ── Persistence ──────────────────────────────────────────────────────────────
+
+
+async def _persist_entity(
+    session: AsyncSession,
+    entity: str,
+    result: EndpointResult,
+    ctx: SyncRunContext,
+) -> int:
     if not result.items:
         return 0
-
     handler = _PERSISTERS.get(entity)
     if handler is None:
-        # No bespoke persister yet — store as a sync_log breadcrumb only.
-        logger.warning("of_intelligence.sync.no_persister entity=%s items=%s", entity, len(result.items))
+        # Honest no-op — the data was fetched and counted in sync_logs, but
+        # we don't persist it yet.  Adding a persister later is purely
+        # additive (no migration).
+        logger.info("of_intelligence.sync.no_persister entity=%s items=%s",
+                    entity, len(result.items))
         return 0
+    return await handler(session, result.items, result, ctx)
 
-    return await handler(session, result.items)
 
-
-async def _persist_accounts(session: AsyncSession, items: list[dict[str, Any]]) -> int:
+async def _persist_accounts(
+    session: AsyncSession,
+    items: list[dict[str, Any]],
+    result: EndpointResult,
+    ctx: SyncRunContext,
+) -> int:
+    """Upsert accounts and capture them in the run context for fan-out."""
     written = 0
     now = utcnow()
     for item in items:
-        source_id = _coerce_str(item.get("id") or item.get("account_id"))
+        ctx.accounts.append(item)  # Always feed the run context, even if persist fails.
+        source_id = _coerce_str(item.get("id"))
+        if not source_id:
+            continue
+        existing = (await session.exec(
+            select(OfIntelligenceAccount).where(
+                OfIntelligenceAccount.source == SOURCE_ONLYMONSTER,
+                OfIntelligenceAccount.source_id == source_id,
+            )
+        )).first()
+        access = "active" if not item.get("subscription_expiration_date") else _account_access_status(item)
+        if existing:
+            existing.username = _coerce_str(item.get("username")) or existing.username
+            existing.display_name = _coerce_str(item.get("name")) or existing.display_name
+            existing.status = _coerce_str(item.get("platform")) or existing.status
+            existing.access_status = access or existing.access_status
+            existing.raw = item
+            existing.last_synced_at = now
+            session.add(existing)
+        else:
+            session.add(OfIntelligenceAccount(
+                source=SOURCE_ONLYMONSTER,
+                source_id=source_id,
+                username=_coerce_str(item.get("username")),
+                display_name=_coerce_str(item.get("name")),
+                status=_coerce_str(item.get("platform")),
+                access_status=access,
+                raw=item,
+                first_seen_at=now,
+                last_synced_at=now,
+            ))
+        written += 1
+    await session.commit()
+    return written
+
+
+async def _persist_account_details(
+    session: AsyncSession,
+    items: list[dict[str, Any]],
+    result: EndpointResult,
+    ctx: SyncRunContext,
+) -> int:
+    """Refresh the existing accounts row with the per-account detail payload."""
+    written = 0
+    now = utcnow()
+    for item in items:
+        source_id = _coerce_str(item.get("id"))
         if not source_id:
             continue
         existing = (await session.exec(
@@ -212,35 +374,27 @@ async def _persist_accounts(session: AsyncSession, items: list[dict[str, Any]]) 
             )
         )).first()
         if existing:
-            existing.username = _coerce_str(item.get("username")) or existing.username
-            existing.display_name = _coerce_str(item.get("display_name") or item.get("name")) or existing.display_name
-            existing.status = _coerce_str(item.get("status")) or existing.status
-            existing.access_status = _coerce_str(item.get("access_status")) or existing.access_status
-            existing.raw = item
+            existing.raw = {**(existing.raw or {}), **item}
             existing.last_synced_at = now
             session.add(existing)
-        else:
-            session.add(OfIntelligenceAccount(
-                source=SOURCE_ONLYMONSTER,
-                source_id=source_id,
-                username=_coerce_str(item.get("username")),
-                display_name=_coerce_str(item.get("display_name") or item.get("name")),
-                status=_coerce_str(item.get("status")),
-                access_status=_coerce_str(item.get("access_status")),
-                raw=item,
-                first_seen_at=now,
-                last_synced_at=now,
-            ))
-        written += 1
+            written += 1
     await session.commit()
     return written
 
 
-async def _persist_fans(session: AsyncSession, items: list[dict[str, Any]]) -> int:
+async def _persist_fans(
+    session: AsyncSession,
+    items: list[dict[str, Any]],
+    result: EndpointResult,
+    ctx: SyncRunContext,
+) -> int:
+    """Insert/refresh fan IDs.  Each item is `{"fan_id": "..."}` from the
+    client's special-case unwrapping of `{fan_ids: [...]}`."""
     written = 0
     now = utcnow()
+    account_id = _coerce_str(result.path_params.get("account_id"))
     for item in items:
-        source_id = _coerce_str(item.get("id") or item.get("fan_id"))
+        source_id = _coerce_str(item.get("fan_id"))
         if not source_id:
             continue
         existing = (await session.exec(
@@ -249,15 +403,8 @@ async def _persist_fans(session: AsyncSession, items: list[dict[str, Any]]) -> i
                 OfIntelligenceFan.source_id == source_id,
             )
         )).first()
-        ltv = _coerce_int(item.get("lifetime_value_cents") or item.get("ltv_cents"))
-        last_message_at = _coerce_dt(item.get("last_message_at"))
-        is_subscribed = _coerce_bool(item.get("is_subscribed") or item.get("subscribed"))
         if existing:
-            existing.account_source_id = _coerce_str(item.get("account_id")) or existing.account_source_id
-            existing.username = _coerce_str(item.get("username")) or existing.username
-            existing.lifetime_value_cents = ltv if ltv is not None else existing.lifetime_value_cents
-            existing.last_message_at = last_message_at or existing.last_message_at
-            existing.is_subscribed = is_subscribed if is_subscribed is not None else existing.is_subscribed
+            existing.account_source_id = account_id or existing.account_source_id
             existing.raw = item
             existing.last_synced_at = now
             session.add(existing)
@@ -265,11 +412,7 @@ async def _persist_fans(session: AsyncSession, items: list[dict[str, Any]]) -> i
             session.add(OfIntelligenceFan(
                 source=SOURCE_ONLYMONSTER,
                 source_id=source_id,
-                account_source_id=_coerce_str(item.get("account_id")),
-                username=_coerce_str(item.get("username")),
-                lifetime_value_cents=ltv,
-                last_message_at=last_message_at,
-                is_subscribed=is_subscribed,
+                account_source_id=account_id,
                 raw=item,
                 first_seen_at=now,
                 last_synced_at=now,
@@ -279,84 +422,17 @@ async def _persist_fans(session: AsyncSession, items: list[dict[str, Any]]) -> i
     return written
 
 
-async def _persist_chats(session: AsyncSession, items: list[dict[str, Any]]) -> int:
+async def _persist_members(
+    session: AsyncSession,
+    items: list[dict[str, Any]],
+    result: EndpointResult,
+    ctx: SyncRunContext,
+) -> int:
+    """Map OnlyMonster organisation members → OFI chatters."""
     written = 0
     now = utcnow()
     for item in items:
-        source_id = _coerce_str(item.get("id") or item.get("chat_id"))
-        if not source_id:
-            continue
-        existing = (await session.exec(
-            select(OfIntelligenceChat).where(
-                OfIntelligenceChat.source == SOURCE_ONLYMONSTER,
-                OfIntelligenceChat.source_id == source_id,
-            )
-        )).first()
-        if existing:
-            existing.account_source_id = _coerce_str(item.get("account_id")) or existing.account_source_id
-            existing.fan_source_id = _coerce_str(item.get("fan_id")) or existing.fan_source_id
-            existing.last_message_at = _coerce_dt(item.get("last_message_at")) or existing.last_message_at
-            existing.unread_count = _coerce_int(item.get("unread_count")) or existing.unread_count
-            existing.raw = item
-            existing.last_synced_at = now
-            session.add(existing)
-        else:
-            session.add(OfIntelligenceChat(
-                source=SOURCE_ONLYMONSTER,
-                source_id=source_id,
-                account_source_id=_coerce_str(item.get("account_id")),
-                fan_source_id=_coerce_str(item.get("fan_id")),
-                last_message_at=_coerce_dt(item.get("last_message_at")),
-                unread_count=_coerce_int(item.get("unread_count")),
-                raw=item,
-                first_seen_at=now,
-                last_synced_at=now,
-            ))
-        written += 1
-    await session.commit()
-    return written
-
-
-async def _persist_messages(session: AsyncSession, items: list[dict[str, Any]]) -> int:
-    written = 0
-    now = utcnow()
-    for item in items:
-        source_id = _coerce_str(item.get("id") or item.get("message_id"))
-        if not source_id:
-            continue
-        # Append-only: skip if (source, source_id) already present.
-        existing = (await session.exec(
-            select(OfIntelligenceMessage).where(
-                OfIntelligenceMessage.source == SOURCE_ONLYMONSTER,
-                OfIntelligenceMessage.source_id == source_id,
-            )
-        )).first()
-        if existing:
-            continue
-        session.add(OfIntelligenceMessage(
-            source=SOURCE_ONLYMONSTER,
-            source_id=source_id,
-            chat_source_id=_coerce_str(item.get("chat_id")),
-            account_source_id=_coerce_str(item.get("account_id")),
-            fan_source_id=_coerce_str(item.get("fan_id")),
-            chatter_source_id=_coerce_str(item.get("chatter_id") or item.get("sender_id")),
-            direction=_coerce_str(item.get("direction")),
-            sent_at=_coerce_dt(item.get("sent_at") or item.get("created_at")),
-            body=_coerce_str(item.get("body") or item.get("text")),
-            revenue_cents=_coerce_int(item.get("revenue_cents") or item.get("price_cents")),
-            raw=item,
-            synced_at=now,
-        ))
-        written += 1
-    await session.commit()
-    return written
-
-
-async def _persist_chatters(session: AsyncSession, items: list[dict[str, Any]]) -> int:
-    written = 0
-    now = utcnow()
-    for item in items:
-        source_id = _coerce_str(item.get("id") or item.get("chatter_id"))
+        source_id = _coerce_str(item.get("id"))
         if not source_id:
             continue
         existing = (await session.exec(
@@ -368,8 +444,6 @@ async def _persist_chatters(session: AsyncSession, items: list[dict[str, Any]]) 
         if existing:
             existing.name = _coerce_str(item.get("name")) or existing.name
             existing.email = _coerce_str(item.get("email")) or existing.email
-            existing.role = _coerce_str(item.get("role")) or existing.role
-            existing.active = _coerce_bool(item.get("active")) if item.get("active") is not None else existing.active
             existing.raw = item
             existing.last_synced_at = now
             session.add(existing)
@@ -379,8 +453,6 @@ async def _persist_chatters(session: AsyncSession, items: list[dict[str, Any]]) 
                 source_id=source_id,
                 name=_coerce_str(item.get("name")),
                 email=_coerce_str(item.get("email")),
-                role=_coerce_str(item.get("role")),
-                active=_coerce_bool(item.get("active")),
                 raw=item,
                 first_seen_at=now,
                 last_synced_at=now,
@@ -390,93 +462,34 @@ async def _persist_chatters(session: AsyncSession, items: list[dict[str, Any]]) 
     return written
 
 
-async def _persist_mass_messages(session: AsyncSession, items: list[dict[str, Any]]) -> int:
+async def _persist_transactions(
+    session: AsyncSession,
+    items: list[dict[str, Any]],
+    result: EndpointResult,
+    ctx: SyncRunContext,
+) -> int:
+    """Append each transaction to of_intelligence_revenue (1 row per txn)."""
     written = 0
     now = utcnow()
+    platform_account_id = _coerce_str(result.path_params.get("platform_account_id"))
+    account_internal_id = _resolve_account_internal_id(ctx, platform_account_id)
     for item in items:
-        source_id = _coerce_str(item.get("id") or item.get("mass_message_id"))
-        if not source_id:
-            continue
-        session.add(OfIntelligenceMassMessage(
-            source=SOURCE_ONLYMONSTER,
-            source_id=source_id,
-            account_source_id=_coerce_str(item.get("account_id")),
-            sent_at=_coerce_dt(item.get("sent_at")),
-            recipients_count=_coerce_int(item.get("recipients_count")),
-            purchases_count=_coerce_int(item.get("purchases_count")),
-            revenue_cents=_coerce_int(item.get("revenue_cents")),
-            body_preview=_coerce_str(item.get("body") or item.get("text")),
-            raw=item,
-            snapshot_at=now,
-        ))
-        written += 1
-    await session.commit()
-    return written
-
-
-async def _persist_posts(session: AsyncSession, items: list[dict[str, Any]]) -> int:
-    written = 0
-    now = utcnow()
-    for item in items:
-        source_id = _coerce_str(item.get("id") or item.get("post_id"))
-        if not source_id:
-            continue
-        session.add(OfIntelligencePost(
-            source=SOURCE_ONLYMONSTER,
-            source_id=source_id,
-            account_source_id=_coerce_str(item.get("account_id")),
-            published_at=_coerce_dt(item.get("published_at") or item.get("posted_at")),
-            likes_count=_coerce_int(item.get("likes_count")),
-            comments_count=_coerce_int(item.get("comments_count")),
-            revenue_cents=_coerce_int(item.get("revenue_cents")),
-            raw=item,
-            snapshot_at=now,
-        ))
-        written += 1
-    await session.commit()
-    return written
-
-
-async def _persist_tracking_links(session: AsyncSession, items: list[dict[str, Any]]) -> int:
-    written = 0
-    now = utcnow()
-    for item in items:
-        source_id = _coerce_str(item.get("id") or item.get("link_id"))
-        if not source_id:
-            continue
-        session.add(OfIntelligenceTrackingLink(
-            source=SOURCE_ONLYMONSTER,
-            source_id=source_id,
-            account_source_id=_coerce_str(item.get("account_id")),
-            name=_coerce_str(item.get("name")),
-            url=_coerce_str(item.get("url")),
-            clicks=_coerce_int(item.get("clicks")),
-            conversions=_coerce_int(item.get("conversions")),
-            revenue_cents=_coerce_int(item.get("revenue_cents")),
-            raw=item,
-            snapshot_at=now,
-        ))
-        written += 1
-    await session.commit()
-    return written
-
-
-async def _persist_revenue(session: AsyncSession, items: list[dict[str, Any]]) -> int:
-    """Append-only — every sync writes new rows, never overwrites."""
-    written = 0
-    now = utcnow()
-    for item in items:
+        amount = item.get("amount")
+        try:
+            cents = int(round(float(amount) * 100))
+        except (TypeError, ValueError):
+            cents = 0
+        ts = _coerce_dt(item.get("timestamp"))
         session.add(OfIntelligenceRevenue(
             source=SOURCE_ONLYMONSTER,
-            account_source_id=_coerce_str(item.get("account_id")),
-            period_start=_coerce_dt(item.get("period_start")),
-            period_end=_coerce_dt(item.get("period_end")),
-            revenue_cents=_coerce_int(item.get("revenue_cents")) or 0,
-            transactions_count=_coerce_int(item.get("transactions_count")),
-            tips_cents=_coerce_int(item.get("tips_cents")),
-            subscriptions_cents=_coerce_int(item.get("subscriptions_cents")),
-            ppv_cents=_coerce_int(item.get("ppv_cents")),
-            breakdown=item.get("breakdown") if isinstance(item.get("breakdown"), dict) else None,
+            account_source_id=account_internal_id or platform_account_id,
+            period_start=ts,
+            period_end=ts,
+            revenue_cents=cents,
+            transactions_count=1,
+            tips_cents=cents if (item.get("type") or "").lower().startswith("tip") else None,
+            ppv_cents=cents if "post" in (item.get("type") or "").lower() else None,
+            breakdown={"type": item.get("type"), "status": item.get("status")},
             raw=item,
             captured_at=now,
         ))
@@ -485,32 +498,116 @@ async def _persist_revenue(session: AsyncSession, items: list[dict[str, Any]]) -
     return written
 
 
+async def _persist_chargebacks(
+    session: AsyncSession,
+    items: list[dict[str, Any]],
+    result: EndpointResult,
+    ctx: SyncRunContext,
+) -> int:
+    """Chargebacks land in revenue with a negative sign + chargeback marker."""
+    written = 0
+    now = utcnow()
+    platform_account_id = _coerce_str(result.path_params.get("platform_account_id"))
+    account_internal_id = _resolve_account_internal_id(ctx, platform_account_id)
+    for item in items:
+        amount = item.get("amount")
+        try:
+            cents = -abs(int(round(float(amount) * 100)))
+        except (TypeError, ValueError):
+            cents = 0
+        ts = _coerce_dt(item.get("chargeback_timestamp")) or _coerce_dt(item.get("transaction_timestamp"))
+        session.add(OfIntelligenceRevenue(
+            source=SOURCE_ONLYMONSTER,
+            account_source_id=account_internal_id or platform_account_id,
+            period_start=ts,
+            period_end=ts,
+            revenue_cents=cents,
+            transactions_count=1,
+            breakdown={"kind": "chargeback", "type": item.get("type"), "status": item.get("status")},
+            raw=item,
+            captured_at=now,
+        ))
+        written += 1
+    await session.commit()
+    return written
+
+
+async def _persist_links(
+    session: AsyncSession,
+    items: list[dict[str, Any]],
+    result: EndpointResult,
+    ctx: SyncRunContext,
+) -> int:
+    """Trial + tracking links share a row format in of_intelligence_tracking_links."""
+    written = 0
+    now = utcnow()
+    kind = "trial" if result.entity == "trial_links" else "tracking"
+    platform_account_id = _coerce_str(result.path_params.get("platform_account_id"))
+    account_internal_id = _resolve_account_internal_id(ctx, platform_account_id)
+    for item in items:
+        source_id = _coerce_str(item.get("id"))
+        if not source_id:
+            continue
+        session.add(OfIntelligenceTrackingLink(
+            source=SOURCE_ONLYMONSTER,
+            source_id=f"{kind}:{source_id}",
+            account_source_id=account_internal_id or platform_account_id,
+            name=_coerce_str(item.get("name")),
+            url=_coerce_str(item.get("url")),
+            clicks=_coerce_int(item.get("clicks")),
+            conversions=_coerce_int(item.get("subscribers") or item.get("claims")),
+            revenue_cents=None,
+            raw={**item, "kind": kind},
+            snapshot_at=now,
+        ))
+        written += 1
+    await session.commit()
+    return written
+
+
 _PERSISTERS = {
-    "accounts": _persist_accounts,
-    "fans": _persist_fans,
-    "chats": _persist_chats,
-    "messages": _persist_messages,
-    "chatters": _persist_chatters,
-    "mass_messages": _persist_mass_messages,
-    "posts": _persist_posts,
-    "tracking_links": _persist_tracking_links,
-    "trial_links": _persist_tracking_links,
-    "revenue": _persist_revenue,
-    # Other entities (auto_messages, stories, transactions, etc.) currently
-    # write only sync_log breadcrumbs — add a persister here once the upstream
-    # shape is known.
+    "accounts":         _persist_accounts,
+    "account_details":  _persist_account_details,
+    "fans":             _persist_fans,
+    "members":          _persist_members,
+    "transactions":     _persist_transactions,
+    "chargebacks":      _persist_chargebacks,
+    "trial_links":      _persist_links,
+    "tracking_links":   _persist_links,
+    # vault_folders, vault_uploads, trial_link_users, tracking_link_users,
+    # user_metrics — fetched + counted in sync_logs but not yet persisted to
+    # bespoke tables.  Add a dedicated persister + table when needed.
 }
+
+
+# ── Helpers ──────────────────────────────────────────────────────────────────
+
+
+def _resolve_account_internal_id(ctx: SyncRunContext, platform_account_id: str | None) -> str | None:
+    """Find the internal numeric account id for a given platform_account_id."""
+    if not platform_account_id:
+        return None
+    for account in ctx.accounts:
+        if str(account.get("platform_account_id")) == platform_account_id:
+            return _coerce_str(account.get("id"))
+    return None
+
+
+def _account_access_status(account: dict[str, Any]) -> str:
+    expiry = _coerce_dt(account.get("subscription_expiration_date"))
+    if expiry is None:
+        return "unknown"
+    return "active" if expiry > utcnow() else "expired"
 
 
 # ── Latest-status helper for the API status endpoint ─────────────────────────
 
 
 async def fetch_latest_sync_state(session: AsyncSession) -> dict[str, Any]:
-    """Return latest run_id + per-entity status snapshot used by the UI."""
     stmt = (
         sa_select(OfIntelligenceSyncLog)
         .order_by(OfIntelligenceSyncLog.started_at.desc())
-        .limit(200)
+        .limit(500)
     )
     rows = (await session.exec(stmt)).scalars().all()  # type: ignore[attr-defined]
 
@@ -561,22 +658,6 @@ def _coerce_int(value: Any) -> int | None:
         return None
 
 
-def _coerce_bool(value: Any) -> bool | None:
-    if isinstance(value, bool):
-        return value
-    if value is None:
-        return None
-    if isinstance(value, (int, float)):
-        return bool(value)
-    if isinstance(value, str):
-        v = value.strip().lower()
-        if v in ("true", "yes", "1", "active"):
-            return True
-        if v in ("false", "no", "0", "inactive"):
-            return False
-    return None
-
-
 def _coerce_dt(value: Any) -> datetime | None:
     if value is None:
         return None
@@ -591,7 +672,6 @@ def _coerce_dt(value: Any) -> datetime | None:
         text = value.strip()
         if not text:
             return None
-        # Best-effort ISO-8601 parse.  Tolerate trailing 'Z'.
         try:
             return datetime.fromisoformat(text.replace("Z", "+00:00"))
         except ValueError:

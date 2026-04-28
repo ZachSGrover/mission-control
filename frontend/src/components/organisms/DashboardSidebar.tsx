@@ -12,6 +12,7 @@ import {
   CloudUpload,
   FolderOpen,
   GitBranch,
+  Heart,
   Layout,
   Loader2,
   MessageSquare,
@@ -157,6 +158,11 @@ export function DashboardSidebar() {
           <NavLink href="/workflows" label="Workflows" Icon={GitBranch} />
           <NavLink href="/skills"    label="Skills"    Icon={Wrench} />
           <NavLink href="/activity"  label="Logs"      Icon={Activity} />
+        </NavSection>
+
+        {/* Intelligence */}
+        <NavSection label="Intelligence">
+          <NavLink href="/of-intelligence" label="OnlyFans Intelligence" Icon={Heart} />
         </NavSection>
 
         {/* System */}

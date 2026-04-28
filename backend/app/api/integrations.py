@@ -32,6 +32,10 @@ SESSION_DEP = Depends(get_session)
 INTEGRATION_KEYS: dict[str, str] = {
     "adspower": "adspower_api_key",
     "phantombuster": "phantombuster_api_key",
+    # OnlyMonster — first data source for OnlyFans Intelligence.  Reuses the
+    # same DB key as the dedicated OFI router so saving in either place takes
+    # effect everywhere immediately.
+    "onlymonster": "onlymonster.api_key",
 }
 
 INTEGRATION_META: dict[str, dict[str, str]] = {
@@ -46,6 +50,12 @@ INTEGRATION_META: dict[str, dict[str, str]] = {
         "description": "Cloud automation phantoms for LinkedIn, scraping, lead gen.",
         "placeholder": "pb_...",
         "docs_url": "https://phantombuster.com/api",
+    },
+    "onlymonster": {
+        "label": "OnlyMonster",
+        "description": "Data source for OnlyFans Intelligence — accounts, fans, chats, revenue, mass messages.",
+        "placeholder": "om_...",
+        "docs_url": "https://www.onlymonster.ai",
     },
 }
 

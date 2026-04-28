@@ -76,6 +76,12 @@ class Settings(BaseSettings):
     anthropic_api_key: str = ""
     anthropic_synthesis_model: str = "claude-sonnet-4-5"
 
+    # OnlyMonster integration (data source for OnlyFans Intelligence).
+    # Both fall back to encrypted DB storage at runtime — see
+    # app.integrations.onlymonster.client.resolve_credentials.
+    onlymonster_api_key: str = ""
+    onlymonster_api_base_url: str = "https://api.onlymonster.ai/v1"
+
     # Security response headers (set to blank to disable a specific header)
     security_header_x_content_type_options: str = "nosniff"
     security_header_x_frame_options: str = "DENY"

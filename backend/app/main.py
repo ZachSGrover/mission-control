@@ -38,6 +38,7 @@ from app.api.mc_allowed_users import router as mc_allowed_users_router
 from app.api.mc_roles import router as mc_roles_router
 from app.api.messaging import router as messaging_router
 from app.api.metrics import router as metrics_router
+from app.api.of_intelligence import router as of_intelligence_router
 from app.api.openai_chat import router as openai_chat_router
 from app.api.operator import router as operator_router
 from app.api.organizations import router as organizations_router
@@ -662,6 +663,7 @@ api_v1.include_router(control_agents_router)
 api_v1.include_router(control_devices_router)
 api_v1.include_router(control_tasks_router)
 api_v1.include_router(system_node_router)
+api_v1.include_router(of_intelligence_router)
 app.include_router(api_v1)
 
 add_pagination(app)

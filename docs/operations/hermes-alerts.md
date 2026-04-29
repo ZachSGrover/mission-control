@@ -229,6 +229,25 @@ echo '{"system":"Backend","resolved_at":"2026-04-28T18:00:00Z"}' \
 - Tests run in an isolated `MC_STATE_DIR=$(mktemp -d)` to avoid colliding
   with real Hermes state.
 
+## Live hook status
+
+`~/.hermes/hooks/` is outside this repo. The current wiring as of
+2026-04-28 (full fingerprint in
+[hermes-live-hooks-snapshot.md](hermes-live-hooks-snapshot.md)):
+
+- `claw_watchdog.sh` — **wired** to `hermes-alert.sh`. Live outside this
+  repo. Rollback: `~/.hermes/hooks/claw_watchdog.sh.bak.20260428`.
+- `service_watchdog.sh` — **wired** to `hermes-alert.sh`. Live outside this
+  repo. Rollback: `~/.hermes/hooks/service_watchdog.sh.bak.20260428`.
+- `system_event.sh` — **not wired yet**. Still posts plain strings via
+  `notify.sh`. Recommended next hook to migrate (boot/wake events; small
+  surface; fits `tpl_machine_restarted`).
+- `health_claw_remote.sh` — **not wired yet**. Diagnostic-only script
+  (`/health claw`); does not currently post alerts.
+- `notify.sh` — still present as the legacy plain-string sender. Backs
+  `system_event.sh` and is the rollback target if any rewired hook is
+  reverted.
+
 ## What's NOT in this slice
 
 - Wiring into `~/.hermes/hooks/notify.sh`, `service_watchdog.sh`,

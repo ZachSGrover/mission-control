@@ -18,21 +18,34 @@ import { DashboardSidebar } from "@/components/organisms/DashboardSidebar";
 import { DashboardShell } from "@/components/templates/DashboardShell";
 import { cn } from "@/lib/utils";
 
-const SUB_NAV: ReadonlyArray<{ href: string; label: string }> = [
-  { href: "/of-intelligence",                    label: "Overview" },
-  { href: "/of-intelligence/accounts",           label: "Accounts" },
-  { href: "/of-intelligence/account-intelligence", label: "Account Intelligence" },
-  { href: "/of-intelligence/chatters",           label: "Chatters" },
-  { href: "/of-intelligence/chat-qc-lab",        label: "Chat QC Lab" },
-  { href: "/of-intelligence/fans",               label: "Fans" },
-  { href: "/of-intelligence/messages",           label: "Messages" },
-  { href: "/of-intelligence/revenue",            label: "Revenue" },
-  { href: "/of-intelligence/mass-messages",      label: "Mass Messages" },
-  { href: "/of-intelligence/posting-insights",   label: "Posting Insights" },
-  { href: "/of-intelligence/qc-reports",         label: "QC Reports" },
-  { href: "/of-intelligence/alerts",             label: "Alerts" },
-  { href: "/of-intelligence/memory-bank",        label: "Memory Bank" },
-  { href: "/of-intelligence/settings",           label: "Settings" },
+/**
+ * Sub-nav is split into two visual groups:
+ *   • "Intelligence" — surfaces that summarise / decide / alert.
+ *   • "Data sources" — raw entity tables, kept reachable for investigation
+ *     but never the primary surface.  We use a visual separator instead of
+ *     hiding them; the raw rows are still useful for debugging the brain.
+ *
+ * Pages are routes, not links — moving them in this list does NOT break
+ * any URL.  Every page that existed before still exists.
+ */
+type SubNavGroup = "intelligence" | "sources";
+const SUB_NAV: ReadonlyArray<{ href: string; label: string; group: SubNavGroup }> = [
+  // Intelligence-first: alerts, creators, chat, reports, memory, settings.
+  { href: "/of-intelligence",                      label: "Overview",             group: "intelligence" },
+  { href: "/of-intelligence/alerts",               label: "Critical Alerts",      group: "intelligence" },
+  { href: "/of-intelligence/account-intelligence", label: "Account Intelligence", group: "intelligence" },
+  { href: "/of-intelligence/chat-qc-lab",          label: "Chat QC Lab",          group: "intelligence" },
+  { href: "/of-intelligence/qc-reports",           label: "QC Reports",           group: "intelligence" },
+  { href: "/of-intelligence/memory-bank",          label: "Memory Bank",          group: "intelligence" },
+  { href: "/of-intelligence/settings",             label: "Settings",             group: "intelligence" },
+  // Source / raw views — kept for investigation, demoted visually.
+  { href: "/of-intelligence/accounts",             label: "Accounts",             group: "sources" },
+  { href: "/of-intelligence/chatters",             label: "Chatters",             group: "sources" },
+  { href: "/of-intelligence/fans",                 label: "Fans",                 group: "sources" },
+  { href: "/of-intelligence/messages",             label: "Messages",             group: "sources" },
+  { href: "/of-intelligence/revenue",              label: "Revenue",              group: "sources" },
+  { href: "/of-intelligence/mass-messages",        label: "Mass Messages",        group: "sources" },
+  { href: "/of-intelligence/posting-insights",     label: "Posting Insights",     group: "sources" },
 ];
 
 export function SectionShell({
@@ -82,34 +95,48 @@ export function SectionShell({
               {actions && <div className="shrink-0">{actions}</div>}
             </div>
 
-            <div className="mt-4 -mb-px flex gap-1 overflow-x-auto">
-              {SUB_NAV.map((item) => {
+            <div className="mt-4 -mb-px flex items-center gap-1 overflow-x-auto">
+              {SUB_NAV.map((item, idx) => {
                 const active =
                   item.href === "/of-intelligence"
                     ? pathname === item.href
                     : pathname.startsWith(item.href);
+                const prev = SUB_NAV[idx - 1];
+                const startsSourcesGroup =
+                  item.group === "sources" && prev?.group !== "sources";
                 return (
-                  <Link
-                    key={item.href}
-                    href={item.href}
-                    className={cn(
-                      "px-3 py-2 text-sm rounded-t-md whitespace-nowrap transition-colors border-b-2",
-                      active ? "font-medium" : "font-normal",
+                  <span key={item.href} className="flex items-center gap-1">
+                    {startsSourcesGroup && (
+                      <span
+                        className="ml-2 mr-1 text-[10px] font-semibold uppercase tracking-widest select-none whitespace-nowrap"
+                        style={{ color: "var(--text-quiet)" }}
+                        aria-hidden
+                      >
+                        · Data sources ·
+                      </span>
                     )}
-                    style={
-                      active
-                        ? { color: "var(--accent-strong)", borderColor: "var(--accent-strong)" }
-                        : { color: "var(--text-muted)", borderColor: "transparent" }
-                    }
-                    onMouseEnter={(e) => {
-                      if (!active) (e.currentTarget as HTMLElement).style.color = "var(--text)";
-                    }}
-                    onMouseLeave={(e) => {
-                      if (!active) (e.currentTarget as HTMLElement).style.color = "var(--text-muted)";
-                    }}
-                  >
-                    {item.label}
-                  </Link>
+                    <Link
+                      href={item.href}
+                      className={cn(
+                        "px-3 py-2 text-sm rounded-t-md whitespace-nowrap transition-colors border-b-2",
+                        active ? "font-medium" : "font-normal",
+                        item.group === "sources" && !active && "opacity-70",
+                      )}
+                      style={
+                        active
+                          ? { color: "var(--accent-strong)", borderColor: "var(--accent-strong)" }
+                          : { color: "var(--text-muted)", borderColor: "transparent" }
+                      }
+                      onMouseEnter={(e) => {
+                        if (!active) (e.currentTarget as HTMLElement).style.color = "var(--text)";
+                      }}
+                      onMouseLeave={(e) => {
+                        if (!active) (e.currentTarget as HTMLElement).style.color = "var(--text-muted)";
+                      }}
+                    >
+                      {item.label}
+                    </Link>
+                  </span>
                 );
               })}
             </div>

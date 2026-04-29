@@ -70,7 +70,7 @@ export default function AccountIntelligenceIndexPage() {
   return (
     <SectionShell
       title="Account Intelligence"
-      description="Permanent profile per creator account.  Identity, subscription, and access status auto-fill from OnlyMonster.  Brand, voice, vault, and strategy notes are operator-managed and never overwritten by a sync."
+      description="One creator brain per account. Identity, subscription, and access auto-fill from OnlyMonster. Persona, voice, vault, strategy, and game-plan notes are operator-managed and never overwritten by a sync. Click any creator to open the full profile and generate an audit."
       actions={
         <input
           value={query}

@@ -134,7 +134,7 @@ export default function ChatQcLabPage() {
   return (
     <SectionShell
       title="Chat QC Lab"
-      description="Manual chat-data import bridge for the Dream Chat QC engine. Upload sample JSON/CSV, run text-based QC, see findings with why-it-matters and suggested better responses."
+      description="The first manual bridge for real chat QC. Live scraping is not connected yet. Use sample / imported chat data to validate the QC engine. Message text is sensitive — do not paste real client data unless explicitly approved."
     >
       {limitationsNote && (
         <div
@@ -148,6 +148,25 @@ export default function ChatQcLabPage() {
           <strong>Limitations.</strong> {limitationsNote}
         </div>
       )}
+
+      {/* Sensitivity banner — separate from Limitations so it is impossible
+          to miss before pasting real data. */}
+      <div
+        className="mb-4 rounded-md border p-3 text-xs"
+        style={{
+          background: "rgba(244,63,94,0.06)",
+          borderColor: "rgba(244,63,94,0.4)",
+          color: "rgb(159,18,57)",
+        }}
+      >
+        <strong>Sensitive data.</strong> Treat every message body as
+        confidential. The lab does not call OnlyFans or OnlyMonster, does not
+        post anywhere, and does not log message text — but uploaded content is
+        persisted to the local database for QC evaluation. Do not paste real
+        client conversations unless Zach has explicitly approved that import.
+        Use the sample fixture (<code>backend/fixtures/chat_qc_lab/sample_chats.json</code>)
+        to test the engine.
+      </div>
 
       {error && (
         <div className="mb-4 rounded-md border p-3 text-sm" style={{ borderColor: "rgb(248,113,113)", color: "rgb(225,29,72)" }}>

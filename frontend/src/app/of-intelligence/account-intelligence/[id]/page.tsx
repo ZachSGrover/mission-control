@@ -206,7 +206,7 @@ export default function CreatorProfileDetailPage() {
   return (
     <SectionShell
       title={label}
-      description={`${profile.platform || "OnlyFans"} • ${profile.username ? "@" + profile.username : profile.source_account_id}`}
+      description={`Creator brain · ${profile.platform || "OnlyFans"} · ${profile.username ? "@" + profile.username : profile.source_account_id} · Identity auto-fills from OnlyMonster; persona, vault, and game-plan are operator-managed.`}
       actions={
         <div className="flex items-center gap-2">
           <Link
@@ -311,7 +311,7 @@ export default function CreatorProfileDetailPage() {
           className="text-[11px] font-semibold uppercase tracking-widest mb-2"
           style={{ color: "var(--text-quiet)" }}
         >
-          Identity (auto-filled from OnlyMonster)
+          Account identity · auto-filled from OnlyMonster
         </p>
         <div className="grid grid-cols-2 md:grid-cols-3 gap-3 text-sm">
           <ReadOnlyField label="Username" value={profile.username} />
@@ -336,8 +336,12 @@ export default function CreatorProfileDetailPage() {
           className="text-sm font-semibold uppercase tracking-widest mb-4"
           style={{ color: "var(--text-quiet)" }}
         >
-          Brand & Strategy
+          Persona, strategy & game plan
         </h2>
+        <p className="text-xs -mt-3 mb-3" style={{ color: "var(--text-muted)" }}>
+          Operator-managed. Drives audits and feeds future agent prompts.
+          Save changes when you&apos;re done editing — no autosave.
+        </p>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           {STRATEGY_FIELDS.map((f) => (
             <EditableField
@@ -359,8 +363,12 @@ export default function CreatorProfileDetailPage() {
           className="text-sm font-semibold uppercase tracking-widest mb-4"
           style={{ color: "var(--text-quiet)" }}
         >
-          External Presence
+          Social & funnel presence
         </h2>
+        <p className="text-xs -mt-3 mb-3" style={{ color: "var(--text-muted)" }}>
+          Public-facing handles. Used later for funnel-alive checks (Instagram /
+          X / TikTok / Reddit cadence) — read-only, no scraping today.
+        </p>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           {SOCIAL_FIELDS.map((f) => (
             <EditableField
@@ -385,11 +393,13 @@ export default function CreatorProfileDetailPage() {
                 className="text-sm font-semibold uppercase tracking-widest"
                 style={{ color: "var(--text-quiet)" }}
               >
-                Account Audit
+                Account audit & game plan
               </h2>
               <p className="text-xs mt-0.5" style={{ color: "var(--text-muted)" }}>
-                Generated {formatRelative(audit.generated_at)}.  Read-only — pulls only
-                what we&apos;ve already synced.
+                Generated {formatRelative(audit.generated_at)}. Deterministic
+                roll-up of synced data + your operator notes. No external
+                calls. Future versions will use the operator notes to draft
+                weekly strategy and chatter coaching.
               </p>
             </div>
             <button

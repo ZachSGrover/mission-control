@@ -306,6 +306,70 @@ export type AccountAuditResponse = {
   markdown: string;
 };
 
+export type ChatImportRow = {
+  id: string;
+  label: string | null;
+  source_kind: string;
+  status: string;
+  notes: string | null;
+  error: string | null;
+  total_chats: number;
+  total_messages: number;
+  messages_inserted: number;
+  messages_skipped_dup: number;
+  findings_count: number;
+  payload_sha256: string | null;
+  payload_size_bytes: number | null;
+  started_at: string;
+  completed_at: string | null;
+  triggered_by: string | null;
+};
+
+export type ChatImportResponse = {
+  import_id: string;
+  label: string | null;
+  source_kind: string;
+  status: string;
+  total_messages_seen: number;
+  total_chats_seen: number;
+  messages_inserted: number;
+  messages_skipped_dup: number;
+  parse_errors: string[];
+};
+
+export type ChatQcFindingRow = {
+  id: string;
+  import_id: string | null;
+  message_source_id: string | null;
+  chat_source_id: string | null;
+  account_source_id: string | null;
+  fan_source_id: string | null;
+  chatter_source_id: string | null;
+  rule_id: string;
+  severity: "info" | "warn" | "critical" | string;
+  title: string;
+  issue: string;
+  why_it_matters: string;
+  suggested_better: string | null;
+  recommended_action: string | null;
+  message_excerpt: string | null;
+  context: Record<string, unknown> | null;
+  created_at: string;
+};
+
+export type ChatQcRunResponse = {
+  import_id: string | null;
+  evaluated_at: string;
+  messages_evaluated: number;
+  findings_created: number;
+  findings_by_severity: Record<string, number>;
+  findings_by_rule: Record<string, number>;
+};
+
+export type ChatQcLimitationsResponse = {
+  note: string;
+};
+
 // ── Helper ────────────────────────────────────────────────────────────────────
 
 const BASE = "/api/v1/of-intelligence";
@@ -438,6 +502,28 @@ export const ofiApi = {
     }),
   generateAccountAudit: (f: FetchFn, id: string) =>
     jsonRequest<AccountAuditResponse>(f, `/creator-profiles/${id}/audit`, { method: "POST" }),
+
+  // Chat QC Lab — manual chat-data import bridge
+  chatLabImports: (f: FetchFn, limit = 50) =>
+    jsonRequest<ChatImportRow[]>(f, `/chat-lab/imports?limit=${limit}`),
+  chatLabImport: (f: FetchFn, id: string) =>
+    jsonRequest<ChatImportRow>(f, `/chat-lab/imports/${id}`),
+  uploadChatImport: (f: FetchFn, body: { payload: string; source_kind: string; label?: string | null }) =>
+    jsonRequest<ChatImportResponse>(f, "/chat-lab/imports", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    }),
+  runChatQc: (f: FetchFn, importId: string) =>
+    jsonRequest<ChatQcRunResponse>(f, `/chat-lab/imports/${importId}/run-qc`, { method: "POST" }),
+  chatLabFindings: (f: FetchFn, opts: { importId?: string; limit?: number } = {}) => {
+    const params = new URLSearchParams();
+    if (opts.importId) params.set("import_id", opts.importId);
+    params.set("limit", String(opts.limit ?? 200));
+    return jsonRequest<ChatQcFindingRow[]>(f, `/chat-lab/findings?${params.toString()}`);
+  },
+  chatLabLimitations: (f: FetchFn) =>
+    jsonRequest<ChatQcLimitationsResponse>(f, "/chat-lab/limitations"),
 };
 
 // ── Display helpers ───────────────────────────────────────────────────────────

@@ -1,0 +1,31 @@
+{
+  "_note": "Synthetic chat data for Chat QC Lab smoke testing. Names, IDs, and message content are fictional — designed to trigger each of the 13 QC rules at least once.",
+  "messages": [
+    { "chat_id": "demo_chat_1", "message_id": "demo_chat_1_m01", "account_id": "demo_acct_a", "fan_id": "demo_fan_alpha", "fan_username": "alphafan", "chatter_id": "demo_chatter_zee", "chatter_name": "ZeeBot", "sender_type": "fan",     "timestamp": "2026-04-21T10:00:00Z", "message_text": "hey what do you have today" },
+    { "chat_id": "demo_chat_1", "message_id": "demo_chat_1_m02", "account_id": "demo_acct_a", "fan_id": "demo_fan_alpha", "chatter_id": "demo_chatter_zee", "sender_type": "chatter", "timestamp": "2026-04-21T10:01:00Z", "message_text": "Hey babe how are you" },
+    { "chat_id": "demo_chat_1", "message_id": "demo_chat_1_m03", "account_id": "demo_acct_a", "fan_id": "demo_fan_alpha", "chatter_id": "demo_chatter_zee", "sender_type": "fan",     "timestamp": "2026-04-21T10:02:00Z", "message_text": "send me more pics please" },
+    { "chat_id": "demo_chat_1", "message_id": "demo_chat_1_m04", "account_id": "demo_acct_a", "fan_id": "demo_fan_alpha", "chatter_id": "demo_chatter_zee", "sender_type": "chatter", "timestamp": "2026-04-21T10:03:00Z", "message_text": "ok" },
+    { "chat_id": "demo_chat_1", "message_id": "demo_chat_1_m05", "account_id": "demo_acct_a", "fan_id": "demo_fan_alpha", "chatter_id": "demo_chatter_zee", "sender_type": "fan",     "timestamp": "2026-04-21T10:04:00Z", "message_text": "wait that's it? what's your name" },
+    { "chat_id": "demo_chat_1", "message_id": "demo_chat_1_m06", "account_id": "demo_acct_a", "fan_id": "demo_fan_alpha", "chatter_id": "demo_chatter_zee", "sender_type": "chatter", "timestamp": "2026-04-21T10:05:00Z", "message_text": "i was thinking about my coffee earlier" },
+
+    { "chat_id": "demo_chat_2", "message_id": "demo_chat_2_m01", "account_id": "demo_acct_a", "fan_id": "demo_fan_bravo", "chatter_id": "demo_chatter_zee", "sender_type": "fan",     "timestamp": "2026-04-21T11:00:00Z", "message_text": "the price is too expensive for me right now" },
+    { "chat_id": "demo_chat_2", "message_id": "demo_chat_2_m02", "account_id": "demo_acct_a", "fan_id": "demo_fan_bravo", "chatter_id": "demo_chatter_zee", "sender_type": "chatter", "timestamp": "2026-04-21T11:01:00Z", "message_text": "Hey babe how are you" },
+
+    { "chat_id": "demo_chat_3", "message_id": "demo_chat_3_m01", "account_id": "demo_acct_a", "fan_id": "demo_fan_charlie", "chatter_id": "demo_chatter_zee", "sender_type": "fan",     "timestamp": "2026-04-21T12:00:00Z", "message_text": "yo whats up" },
+    { "chat_id": "demo_chat_3", "message_id": "demo_chat_3_m02", "account_id": "demo_acct_a", "fan_id": "demo_fan_charlie", "chatter_id": "demo_chatter_zee", "sender_type": "chatter", "timestamp": "2026-04-21T12:01:00Z", "message_text": "BUY MY VAULT NOW!!!! YOU WILL LOVE IT!!!!" },
+    { "chat_id": "demo_chat_3", "message_id": "demo_chat_3_m03", "account_id": "demo_acct_a", "fan_id": "demo_fan_charlie", "chatter_id": "demo_chatter_zee", "sender_type": "chatter", "timestamp": "2026-04-21T12:02:00Z", "message_text": "stop being a creep and just send the tip" },
+
+    { "chat_id": "demo_chat_4", "message_id": "demo_chat_4_m01", "account_id": "demo_acct_b", "fan_id": "demo_fan_delta", "chatter_id": "demo_chatter_pat", "sender_type": "chatter", "timestamp": "2026-04-21T13:00:00Z", "message_text": "good morning  beautiful" },
+    { "chat_id": "demo_chat_4", "message_id": "demo_chat_4_m02", "account_id": "demo_acct_b", "fan_id": "demo_fan_delta", "chatter_id": "demo_chatter_pat", "sender_type": "chatter", "timestamp": "2026-04-21T13:05:00Z", "message_text": "hope you slept well last night" },
+    { "chat_id": "demo_chat_4", "message_id": "demo_chat_4_m03", "account_id": "demo_acct_b", "fan_id": "demo_fan_delta", "chatter_id": "demo_chatter_pat", "sender_type": "chatter", "timestamp": "2026-04-21T13:10:00Z", "message_text": "i was just thinking of you while making breakfast" },
+
+    { "chat_id": "demo_chat_5", "message_id": "demo_chat_5_m01", "account_id": "demo_acct_b", "fan_id": "demo_fan_echo",  "chatter_id": "demo_chatter_pat", "sender_type": "fan",     "timestamp": "2026-04-21T14:00:00Z", "message_text": "hi cutie just wanted to say hi" },
+    { "chat_id": "demo_chat_5", "message_id": "demo_chat_5_m02", "account_id": "demo_acct_b", "fan_id": "demo_fan_echo",  "chatter_id": "demo_chatter_pat", "sender_type": "chatter", "timestamp": "2024-04-21T14:01:00Z", "message_text": "i have a special spicy bundle in the vault for you, want me to send the preview!?" },
+
+    { "chat_id": "demo_chat_6", "message_id": "demo_chat_6_m01", "account_id": "demo_acct_a", "fan_id": "demo_fan_foxtrot", "chatter_id": "demo_chatter_zee", "sender_type": "fan",     "timestamp": "2026-04-22T09:00:00Z", "message_text": "hey what's up" },
+    { "chat_id": "demo_chat_6", "message_id": "demo_chat_6_m02", "account_id": "demo_acct_a", "fan_id": "demo_fan_foxtrot", "chatter_id": "demo_chatter_zee", "sender_type": "chatter", "timestamp": "2026-04-22T09:01:00Z", "message_text": "Just got out of the shower, missing your energy today — been thinking about something fun for us later" },
+
+    { "chat_id": "demo_chat_7", "message_id": "demo_chat_7_m01", "account_id": "demo_acct_a", "fan_id": "demo_fan_golf", "chatter_id": "demo_chatter_zee", "sender_type": "fan",     "timestamp": "2026-04-22T10:00:00Z", "message_text": "yo" },
+    { "chat_id": "demo_chat_7", "message_id": "demo_chat_7_m02", "account_id": "demo_acct_a", "fan_id": "demo_fan_golf", "chatter_id": "demo_chatter_zee", "sender_type": "chatter", "timestamp": "2026-04-22T10:01:00Z", "message_text": "Just got out of the shower, missing your energy today — been thinking about something fun for us later" }
+  ]
+}

@@ -191,6 +191,69 @@ class OfIntelligenceMessage(SQLModel, table=True):
     revenue_cents: int | None = Field(default=None)
     raw: dict[str, Any] | None = Field(default=None, sa_column=Column(JSON))
     synced_at: datetime = Field(default_factory=utcnow, index=True)
+    # Imported via Chat QC Lab — null for live-synced rows.
+    import_id: UUID | None = Field(default=None, index=True)
+
+
+class OfIntelligenceChatImport(SQLModel, table=True):
+    """One row per uploaded chat-data batch (Chat QC Lab).
+
+    Carries metadata only — counts, fingerprints, status — never the raw
+    uploaded message bodies.  Bodies live in `of_intelligence_messages`
+    via the standard messages persister.
+    """
+
+    __tablename__ = "of_intelligence_chat_imports"  # pyright: ignore[reportAssignmentType]
+    __table_args__ = (Index("ix_ofi_chat_imports_started_at", "started_at"),)
+
+    id: UUID = Field(default_factory=uuid4, primary_key=True)
+    label: str | None = Field(default=None, max_length=255)
+    source_kind: str = Field(max_length=64)
+    # 'manual_json' | 'manual_csv' | 'paste' | 'fixture'
+    status: str = Field(default="pending", max_length=32, index=True)
+    # 'pending' | 'running' | 'success' | 'partial' | 'error'
+    notes: str | None = Field(default=None, sa_column=Column(Text))
+    error: str | None = Field(default=None, sa_column=Column(Text))
+    total_chats: int = Field(default=0)
+    total_messages: int = Field(default=0)
+    messages_inserted: int = Field(default=0)
+    messages_skipped_dup: int = Field(default=0)
+    findings_count: int = Field(default=0)
+    payload_sha256: str | None = Field(default=None, max_length=64)
+    payload_size_bytes: int | None = Field(default=None)
+    started_at: datetime = Field(default_factory=utcnow)
+    completed_at: datetime | None = Field(default=None)
+    triggered_by: str | None = Field(default=None, max_length=64)
+
+
+class OfIntelligenceChatQcFinding(SQLModel, table=True):
+    """One row per finding emitted by the chat-message QC engine."""
+
+    __tablename__ = "of_intelligence_chat_qc_findings"  # pyright: ignore[reportAssignmentType]
+    __table_args__ = (
+        Index("ix_ofi_chat_qc_findings_severity", "severity"),
+        Index("ix_ofi_chat_qc_findings_chatter", "chatter_source_id"),
+        Index("ix_ofi_chat_qc_findings_rule", "rule_id"),
+    )
+
+    id: UUID = Field(default_factory=uuid4, primary_key=True)
+    import_id: UUID | None = Field(default=None, index=True)
+    message_source_id: str | None = Field(default=None, max_length=255)
+    source: str = Field(default=SOURCE_ONLYMONSTER, max_length=64)
+    chat_source_id: str | None = Field(default=None, max_length=255)
+    account_source_id: str | None = Field(default=None, max_length=255)
+    fan_source_id: str | None = Field(default=None, max_length=255)
+    chatter_source_id: str | None = Field(default=None, max_length=255)
+    rule_id: str = Field(max_length=64)
+    severity: str = Field(default="info", max_length=16)  # info|warn|critical
+    title: str = Field(max_length=255)
+    issue: str = Field(sa_column=Column(Text))
+    why_it_matters: str = Field(sa_column=Column(Text))
+    suggested_better: str | None = Field(default=None, sa_column=Column(Text))
+    recommended_action: str | None = Field(default=None, sa_column=Column(Text))
+    message_excerpt: str | None = Field(default=None, sa_column=Column(Text))
+    context: dict[str, Any] | None = Field(default=None, sa_column=Column(JSON))
+    created_at: datetime = Field(default_factory=utcnow, index=True)
 
 
 class OfIntelligenceChatter(SQLModel, table=True):

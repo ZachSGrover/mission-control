@@ -33,6 +33,12 @@ Surface:
   GET    /api/v1/of-intelligence/creator-profiles/{id}    — fetch one
   PATCH  /api/v1/of-intelligence/creator-profiles/{id}    — update operator fields (owner)
   POST   /api/v1/of-intelligence/creator-profiles/{id}/audit — generate audit (owner)
+  GET    /api/v1/of-intelligence/chat-lab/imports         — list import batches
+  POST   /api/v1/of-intelligence/chat-lab/imports         — upload chat data (owner)
+  GET    /api/v1/of-intelligence/chat-lab/imports/{id}    — fetch one batch
+  POST   /api/v1/of-intelligence/chat-lab/imports/{id}/run-qc — run QC over batch (owner)
+  GET    /api/v1/of-intelligence/chat-lab/findings        — list findings
+  GET    /api/v1/of-intelligence/chat-lab/limitations     — text describing v1 scope
 """
 
 from __future__ import annotations
@@ -1163,3 +1169,206 @@ async def post_creator_profile_audit(
         sections=[AccountAuditSectionModel(title=s.title, body=s.body) for s in audit.sections],
         markdown=audit.markdown,
     )
+
+
+# ── Chat QC Lab — manual chat-data import bridge ─────────────────────────────
+
+
+class ChatImportRow(BaseModel):
+    id: UUID
+    label: str | None
+    source_kind: str
+    status: str
+    notes: str | None
+    error: str | None
+    total_chats: int
+    total_messages: int
+    messages_inserted: int
+    messages_skipped_dup: int
+    findings_count: int
+    payload_sha256: str | None
+    payload_size_bytes: int | None
+    started_at: datetime
+    completed_at: datetime | None
+    triggered_by: str | None
+
+
+class ChatImportRequest(BaseModel):
+    """Payload-as-string upload.  Frontend can post either text/csv or
+    JSON-encoded data inside `payload`; the parser branches on
+    `source_kind`.
+    """
+
+    payload: str = Field(..., description="Raw JSON string or CSV text.")
+    source_kind: str = Field(
+        default="manual_json",
+        description="manual_json | manual_csv | paste | fixture",
+    )
+    label: str | None = Field(default=None, max_length=255)
+
+
+class ChatImportResponse(BaseModel):
+    import_id: UUID
+    label: str | None
+    source_kind: str
+    status: str
+    total_messages_seen: int
+    total_chats_seen: int
+    messages_inserted: int
+    messages_skipped_dup: int
+    parse_errors: list[str]
+
+
+class ChatQcFindingRow(BaseModel):
+    id: UUID
+    import_id: UUID | None
+    message_source_id: str | None
+    chat_source_id: str | None
+    account_source_id: str | None
+    fan_source_id: str | None
+    chatter_source_id: str | None
+    rule_id: str
+    severity: str
+    title: str
+    issue: str
+    why_it_matters: str
+    suggested_better: str | None
+    recommended_action: str | None
+    message_excerpt: str | None
+    context: dict[str, Any] | None
+    created_at: datetime
+
+
+class ChatQcRunResponse(BaseModel):
+    import_id: UUID | None
+    evaluated_at: datetime
+    messages_evaluated: int
+    findings_created: int
+    findings_by_severity: dict[str, int]
+    findings_by_rule: dict[str, int]
+
+
+class ChatQcLimitationsResponse(BaseModel):
+    note: str
+
+
+@router.get("/chat-lab/imports", response_model=list[ChatImportRow])
+async def list_chat_imports(
+    _: AuthContext = AUTH_DEP,
+    session: AsyncSession = SESSION_DEP,
+    limit: int = Query(default=50, ge=1, le=200),
+) -> list[ChatImportRow]:
+    from app.services.of_intelligence.chat_import import list_imports
+
+    rows = await list_imports(session, limit=limit)
+    return [ChatImportRow.model_validate(r, from_attributes=True) for r in rows]
+
+
+@router.post(
+    "/chat-lab/imports",
+    response_model=ChatImportResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+async def post_chat_import(
+    body: ChatImportRequest,
+    _role: str = OWNER_DEP,
+    session: AsyncSession = SESSION_DEP,
+) -> ChatImportResponse:
+    from app.services.of_intelligence.chat_import import import_chat_payload
+
+    try:
+        result = await import_chat_payload(
+            session,
+            payload_text=body.payload,
+            source_kind=body.source_kind,
+            label=body.label,
+            triggered_by="manual",
+        )
+    except ValueError as exc:
+        # Validation errors are safe to echo: they mention size / format,
+        # never message content.
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(exc),
+        )
+    return ChatImportResponse(
+        import_id=result.import_id,
+        label=result.label,
+        source_kind=result.source_kind,
+        status=result.status,
+        total_messages_seen=result.total_messages_seen,
+        total_chats_seen=result.total_chats_seen,
+        messages_inserted=result.messages_inserted,
+        messages_skipped_dup=result.messages_skipped_dup,
+        parse_errors=result.parse_errors,
+    )
+
+
+@router.get("/chat-lab/imports/{import_id}", response_model=ChatImportRow)
+async def get_chat_import(
+    import_id: UUID,
+    _: AuthContext = AUTH_DEP,
+    session: AsyncSession = SESSION_DEP,
+) -> ChatImportRow:
+    from app.services.of_intelligence.chat_import import get_import
+
+    row = await get_import(session, import_id)
+    if not row:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Chat import not found.",
+        )
+    return ChatImportRow.model_validate(row, from_attributes=True)
+
+
+@router.post(
+    "/chat-lab/imports/{import_id}/run-qc",
+    response_model=ChatQcRunResponse,
+)
+async def run_chat_qc(
+    import_id: UUID,
+    _role: str = OWNER_DEP,
+    session: AsyncSession = SESSION_DEP,
+) -> ChatQcRunResponse:
+    from app.services.of_intelligence.chat_import import get_import
+    from app.services.of_intelligence.chat_message_qc import run_qc_for_import
+
+    row = await get_import(session, import_id)
+    if not row:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Chat import not found.",
+        )
+    summary = await run_qc_for_import(session, import_id)
+    return ChatQcRunResponse(
+        import_id=summary.import_id,
+        evaluated_at=summary.evaluated_at,
+        messages_evaluated=summary.messages_evaluated,
+        findings_created=summary.findings_created,
+        findings_by_severity=summary.findings_by_severity,
+        findings_by_rule=summary.findings_by_rule,
+    )
+
+
+@router.get("/chat-lab/findings", response_model=list[ChatQcFindingRow])
+async def list_chat_findings(
+    _: AuthContext = AUTH_DEP,
+    session: AsyncSession = SESSION_DEP,
+    import_id: UUID | None = Query(default=None),
+    limit: int = Query(default=200, ge=1, le=1000),
+) -> list[ChatQcFindingRow]:
+    from app.services.of_intelligence.chat_message_qc import list_findings
+
+    rows = await list_findings(session, import_id=import_id, limit=limit)
+    return [ChatQcFindingRow.model_validate(r, from_attributes=True) for r in rows]
+
+
+@router.get("/chat-lab/limitations", response_model=ChatQcLimitationsResponse)
+async def get_chat_qc_limitations(
+    _: AuthContext = AUTH_DEP,
+) -> ChatQcLimitationsResponse:
+    from app.services.of_intelligence.chat_message_qc import (
+        CHAT_QC_LAB_LIMITATIONS_NOTE,
+    )
+
+    return ChatQcLimitationsResponse(note=CHAT_QC_LAB_LIMITATIONS_NOTE)

@@ -10,6 +10,8 @@ Routes:
   PUT    /api/v1/usage/settings              — update thresholds / alerts_enabled
   PUT    /api/v1/usage/credentials/openai    — save OpenAI admin key / org id
   DELETE /api/v1/usage/credentials/openai    — clear OpenAI admin credentials
+  PUT    /api/v1/usage/credentials/anthropic — save Anthropic admin key / org id
+  DELETE /api/v1/usage/credentials/anthropic — clear Anthropic admin credentials
   POST   /api/v1/usage/refresh               — manually run all collectors
 
 Mutating routes are owner-gated.  No expensive provider calls are made —
@@ -37,6 +39,7 @@ from app.db.session import get_session
 from app.models.usage import UsageAlertConfig, UsageEvent, UsageSnapshot
 from app.schemas.usage import (
     AlertsResponse,
+    AnthropicCredentialsUpdate,
     CredentialsStatus,
     DailyBucket,
     DailyUsageResponse,
@@ -395,6 +398,12 @@ async def get_alerts(
 _OPENAI_ADMIN_KEY_DBKEY = "admin_key.openai"
 _OPENAI_ORG_ID_DBKEY = "admin_org_id.openai"
 
+# Anthropic admin credentials.  Anthropic admin keys are org-scoped
+# automatically; the org_id here is optional and only useful as a future
+# workspace filter on the Admin Usage Report endpoints.
+_ANTHROPIC_ADMIN_KEY_DBKEY = "admin_key.anthropic"
+_ANTHROPIC_ORG_ID_DBKEY = "admin_org_id.anthropic"
+
 
 async def _load_openai_credentials_status(session: AsyncSession) -> dict:
     """Read OpenAI admin credential status from DB (with .env fallback)."""
@@ -421,21 +430,43 @@ async def _load_openai_credentials_status(session: AsyncSession) -> dict:
     }
 
 
+async def _load_anthropic_credentials_status(session: AsyncSession) -> dict:
+    """Read Anthropic admin credential status from DB (with .env fallback)."""
+    from app.core.config import settings as app_settings
+    from app.core.secrets_store import get_secret_with_source, mask_key
+
+    admin_value, admin_src = await get_secret_with_source(
+        session,
+        _ANTHROPIC_ADMIN_KEY_DBKEY,
+        fallback=app_settings.anthropic_admin_key,
+    )
+    org_value, org_src = await get_secret_with_source(
+        session,
+        _ANTHROPIC_ORG_ID_DBKEY,
+        fallback=app_settings.anthropic_org_id,
+    )
+    admin_configured = bool(admin_value.strip())
+    org_set = bool(org_value.strip())
+    return {
+        "admin_configured": admin_configured,
+        "admin_source": admin_src,
+        "admin_preview": mask_key(admin_value) if admin_configured else None,
+        "org_id_set": org_set,
+        "org_id_source": org_src,
+        # Anthropic org id is a public identifier (`org-…`) when set.
+        "org_id_value": org_value if org_set else None,
+    }
+
+
 @router.get("/settings", response_model=UsageSettingsResponse)
 async def get_settings(
     _: AuthContext = AUTH_DEP,
     session: AsyncSession = SESSION_DEP,
 ) -> UsageSettingsResponse:
-    from app.core.config import settings as app_settings
-    from app.core.secrets_store import get_secret_with_source
-
     cfg = await _get_alert_config(session)
 
     openai_status = await _load_openai_credentials_status(session)
-
-    anthropic_admin, anthropic_src = await get_secret_with_source(
-        session, "admin_key.anthropic", fallback=app_settings.anthropic_admin_key
-    )
+    anthropic_status = await _load_anthropic_credentials_status(session)
 
     return UsageSettingsResponse(
         daily_threshold_usd=cfg.daily_threshold_usd,
@@ -448,9 +479,12 @@ async def get_settings(
         openai_org_id_set=openai_status["org_id_set"],
         openai_org_id_source=openai_status["org_id_source"],
         openai_org_id_value=openai_status["org_id_value"],
-        anthropic_admin_configured=bool(anthropic_admin.strip()),
-        anthropic_admin_source=anthropic_src,  # type: ignore[arg-type]
-        anthropic_org_id_set=bool(app_settings.anthropic_org_id.strip()),
+        anthropic_admin_configured=anthropic_status["admin_configured"],
+        anthropic_admin_source=anthropic_status["admin_source"],
+        anthropic_admin_preview=anthropic_status["admin_preview"],
+        anthropic_org_id_set=anthropic_status["org_id_set"],
+        anthropic_org_id_source=anthropic_status["org_id_source"],
+        anthropic_org_id_value=anthropic_status["org_id_value"],
         gemini_supported=False,
     )
 
@@ -561,6 +595,80 @@ async def delete_openai_credentials(
     return _credentials_status_from_dict(status_data)
 
 
+# ── Anthropic Admin Usage credentials ──────────────────────────────────────
+
+
+@router.put("/credentials/anthropic", response_model=CredentialsStatus)
+async def upsert_anthropic_credentials(
+    body: AnthropicCredentialsUpdate,
+    _: AuthContext = AUTH_DEP,
+    _role: str = Depends(require_owner),
+    session: AsyncSession = SESSION_DEP,
+) -> CredentialsStatus:
+    """Save the Anthropic Admin Usage credentials.
+
+    Same partial-update contract as the OpenAI variant.  ``org_id`` is
+    optional for Anthropic — admin keys are org-scoped automatically; org
+    id is only useful as a future workspace filter.
+
+    Returns a status payload with masked / public previews.  The raw admin
+    key is never echoed back, never logged, never included in error
+    messages.
+    """
+    from app.core.secrets_store import set_secret
+
+    admin_key_in = (body.admin_key or "").strip() if body.admin_key else ""
+    org_id_in = (body.org_id or "").strip() if body.org_id else ""
+
+    if not admin_key_in and not org_id_in:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=(
+                "Provide admin_key, org_id, or both. To clear stored "
+                "credentials, use DELETE /api/v1/usage/credentials/anthropic."
+            ),
+        )
+
+    # Light shape sanity — keep the message generic; do NOT echo the key.
+    if admin_key_in and not admin_key_in.startswith("sk-ant-admin"):
+        logger.warning(
+            "usage.anthropic.credentials.suspect_admin_key_prefix length=%d",
+            len(admin_key_in),
+        )
+
+    if admin_key_in:
+        await set_secret(session, _ANTHROPIC_ADMIN_KEY_DBKEY, admin_key_in)
+        logger.info(
+            "usage.anthropic.credentials.admin_key.saved length=%d",
+            len(admin_key_in),
+        )
+    if org_id_in:
+        await set_secret(session, _ANTHROPIC_ORG_ID_DBKEY, org_id_in)
+        # Org id is a public identifier — safe to log in full.
+        logger.info(
+            "usage.anthropic.credentials.org_id.saved value=%s", org_id_in
+        )
+
+    status_data = await _load_anthropic_credentials_status(session)
+    return _credentials_status_from_dict(status_data)
+
+
+@router.delete("/credentials/anthropic", response_model=CredentialsStatus)
+async def delete_anthropic_credentials(
+    _: AuthContext = AUTH_DEP,
+    _role: str = Depends(require_owner),
+    session: AsyncSession = SESSION_DEP,
+) -> CredentialsStatus:
+    """Remove both the admin key and the org id from encrypted storage."""
+    from app.core.secrets_store import delete_secret
+
+    await delete_secret(session, _ANTHROPIC_ADMIN_KEY_DBKEY)
+    await delete_secret(session, _ANTHROPIC_ORG_ID_DBKEY)
+    logger.info("usage.anthropic.credentials.cleared")
+    status_data = await _load_anthropic_credentials_status(session)
+    return _credentials_status_from_dict(status_data)
+
+
 # ── Refresh ─────────────────────────────────────────────────────────────────
 
 
@@ -569,6 +677,17 @@ async def delete_openai_credentials(
 # of a button (each extra page costs one outbound API request).
 _ALLOWED_WINDOW_HOURS: tuple[int, ...] = (24, 168, 720)
 
+# Strict allowlist for the optional ``provider`` filter on /refresh.  When
+# omitted, every collector runs (current behavior).  When set, only the
+# named collector runs — useful for live-testing one provider without
+# re-touching another.
+_ALLOWED_REFRESH_PROVIDERS: tuple[str, ...] = (
+    "openai",
+    "anthropic",
+    "gemini",
+    "internal",
+)
+
 
 @router.post("/refresh", response_model=RefreshResponse)
 async def refresh_usage(
@@ -576,15 +695,26 @@ async def refresh_usage(
         default=24,
         description="How far back collectors should pull. Allowed: 24, 168, 720.",
     ),
+    provider: str | None = Query(
+        default=None,
+        description=(
+            "Optional provider filter. When set, only that one collector runs. "
+            "Allowed: openai, anthropic, gemini, internal."
+        ),
+    ),
     _: AuthContext = AUTH_DEP,
     _role: str = Depends(require_owner),
     session: AsyncSession = SESSION_DEP,
 ) -> RefreshResponse:
-    """Manually run all provider collectors and persist snapshots.
+    """Manually run provider collectors and persist snapshots.
 
     ``window_hours`` is optional; default 24 keeps existing behavior.
     Validated against ``_ALLOWED_WINDOW_HOURS`` — anything else returns 400
     BEFORE any provider call is attempted.
+
+    ``provider`` is optional; default None runs every collector (existing
+    behavior).  When set, only the named collector runs — handy for live
+    testing one provider without re-touching another.
     """
     if window_hours not in _ALLOWED_WINDOW_HOURS:
         raise HTTPException(
@@ -592,6 +722,14 @@ async def refresh_usage(
             detail=(
                 f"window_hours must be one of {list(_ALLOWED_WINDOW_HOURS)}; "
                 f"got {window_hours}."
+            ),
+        )
+    if provider is not None and provider not in _ALLOWED_REFRESH_PROVIDERS:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=(
+                f"provider must be one of {list(_ALLOWED_REFRESH_PROVIDERS)} or "
+                f"omitted; got {provider!r}."
             ),
         )
 
@@ -606,7 +744,9 @@ async def refresh_usage(
     _last_refresh_started_at = now_mono
 
     started = utcnow()
-    results = await run_collectors(session, window_hours=window_hours)
+    results = await run_collectors(
+        session, window_hours=window_hours, only_provider=provider
+    )
     finished = utcnow()
 
     return RefreshResponse(

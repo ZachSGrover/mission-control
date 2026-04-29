@@ -104,12 +104,20 @@ export interface UsageSettings {
   openai_org_id_value: string | null;
   anthropic_admin_configured: boolean;
   anthropic_admin_source: "db" | "env" | "none";
+  anthropic_admin_preview: string | null;
   anthropic_org_id_set: boolean;
+  anthropic_org_id_source: "db" | "env" | "none";
+  anthropic_org_id_value: string | null;
   gemini_supported: boolean;
   gemini_note: string;
 }
 
 export interface OpenAiCredentialsUpdate {
+  admin_key?: string;
+  org_id?: string;
+}
+
+export interface AnthropicCredentialsUpdate {
   admin_key?: string;
   org_id?: string;
 }
@@ -122,6 +130,9 @@ export interface CredentialsStatus {
   org_id_source: "db" | "env" | "none";
   org_id_value: string | null;
 }
+
+// Provider name used for the optional ``?provider`` filter on /refresh.
+export type RefreshProvider = "openai" | "anthropic" | "gemini" | "internal";
 
 export interface UsageSettingsUpdate {
   daily_threshold_usd?: number | null;

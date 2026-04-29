@@ -132,7 +132,14 @@ class UsageSettingsResponse(BaseModel):
 
     anthropic_admin_configured: bool = False
     anthropic_admin_source: Literal["db", "env", "none"] = "none"
+    # Masked preview of the saved Anthropic admin key (never the full value).
+    anthropic_admin_preview: str | None = None
     anthropic_org_id_set: bool = False
+    anthropic_org_id_source: Literal["db", "env", "none"] = "none"
+    # Anthropic does not require an organization id — admin keys are
+    # scoped to a single organization automatically.  We persist the value
+    # only when supplied so it can be used as a future workspace filter.
+    anthropic_org_id_value: str | None = None
 
     gemini_supported: bool = False
     gemini_note: str = (
@@ -153,6 +160,18 @@ class OpenAiCredentialsUpdate(BaseModel):
     Only fields that are present and non-empty are persisted; omitted or
     blank fields leave the existing value untouched.  Use the DELETE
     endpoint to clear both at once.
+    """
+
+    admin_key: str | None = Field(default=None)
+    org_id: str | None = Field(default=None)
+
+
+class AnthropicCredentialsUpdate(BaseModel):
+    """Partial update for the Anthropic Usage Tracking credentials.
+
+    Same partial-update contract as the OpenAI variant.  ``org_id`` is
+    optional for Anthropic — the admin key is org-scoped already; org id
+    is only useful as a future workspace filter.
     """
 
     admin_key: str | None = Field(default=None)

@@ -7,6 +7,7 @@ import { Check, Info } from "lucide-react";
 
 import { useAuthFetch } from "@/hooks/use-auth-fetch";
 
+import { AnthropicCredentialsCard } from "../_components/AnthropicCredentialsCard";
 import { OpenAiCredentialsCard } from "../_components/OpenAiCredentialsCard";
 import { UsagePageShell } from "../_components/UsagePageShell";
 import { fetchSettings, updateSettings } from "../_lib/api";
@@ -194,23 +195,19 @@ export default function UsageSettingsPage() {
         </h2>
 
         <OpenAiCredentialsCard settings={data} onChanged={() => void load()} />
+        <AnthropicCredentialsCard
+          settings={data}
+          onChanged={() => void load()}
+        />
 
-        {/* Anthropic + Gemini stay read-only here until their Phase 3B card lands. */}
+        {/* Gemini stays read-only — no public usage/billing API yet. */}
         <div
-          className="rounded-xl divide-y"
+          className="rounded-xl"
           style={{
             background: "var(--surface-strong)",
             border: "1px solid var(--border)",
           }}
         >
-          <ProviderRow
-            label="Anthropic"
-            help="Required for live Anthropic message-usage snapshots. Editable card lands in Phase 3B."
-            keyConfigured={!!data?.anthropic_admin_configured}
-            keySource={data?.anthropic_admin_source ?? "none"}
-            orgIdSet={!!data?.anthropic_org_id_set}
-            envHints={["ANTHROPIC_ADMIN_KEY", "ANTHROPIC_ORG_ID"]}
-          />
           <ProviderRow
             label="Gemini"
             help={

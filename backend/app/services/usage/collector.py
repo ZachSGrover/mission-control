@@ -71,18 +71,28 @@ async def run_collectors(
     organization_id: UUID | None = None,
     persist: bool = True,
     window_hours: int = 24,
+    only_provider: str | None = None,
 ) -> list[tuple[CollectorResult, UsageSnapshot | None]]:
-    """Run every provider collector and (optionally) persist a snapshot row.
+    """Run provider collectors and (optionally) persist a snapshot row.
 
     ``window_hours`` controls how far back each collector reaches.  The route
     layer is responsible for validating the value against an allowlist before
     invoking this function — collectors trust the value.
 
-    Returns a list of ``(result, snapshot_or_none)`` pairs in ``PROVIDERS``
+    ``only_provider`` is an optional filter.  When None (default) every
+    collector runs.  When set, only that one collector runs — used to live-
+    test a single provider without re-touching the others.  The route layer
+    also validates this against an allowlist before calling.
+
+    Returns a list of ``(result, snapshot_or_none)`` pairs.  When filtered,
+    the list contains a single entry; otherwise it preserves ``PROVIDERS``
     order.  ``snapshot_or_none`` is ``None`` only when ``persist=False``.
     """
+    providers_to_run: tuple[str, ...] = (
+        (only_provider,) if only_provider else PROVIDERS
+    )
     output: list[tuple[CollectorResult, UsageSnapshot | None]] = []
-    for name in PROVIDERS:
+    for name in providers_to_run:
         result = await _run_one(
             name,
             session,

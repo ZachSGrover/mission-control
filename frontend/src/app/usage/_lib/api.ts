@@ -10,12 +10,14 @@ import { getApiBaseUrl } from "@/lib/api-base";
 
 import type {
   AlertsResponse,
+  AnthropicCredentialsUpdate,
   CredentialsStatus,
   DailyUsageResponse,
   OpenAiCredentialsUpdate,
   ProjectListResponse,
   ProviderListResponse,
   RangeKey,
+  RefreshProvider,
   RefreshResponse,
   RefreshWindowHours,
   UsageOverview,
@@ -103,12 +105,17 @@ export async function updateSettings(
 
 export async function postRefresh(
   fetchFn: FetchFn,
-  options: { windowHours?: RefreshWindowHours } = {},
+  options: { windowHours?: RefreshWindowHours; provider?: RefreshProvider } = {},
 ): Promise<RefreshResponse> {
-  const url =
-    options.windowHours !== undefined
-      ? `${base()}/refresh?window_hours=${options.windowHours}`
-      : `${base()}/refresh`;
+  const params = new URLSearchParams();
+  if (options.windowHours !== undefined) {
+    params.set("window_hours", String(options.windowHours));
+  }
+  if (options.provider !== undefined) {
+    params.set("provider", options.provider);
+  }
+  const qs = params.toString();
+  const url = qs ? `${base()}/refresh?${qs}` : `${base()}/refresh`;
   const res = await fetchFn(url, { method: "POST" });
   return readJson<RefreshResponse>(res);
 }
@@ -129,6 +136,27 @@ export async function removeOpenAiCredentials(
   fetchFn: FetchFn,
 ): Promise<CredentialsStatus> {
   const res = await fetchFn(`${base()}/credentials/openai`, {
+    method: "DELETE",
+  });
+  return readJson<CredentialsStatus>(res);
+}
+
+export async function saveAnthropicCredentials(
+  fetchFn: FetchFn,
+  body: AnthropicCredentialsUpdate,
+): Promise<CredentialsStatus> {
+  const res = await fetchFn(`${base()}/credentials/anthropic`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  return readJson<CredentialsStatus>(res);
+}
+
+export async function removeAnthropicCredentials(
+  fetchFn: FetchFn,
+): Promise<CredentialsStatus> {
+  const res = await fetchFn(`${base()}/credentials/anthropic`, {
     method: "DELETE",
   });
   return readJson<CredentialsStatus>(res);

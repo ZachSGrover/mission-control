@@ -278,9 +278,7 @@ def _aggregate_usage(payload: dict[str, Any]) -> dict[str, Any]:
             # Try multiple field names — Anthropic's response has shifted
             # over time and may include either ``input_tokens`` or
             # ``uncached_input_tokens``.
-            input_tokens = _safe_int(
-                row.get("uncached_input_tokens") or row.get("input_tokens")
-            )
+            input_tokens = _safe_int(row.get("uncached_input_tokens") or row.get("input_tokens"))
             output_tokens = _safe_int(row.get("output_tokens"))
             cache_create = _safe_int(row.get("cache_creation_input_tokens"))
             cache_read = _safe_int(row.get("cache_read_input_tokens"))
@@ -297,9 +295,7 @@ def _aggregate_usage(payload: dict[str, Any]) -> dict[str, Any]:
             total_cache_read += cache_read
             total_requests += requests
 
-            slot = by_model.setdefault(
-                model, {"input_tokens": 0, "output_tokens": 0}
-            )
+            slot = by_model.setdefault(model, {"input_tokens": 0, "output_tokens": 0})
             # Cache reads count as input for cost modeling, treat conservatively.
             slot["input_tokens"] += input_tokens + cache_create + cache_read
             slot["output_tokens"] += output_tokens
@@ -419,8 +415,7 @@ async def collect(
 
     notes: list[str] = []
     logger.info(
-        "usage.anthropic.fetch.start org_id_set=%s window_hours=%d "
-        "starting_at=%s",
+        "usage.anthropic.fetch.start org_id_set=%s window_hours=%d " "starting_at=%s",
         bool(org_id),
         window_hours,
         starting_at,
@@ -495,9 +490,7 @@ async def collect(
             out_t = int(tokens["output_tokens"])
             if not is_priced(model_name) and (in_t or out_t):
                 unpriced_models.append(model_name)
-            cost_estimated += estimate_cost(
-                model_name, input_tokens=in_t, output_tokens=out_t
-            )
+            cost_estimated += estimate_cost(model_name, input_tokens=in_t, output_tokens=out_t)
         if unpriced_models:
             notes.append(
                 "No local price for: "

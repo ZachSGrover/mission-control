@@ -115,9 +115,7 @@ async def _latest_snapshot_per_provider(
 ) -> dict[str, UsageSnapshot]:
     """Return the most recent snapshot keyed by provider.  Empty dict if none."""
     snapshots = list(
-        await session.exec(
-            select(UsageSnapshot).order_by(UsageSnapshot.captured_at.desc())
-        )
+        await session.exec(select(UsageSnapshot).order_by(UsageSnapshot.captured_at.desc()))
     )
     latest: dict[str, UsageSnapshot] = {}
     for snap in snapshots:
@@ -142,14 +140,10 @@ async def _provider_totals_for_window(
     )
     aggregates: dict[str, ProviderTotals] = {}
     for snap in rows:
-        agg = aggregates.setdefault(
-            snap.provider, ProviderTotals(provider=snap.provider)
-        )
+        agg = aggregates.setdefault(snap.provider, ProviderTotals(provider=snap.provider))
         agg.input_tokens += snap.input_tokens
         agg.output_tokens += snap.output_tokens
-        agg.total_tokens += snap.total_tokens or (
-            snap.input_tokens + snap.output_tokens
-        )
+        agg.total_tokens += snap.total_tokens or (snap.input_tokens + snap.output_tokens)
         agg.requests += snap.requests
         agg.cost_usd += snap.cost_usd
     return aggregates
@@ -250,9 +244,7 @@ async def get_daily(
     Buckets pull from snapshots (captured_at) when available; otherwise zero-
     fill so the chart always has a row per day.
     """
-    end = utcnow().replace(hour=0, minute=0, second=0, microsecond=0) + timedelta(
-        days=1
-    )
+    end = utcnow().replace(hour=0, minute=0, second=0, microsecond=0) + timedelta(days=1)
     start = end - timedelta(days=days)
 
     rows = list(
@@ -378,12 +370,10 @@ async def get_alerts(
         daily_spend_usd=daily_total,
         monthly_spend_usd=monthly_total,
         daily_breached=(
-            cfg.daily_threshold_usd is not None
-            and daily_total >= cfg.daily_threshold_usd
+            cfg.daily_threshold_usd is not None and daily_total >= cfg.daily_threshold_usd
         ),
         monthly_breached=(
-            cfg.monthly_threshold_usd is not None
-            and monthly_total >= cfg.monthly_threshold_usd
+            cfg.monthly_threshold_usd is not None and monthly_total >= cfg.monthly_threshold_usd
         ),
         last_error=last_error_snap.error if last_error_snap else None,
         last_error_provider=last_error_snap.provider if last_error_snap else None,
@@ -645,9 +635,7 @@ async def upsert_anthropic_credentials(
     if org_id_in:
         await set_secret(session, _ANTHROPIC_ORG_ID_DBKEY, org_id_in)
         # Org id is a public identifier — safe to log in full.
-        logger.info(
-            "usage.anthropic.credentials.org_id.saved value=%s", org_id_in
-        )
+        logger.info("usage.anthropic.credentials.org_id.saved value=%s", org_id_in)
 
     status_data = await _load_anthropic_credentials_status(session)
     return _credentials_status_from_dict(status_data)
@@ -744,9 +732,7 @@ async def refresh_usage(
     _last_refresh_started_at = now_mono
 
     started = utcnow()
-    results = await run_collectors(
-        session, window_hours=window_hours, only_provider=provider
-    )
+    results = await run_collectors(session, window_hours=window_hours, only_provider=provider)
     finished = utcnow()
 
     return RefreshResponse(

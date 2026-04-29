@@ -284,9 +284,7 @@ def _aggregate_completions(payload: dict[str, Any]) -> dict[str, Any]:
             total_input += input_tokens
             total_output += output_tokens
             total_requests += requests
-            slot = by_model.setdefault(
-                model, {"input_tokens": 0, "output_tokens": 0}
-            )
+            slot = by_model.setdefault(model, {"input_tokens": 0, "output_tokens": 0})
             slot["input_tokens"] += input_tokens
             slot["output_tokens"] += output_tokens
 
@@ -404,14 +402,12 @@ async def collect(
     )
 
     async with httpx.AsyncClient(timeout=_HTTP_TIMEOUT) as client:
-        completions_payload, completions_err, completions_capped = (
-            await _paginated_request(
-                client,
-                path=_USAGE_COMPLETIONS_PATH,
-                base_params=base_params,
-                admin_key=admin_key,
-                org_id=org_id,
-            )
+        completions_payload, completions_err, completions_capped = await _paginated_request(
+            client,
+            path=_USAGE_COMPLETIONS_PATH,
+            base_params=base_params,
+            admin_key=admin_key,
+            org_id=org_id,
         )
         costs_payload, costs_err, costs_capped = await _paginated_request(
             client,
@@ -482,9 +478,7 @@ async def collect(
             out_t = int(tokens["output_tokens"])
             if not is_priced(model_name) and (in_t or out_t):
                 unpriced_models.append(model_name)
-            cost_estimated += estimate_cost(
-                model_name, input_tokens=in_t, output_tokens=out_t
-            )
+            cost_estimated += estimate_cost(model_name, input_tokens=in_t, output_tokens=out_t)
         if unpriced_models:
             notes.append(
                 "No local price for: "

@@ -88,9 +88,7 @@ async def run_collectors(
     the list contains a single entry; otherwise it preserves ``PROVIDERS``
     order.  ``snapshot_or_none`` is ``None`` only when ``persist=False``.
     """
-    providers_to_run: tuple[str, ...] = (
-        (only_provider,) if only_provider else PROVIDERS
-    )
+    providers_to_run: tuple[str, ...] = (only_provider,) if only_provider else PROVIDERS
     output: list[tuple[CollectorResult, UsageSnapshot | None]] = []
     for name in providers_to_run:
         result = await _run_one(
@@ -109,8 +107,7 @@ async def run_collectors(
                 period_end=result.period_end or utcnow(),
                 input_tokens=result.input_tokens,
                 output_tokens=result.output_tokens,
-                total_tokens=result.total_tokens
-                or (result.input_tokens + result.output_tokens),
+                total_tokens=result.total_tokens or (result.input_tokens + result.output_tokens),
                 requests=result.requests,
                 cost_usd=result.cost_usd,
                 source=result.source,

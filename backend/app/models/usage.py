@@ -40,9 +40,7 @@ class UsageSnapshot(QueryModel, table=True):
     __tablename__ = "usage_snapshots"  # pyright: ignore[reportAssignmentType]
 
     id: UUID = Field(default_factory=uuid4, primary_key=True)
-    organization_id: UUID | None = Field(
-        default=None, foreign_key="organizations.id", index=True
-    )
+    organization_id: UUID | None = Field(default=None, foreign_key="organizations.id", index=True)
 
     provider: str = Field(index=True, max_length=64)
     captured_at: datetime = Field(default_factory=utcnow, index=True)
@@ -70,9 +68,7 @@ class UsageEvent(QueryModel, table=True):
     __tablename__ = "usage_events"  # pyright: ignore[reportAssignmentType]
 
     id: UUID = Field(default_factory=uuid4, primary_key=True)
-    organization_id: UUID | None = Field(
-        default=None, foreign_key="organizations.id", index=True
-    )
+    organization_id: UUID | None = Field(default=None, foreign_key="organizations.id", index=True)
 
     project: str | None = Field(default=None, max_length=128, index=True)
     feature: str | None = Field(default=None, max_length=128, index=True)
@@ -119,9 +115,7 @@ class UsageAlertConfig(QueryModel, table=True):
     )
 
     id: UUID = Field(default_factory=uuid4, primary_key=True)
-    organization_id: UUID | None = Field(
-        default=None, foreign_key="organizations.id", index=True
-    )
+    organization_id: UUID | None = Field(default=None, foreign_key="organizations.id", index=True)
 
     daily_threshold_usd: float | None = Field(default=None)
     monthly_threshold_usd: float | None = Field(default=None)

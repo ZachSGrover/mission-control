@@ -270,7 +270,15 @@ async def collect(
         "admin_key.openai",
         fallback=settings.openai_admin_key,
     )
-    org_id = settings.openai_org_id.strip()
+    # Org ID is now stored in the encrypted AppSetting alongside the admin
+    # key (so the user can save it via the Settings UI).  The .env value
+    # remains a transparent fallback for env-only deployments.
+    org_id_raw, _org_src = await get_secret_with_source(
+        session,
+        "admin_org_id.openai",
+        fallback=settings.openai_org_id,
+    )
+    org_id = org_id_raw.strip()
 
     end = utcnow()
     start = end - timedelta(hours=window_hours)

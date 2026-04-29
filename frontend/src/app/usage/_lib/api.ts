@@ -10,7 +10,9 @@ import { getApiBaseUrl } from "@/lib/api-base";
 
 import type {
   AlertsResponse,
+  CredentialsStatus,
   DailyUsageResponse,
+  OpenAiCredentialsUpdate,
   ProjectListResponse,
   ProviderListResponse,
   RangeKey,
@@ -101,4 +103,25 @@ export async function updateSettings(
 export async function postRefresh(fetchFn: FetchFn): Promise<RefreshResponse> {
   const res = await fetchFn(`${base()}/refresh`, { method: "POST" });
   return readJson<RefreshResponse>(res);
+}
+
+export async function saveOpenAiCredentials(
+  fetchFn: FetchFn,
+  body: OpenAiCredentialsUpdate,
+): Promise<CredentialsStatus> {
+  const res = await fetchFn(`${base()}/credentials/openai`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  return readJson<CredentialsStatus>(res);
+}
+
+export async function removeOpenAiCredentials(
+  fetchFn: FetchFn,
+): Promise<CredentialsStatus> {
+  const res = await fetchFn(`${base()}/credentials/openai`, {
+    method: "DELETE",
+  });
+  return readJson<CredentialsStatus>(res);
 }

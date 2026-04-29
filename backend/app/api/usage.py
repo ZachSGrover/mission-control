@@ -1,18 +1,22 @@
-"""Usage / Spend Tracker API — read-only foundation (Phase 1).
+"""Usage / Spend Tracker API.
 
 Routes:
-  GET  /api/v1/usage/overview      — totals + per-provider summary for a window
-  GET  /api/v1/usage/providers     — per-provider latest snapshot + status
-  GET  /api/v1/usage/daily         — daily buckets over a date range
-  GET  /api/v1/usage/projects      — internal-event rollup by project/feature
-  GET  /api/v1/usage/alerts        — current alert state + threshold breach flags
-  GET  /api/v1/usage/settings      — alert thresholds + admin key status
-  PUT  /api/v1/usage/settings      — update thresholds / alerts_enabled
-  POST /api/v1/usage/refresh       — manually run all collectors
+  GET    /api/v1/usage/overview              — totals + per-provider summary
+  GET    /api/v1/usage/providers             — per-provider latest snapshot + status
+  GET    /api/v1/usage/daily                 — daily buckets over a date range
+  GET    /api/v1/usage/projects              — internal-event rollup
+  GET    /api/v1/usage/alerts                — current alert state
+  GET    /api/v1/usage/settings              — thresholds + admin credential status
+  PUT    /api/v1/usage/settings              — update thresholds / alerts_enabled
+  PUT    /api/v1/usage/credentials/openai    — save OpenAI admin key / org id
+  DELETE /api/v1/usage/credentials/openai    — clear OpenAI admin credentials
+  POST   /api/v1/usage/refresh               — manually run all collectors
 
-Everything is read-only except the two write endpoints above.  No expensive
-provider calls are made — collectors hit Admin/Usage endpoints only and are
-gated on admin credentials being present (otherwise return ``not_configured``).
+Mutating routes are owner-gated.  No expensive provider calls are made —
+collectors hit Admin / Usage endpoints only and are gated on admin
+credentials being present (otherwise they return ``not_configured``).
+Credentials are stored encrypted via the existing AppSetting / Fernet
+pattern; the raw values never appear in logs or responses.
 """
 
 from __future__ import annotations
@@ -33,8 +37,10 @@ from app.db.session import get_session
 from app.models.usage import UsageAlertConfig, UsageEvent, UsageSnapshot
 from app.schemas.usage import (
     AlertsResponse,
+    CredentialsStatus,
     DailyBucket,
     DailyUsageResponse,
+    OpenAiCredentialsUpdate,
     ProjectListResponse,
     ProjectTotals,
     ProviderListResponse,
@@ -383,6 +389,38 @@ async def get_alerts(
     )
 
 
+# DB keys for OpenAI Admin Usage credentials (encrypted via existing
+# AppSetting / Fernet path).  Org id is technically a public identifier
+# but goes through the same encrypted store for uniformity.
+_OPENAI_ADMIN_KEY_DBKEY = "admin_key.openai"
+_OPENAI_ORG_ID_DBKEY = "admin_org_id.openai"
+
+
+async def _load_openai_credentials_status(session: AsyncSession) -> dict:
+    """Read OpenAI admin credential status from DB (with .env fallback)."""
+    from app.core.config import settings as app_settings
+    from app.core.secrets_store import get_secret_with_source, mask_key
+
+    admin_value, admin_src = await get_secret_with_source(
+        session, _OPENAI_ADMIN_KEY_DBKEY, fallback=app_settings.openai_admin_key
+    )
+    org_value, org_src = await get_secret_with_source(
+        session, _OPENAI_ORG_ID_DBKEY, fallback=app_settings.openai_org_id
+    )
+    admin_configured = bool(admin_value.strip())
+    org_set = bool(org_value.strip())
+    return {
+        "admin_configured": admin_configured,
+        "admin_source": admin_src,
+        "admin_preview": mask_key(admin_value) if admin_configured else None,
+        "org_id_set": org_set,
+        "org_id_source": org_src,
+        # Org IDs are public identifiers — surface in full so the user can
+        # verify which organization is wired up without re-entering it.
+        "org_id_value": org_value if org_set else None,
+    }
+
+
 @router.get("/settings", response_model=UsageSettingsResponse)
 async def get_settings(
     _: AuthContext = AUTH_DEP,
@@ -393,9 +431,8 @@ async def get_settings(
 
     cfg = await _get_alert_config(session)
 
-    openai_admin, openai_src = await get_secret_with_source(
-        session, "admin_key.openai", fallback=app_settings.openai_admin_key
-    )
+    openai_status = await _load_openai_credentials_status(session)
+
     anthropic_admin, anthropic_src = await get_secret_with_source(
         session, "admin_key.anthropic", fallback=app_settings.anthropic_admin_key
     )
@@ -405,9 +442,12 @@ async def get_settings(
         monthly_threshold_usd=cfg.monthly_threshold_usd,
         alerts_enabled=cfg.alerts_enabled,
         discord_webhook_configured=cfg.discord_webhook_configured,
-        openai_admin_configured=bool(openai_admin.strip()),
-        openai_admin_source=openai_src,  # type: ignore[arg-type]
-        openai_org_id_set=bool(app_settings.openai_org_id.strip()),
+        openai_admin_configured=openai_status["admin_configured"],
+        openai_admin_source=openai_status["admin_source"],
+        openai_admin_preview=openai_status["admin_preview"],
+        openai_org_id_set=openai_status["org_id_set"],
+        openai_org_id_source=openai_status["org_id_source"],
+        openai_org_id_value=openai_status["org_id_value"],
         anthropic_admin_configured=bool(anthropic_admin.strip()),
         anthropic_admin_source=anthropic_src,  # type: ignore[arg-type]
         anthropic_org_id_set=bool(app_settings.anthropic_org_id.strip()),
@@ -433,6 +473,95 @@ async def update_settings(
     session.add(cfg)
     await session.commit()
     return await get_settings(session=session)  # reuse formatting
+
+
+# ── OpenAI Admin Usage credentials ──────────────────────────────────────────
+
+
+def _credentials_status_from_dict(data: dict) -> CredentialsStatus:
+    return CredentialsStatus(
+        admin_configured=data["admin_configured"],
+        admin_source=data["admin_source"],
+        admin_preview=data["admin_preview"],
+        org_id_set=data["org_id_set"],
+        org_id_source=data["org_id_source"],
+        org_id_value=data["org_id_value"],
+    )
+
+
+@router.put("/credentials/openai", response_model=CredentialsStatus)
+async def upsert_openai_credentials(
+    body: OpenAiCredentialsUpdate,
+    _: AuthContext = AUTH_DEP,
+    _role: str = Depends(require_owner),
+    session: AsyncSession = SESSION_DEP,
+) -> CredentialsStatus:
+    """Save the OpenAI Admin Usage credentials.
+
+    Each field is optional and persisted only when supplied as a non-empty
+    string — partial updates leave the other field untouched.  To clear
+    credentials, call DELETE on this same path.
+
+    Returns a status payload with masked / public previews.  The raw admin
+    key is never echoed back, never logged, never included in error
+    messages.
+    """
+    from app.core.secrets_store import set_secret
+
+    admin_key_in = (body.admin_key or "").strip() if body.admin_key else ""
+    org_id_in = (body.org_id or "").strip() if body.org_id else ""
+
+    if not admin_key_in and not org_id_in:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=(
+                "Provide admin_key, org_id, or both. To clear stored "
+                "credentials, use DELETE /api/v1/usage/credentials/openai."
+            ),
+        )
+
+    # Light shape sanity — keep the message generic; do NOT echo the key.
+    if admin_key_in and not admin_key_in.startswith(("sk-admin-", "sk-proj-admin-")):
+        # We don't reject — formats can change — just warn in the log so a
+        # user can debug a misconfiguration.  No part of the key is logged.
+        logger.warning(
+            "usage.openai.credentials.suspect_admin_key_prefix length=%d",
+            len(admin_key_in),
+        )
+
+    if admin_key_in:
+        await set_secret(session, _OPENAI_ADMIN_KEY_DBKEY, admin_key_in)
+        logger.info("usage.openai.credentials.admin_key.saved length=%d", len(admin_key_in))
+    if org_id_in:
+        await set_secret(session, _OPENAI_ORG_ID_DBKEY, org_id_in)
+        # Org id is a public identifier (`org-…`) — safe to log in full.
+        logger.info("usage.openai.credentials.org_id.saved value=%s", org_id_in)
+
+    status_data = await _load_openai_credentials_status(session)
+    return _credentials_status_from_dict(status_data)
+
+
+@router.delete("/credentials/openai", response_model=CredentialsStatus)
+async def delete_openai_credentials(
+    _: AuthContext = AUTH_DEP,
+    _role: str = Depends(require_owner),
+    session: AsyncSession = SESSION_DEP,
+) -> CredentialsStatus:
+    """Remove both the admin key and the org id from encrypted storage.
+
+    After clearing, the .env values (if any) become the active fallback;
+    otherwise the OpenAI collector returns ``not_configured``.
+    """
+    from app.core.secrets_store import delete_secret
+
+    await delete_secret(session, _OPENAI_ADMIN_KEY_DBKEY)
+    await delete_secret(session, _OPENAI_ORG_ID_DBKEY)
+    logger.info("usage.openai.credentials.cleared")
+    status_data = await _load_openai_credentials_status(session)
+    return _credentials_status_from_dict(status_data)
+
+
+# ── Refresh ─────────────────────────────────────────────────────────────────
 
 
 @router.post("/refresh", response_model=RefreshResponse)

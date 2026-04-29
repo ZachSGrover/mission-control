@@ -123,7 +123,12 @@ class UsageSettingsResponse(BaseModel):
 
     openai_admin_configured: bool = False
     openai_admin_source: Literal["db", "env", "none"] = "none"
+    # Masked preview of the saved admin key (never the full value).
+    openai_admin_preview: str | None = None
     openai_org_id_set: bool = False
+    openai_org_id_source: Literal["db", "env", "none"] = "none"
+    # Org ID is a public identifier (`org-…`); safe to surface in full.
+    openai_org_id_value: str | None = None
 
     anthropic_admin_configured: bool = False
     anthropic_admin_source: Literal["db", "env", "none"] = "none"
@@ -140,6 +145,29 @@ class UsageSettingsUpdate(BaseModel):
     daily_threshold_usd: float | None = Field(default=None, ge=0)
     monthly_threshold_usd: float | None = Field(default=None, ge=0)
     alerts_enabled: bool | None = None
+
+
+class OpenAiCredentialsUpdate(BaseModel):
+    """Partial update for the OpenAI Usage Tracking credentials.
+
+    Only fields that are present and non-empty are persisted; omitted or
+    blank fields leave the existing value untouched.  Use the DELETE
+    endpoint to clear both at once.
+    """
+
+    admin_key: str | None = Field(default=None)
+    org_id: str | None = Field(default=None)
+
+
+class CredentialsStatus(BaseModel):
+    """Lightweight status payload returned from credentials write endpoints."""
+
+    admin_configured: bool = False
+    admin_source: Literal["db", "env", "none"] = "none"
+    admin_preview: str | None = None
+    org_id_set: bool = False
+    org_id_source: Literal["db", "env", "none"] = "none"
+    org_id_value: str | None = None
 
 
 # ── Refresh ─────────────────────────────────────────────────────────────────

@@ -93,12 +93,29 @@ export interface UsageSettings {
   discord_webhook_configured: boolean;
   openai_admin_configured: boolean;
   openai_admin_source: "db" | "env" | "none";
+  openai_admin_preview: string | null;
   openai_org_id_set: boolean;
+  openai_org_id_source: "db" | "env" | "none";
+  openai_org_id_value: string | null;
   anthropic_admin_configured: boolean;
   anthropic_admin_source: "db" | "env" | "none";
   anthropic_org_id_set: boolean;
   gemini_supported: boolean;
   gemini_note: string;
+}
+
+export interface OpenAiCredentialsUpdate {
+  admin_key?: string;
+  org_id?: string;
+}
+
+export interface CredentialsStatus {
+  admin_configured: boolean;
+  admin_source: "db" | "env" | "none";
+  admin_preview: string | null;
+  org_id_set: boolean;
+  org_id_source: "db" | "env" | "none";
+  org_id_value: string | null;
 }
 
 export interface UsageSettingsUpdate {

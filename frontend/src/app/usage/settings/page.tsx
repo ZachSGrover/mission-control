@@ -7,6 +7,7 @@ import { Check, Info } from "lucide-react";
 
 import { useAuthFetch } from "@/hooks/use-auth-fetch";
 
+import { OpenAiCredentialsCard } from "../_components/OpenAiCredentialsCard";
 import { UsagePageShell } from "../_components/UsagePageShell";
 import { fetchSettings, updateSettings } from "../_lib/api";
 import type { UsageSettings, UsageSettingsUpdate } from "../_lib/types";
@@ -183,7 +184,7 @@ export default function UsageSettingsPage() {
         </div>
       </section>
 
-      {/* Provider admin status */}
+      {/* OpenAI Admin Usage credentials — editable */}
       <section className="space-y-3">
         <h2
           className="text-xs font-semibold uppercase tracking-widest"
@@ -192,6 +193,9 @@ export default function UsageSettingsPage() {
           Provider admin keys
         </h2>
 
+        <OpenAiCredentialsCard settings={data} onChanged={() => void load()} />
+
+        {/* Anthropic + Gemini stay read-only here until their Phase 3B card lands. */}
         <div
           className="rounded-xl divide-y"
           style={{
@@ -200,16 +204,8 @@ export default function UsageSettingsPage() {
           }}
         >
           <ProviderRow
-            label="OpenAI"
-            help="Required for live OpenAI billing snapshots."
-            keyConfigured={!!data?.openai_admin_configured}
-            keySource={data?.openai_admin_source ?? "none"}
-            orgIdSet={!!data?.openai_org_id_set}
-            envHints={["OPENAI_ADMIN_KEY", "OPENAI_ORG_ID"]}
-          />
-          <ProviderRow
             label="Anthropic"
-            help="Required for live Anthropic message-usage snapshots."
+            help="Required for live Anthropic message-usage snapshots. Editable card lands in Phase 3B."
             keyConfigured={!!data?.anthropic_admin_configured}
             keySource={data?.anthropic_admin_source ?? "none"}
             orgIdSet={!!data?.anthropic_org_id_set}

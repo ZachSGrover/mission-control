@@ -185,6 +185,48 @@ Each step ends with a documented review checkpoint. **Do not skip**.
 
 ---
 
+## 6.2 Sprint 2 progress (2026-04-29)
+
+The following items from §2 ("What is missing") and §3 ("What is risky")
+are addressed by Security Sprint 2 on branch
+`feat/security-prevention-sprint-2`:
+
+- **M2 (connector approval flow) — done.** `connector_approvals` table
+  + `app.services.connector_approvals` with state machine
+  pending → approved/rejected → revoked/expired, every transition
+  audited under category `connector`.
+- **M4 (kill switch / feature flags) — done.** `kill_switches` table
+  with four scopes (global / connector / organization / creator) +
+  `app.services.kill_switch.check_action_allowed` composite check.
+  Toggles audit at severity `critical`.
+- **M3 (client consent records) — done.** `client_consents` table +
+  service (grant / revoke / is_granted), with all 8 consent types from
+  the security plan §6.
+- **M11 (per-creator credential vault) — foundation done.**
+  `creator_credentials` table + service (create / rotate / revoke /
+  metadata-only-read). Hard guardrail: the vault refuses writes if
+  `SETTINGS_ENCRYPTION_KEY` is not set (closes the worst form of R2 for
+  the *new* high-sensitivity surface, while leaving legacy flows
+  untouched for dev convenience).
+- **M7 (read-only / dry-run mode) — partial.** Vault and gate only
+  support read-mode pre-checks today; `mode` enforcement on a
+  `connector_instances` table is not yet implemented because there is
+  no connector to gate.
+- **Composite gate** at `app.core.connector_gate.is_connector_action_allowed`
+  — the single chokepoint a future connector must call. Fail-closed in
+  every dimension, returns a typed `GateVerdict` so the operator knows
+  *why* an action was blocked.
+- **Security admin status endpoint** — owner-gated `GET
+  /api/v1/security/status`, returns aggregates only (no PII, no
+  metadata bodies). Useful for runbook checks and incident drills.
+
+Items still open: M5 (retention), M6 (LLM redaction layer), M8
+(org-scope `app_settings`), M9 (export controls), M10 (developer
+access split), M12 (frontend route redirect). Risks R1, R4, R5 still
+open (see §3). See
+[`security-sprint-2-implementation.md`](./security-sprint-2-implementation.md)
+§9 and §10 for the full Sprint 3 plan.
+
 ## 6.1 Sprint 1 progress (2026-04-29)
 
 The following items from §2 ("What is missing") are addressed by Security

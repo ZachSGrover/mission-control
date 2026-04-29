@@ -296,6 +296,29 @@ class AlertEvaluationResponse(BaseModel):
     rules_run: int
     alerts_created: int
     alerts_skipped_existing: int
+    chatter_findings_persisted: int = 0
+    rollup_findings: int = 0
+    rollup_alert_id: str | None = None
+
+
+class DailySummaryResponse(BaseModel):
+    generated_at: datetime
+    accounts_reviewed: int
+    chats_reviewed: int
+    total_findings: int
+    critical_alert_count: int
+    worst_accounts: list[tuple[str, int]] = []
+    worst_chatters: list[tuple[str, int]] = []
+    repeat_offenders: list[str] = []
+    missed_sales_signals: int = 0
+    slow_responses: int = 0
+    follow_ups_needed: int = 0
+    layer1_open_alerts: list[str] = []
+    layer2_open_alerts: list[str] = []
+    actions: list[str] = []
+    publish_ok: bool
+    publish_reason: str
+    publish_status: int | None = None
 
 
 class MemoryEntryRow(BaseModel):
@@ -764,6 +787,43 @@ async def trigger_alert_evaluation(
         rules_run=summary.rules_run,
         alerts_created=summary.alerts_created,
         alerts_skipped_existing=summary.alerts_skipped_existing,
+        chatter_findings_persisted=summary.chatter_findings_persisted,
+        rollup_findings=summary.rollup_findings,
+        rollup_alert_id=summary.rollup_alert_id,
+    )
+
+
+@router.post("/qc/daily-summary", response_model=DailySummaryResponse)
+async def trigger_daily_summary(
+    _role: str = OWNER_DEP,
+    session: AsyncSession = SESSION_DEP,
+) -> DailySummaryResponse:
+    """Build + ship the daily QC scorecard.
+
+    Owner-only.  Bypasses the kill switch (operator-initiated, must surface
+    even if real-alert toggle is off) but still requires a saved webhook.
+    """
+    from app.services.of_intelligence.qc.daily_summary import ship_daily_summary
+
+    summary, result = await ship_daily_summary(session, bypass_kill_switch=True)
+    return DailySummaryResponse(
+        generated_at=summary.generated_at,
+        accounts_reviewed=summary.accounts_reviewed,
+        chats_reviewed=summary.chats_reviewed,
+        total_findings=summary.total_findings,
+        critical_alert_count=summary.critical_alert_count,
+        worst_accounts=list(summary.worst_accounts),
+        worst_chatters=list(summary.worst_chatters),
+        repeat_offenders=list(summary.repeat_offenders),
+        missed_sales_signals=summary.missed_sales_signals,
+        slow_responses=summary.slow_responses,
+        follow_ups_needed=summary.follow_ups_needed,
+        layer1_open_alerts=list(summary.layer1_open_alerts),
+        layer2_open_alerts=list(summary.layer2_open_alerts),
+        actions=list(summary.actions),
+        publish_ok=result.ok,
+        publish_reason=result.reason,
+        publish_status=result.status,
     )
 
 

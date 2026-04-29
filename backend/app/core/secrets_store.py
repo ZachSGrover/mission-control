@@ -49,6 +49,10 @@ GITHUB_KEYS: dict[str, str] = {
     "github_repo": "github.repo",
 }
 
+# OF Intelligence — QC Discord webhook URL.  Single value for v1; later phases
+# may add per-channel routing.  Read by app.services.of_intelligence.qc.publisher.
+QC_DISCORD_WEBHOOK_DB_KEY: str = "discord.qc.webhook_url"
+
 # ── Fernet helpers ───────────────────────────────────────────────────────────
 
 _fernet: Fernet | None = None

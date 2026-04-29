@@ -10,10 +10,15 @@ import { EmptyState } from "../_components/EmptyState";
 import { ProviderCard } from "../_components/ProviderCard";
 import { RangePicker } from "../_components/RangePicker";
 import { RefreshButton } from "../_components/RefreshButton";
+import { RefreshWindowPicker } from "../_components/RefreshWindowPicker";
 import { SetupCallout } from "../_components/SetupCallout";
 import { UsagePageShell } from "../_components/UsagePageShell";
 import { fetchProviders } from "../_lib/api";
-import type { ProviderListResponse, RangeKey } from "../_lib/types";
+import type {
+  ProviderListResponse,
+  RangeKey,
+  RefreshWindowHours,
+} from "../_lib/types";
 
 // Render the three external providers explicitly.  "internal" lives on its
 // own row at the bottom because it represents Mission Control's own logged
@@ -23,6 +28,7 @@ const EXTERNAL = ["openai", "anthropic", "gemini"];
 export default function UsageProvidersPage() {
   const { fetchWithAuth } = useAuthFetch();
   const [rangeKey, setRangeKey] = useState<RangeKey>("7d");
+  const [refreshWindow, setRefreshWindow] = useState<RefreshWindowHours>(24);
   const [data, setData] = useState<ProviderListResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -80,7 +86,14 @@ export default function UsageProvidersPage() {
       actions={
         <>
           <RangePicker value={rangeKey} onChange={setRangeKey} />
-          <RefreshButton onRefreshed={() => void load(rangeKey)} />
+          <RefreshWindowPicker
+            value={refreshWindow}
+            onChange={setRefreshWindow}
+          />
+          <RefreshButton
+            windowHours={refreshWindow}
+            onRefreshed={() => void load(rangeKey)}
+          />
         </>
       }
     >

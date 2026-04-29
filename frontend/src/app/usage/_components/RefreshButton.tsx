@@ -7,12 +7,15 @@ import { useAuthFetch } from "@/hooks/use-auth-fetch";
 import { cn } from "@/lib/utils";
 
 import { postRefresh, UsageApiError } from "../_lib/api";
-import type { RefreshResponse } from "../_lib/types";
+import type { RefreshResponse, RefreshWindowHours } from "../_lib/types";
 
 type Status = "idle" | "running" | "ok" | "error" | "throttled";
 
 interface RefreshButtonProps {
   onRefreshed?: (result: RefreshResponse) => void;
+  // When set, the refresh sends this window to the backend.  Default 24h
+  // matches the backend default — omitting the prop keeps existing UX.
+  windowHours?: RefreshWindowHours;
 }
 
 /**
@@ -22,7 +25,7 @@ interface RefreshButtonProps {
  * throttle (HTTP 429) result inline for ~4s, and avoids spamming by ignoring
  * additional clicks until the previous call completes.
  */
-export function RefreshButton({ onRefreshed }: RefreshButtonProps) {
+export function RefreshButton({ onRefreshed, windowHours }: RefreshButtonProps) {
   const { fetchWithAuth } = useAuthFetch();
   const [status, setStatus] = useState<Status>("idle");
   const [message, setMessage] = useState<string | null>(null);
@@ -45,7 +48,7 @@ export function RefreshButton({ onRefreshed }: RefreshButtonProps) {
     setStatus("running");
     setMessage(null);
     try {
-      const result = await postRefresh(fetchWithAuth);
+      const result = await postRefresh(fetchWithAuth, { windowHours });
       setStatus("ok");
       const okCount = result.results.filter((r) => r.status === "ok").length;
       const notConfigured = result.results.filter(
@@ -72,7 +75,7 @@ export function RefreshButton({ onRefreshed }: RefreshButtonProps) {
         clearTimerRef.current = null;
       }, 4000);
     }
-  }, [fetchWithAuth, onRefreshed, status]);
+  }, [fetchWithAuth, onRefreshed, status, windowHours]);
 
   const running = status === "running";
 

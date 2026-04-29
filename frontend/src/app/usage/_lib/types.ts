@@ -10,6 +10,11 @@ export type ProviderStatus = "ok" | "error" | "not_configured";
 export type SnapshotSource = "live" | "manual" | "placeholder";
 export type RangeKey = "24h" | "7d" | "30d" | "mtd";
 
+// Allowed values for the manual-refresh window — must stay in sync with
+// the strict allowlist on the backend (POST /api/v1/usage/refresh).
+export type RefreshWindowHours = 24 | 168 | 720;
+export const REFRESH_WINDOW_HOURS: readonly RefreshWindowHours[] = [24, 168, 720];
+
 export interface ProviderTotals {
   provider: string;
   input_tokens: number;

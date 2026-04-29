@@ -52,10 +52,16 @@ _USAGE_COSTS_PATH = "/costs"
 # Conservative timeouts so a slow OpenAI response cannot block a refresh.
 _HTTP_TIMEOUT = httpx.Timeout(connect=5.0, read=10.0, write=5.0, pool=5.0)
 
-# Per-call result limit.  With bucket_width="1d" and a 24h window this is
-# always more than enough — OpenAI returns at most 2 daily buckets.  Set
-# small to avoid pulling more data than we need.
-_MAX_BUCKETS = 8
+# Per-page bucket cap.  With bucket_width="1d" a 30-day window fits in a
+# single page (31 ≥ 30).  Larger windows page through up to ``_MAX_PAGES``.
+_PAGE_LIMIT = 31
+
+# Hard cap on follow-up pages we will fetch in one collector run.  Even at
+# the largest allowed window (30 d / 720 h) we never expect more than a
+# single page; this cap exists to make a runaway pagination loop physically
+# impossible if the upstream ever lies about ``has_more``.  31 × 5 = 155
+# buckets — well above any realistic need for one refresh click.
+_MAX_PAGES = 5
 
 # Module-level flag so we only log the response *shape* once per worker
 # process; subsequent calls run quietly.
@@ -151,6 +157,84 @@ async def _request(
     if not isinstance(body, dict):
         return None, "OpenAI returned an unexpected (non-object) usage response."
     return body, None
+
+
+async def _paginated_request(
+    client: httpx.AsyncClient,
+    *,
+    path: str,
+    base_params: dict[str, Any],
+    admin_key: str,
+    org_id: str,
+    max_pages: int = _MAX_PAGES,
+) -> tuple[dict[str, Any] | None, str | None, bool]:
+    """Issue Admin API GETs and follow ``next_page`` up to ``max_pages``.
+
+    Returns ``(merged_payload, error, hit_cap)``.
+
+    * ``merged_payload`` is a synthetic dict with ``data`` containing every
+      bucket fetched across pages, plus the latest page's ``has_more``.  All
+      other top-level fields come from the first page.
+    * ``error`` is non-None only if the FIRST page failed; later-page errors
+      stop pagination but still return the partial result.
+    * ``hit_cap`` is True iff we stopped because we ran out of page budget
+      while ``has_more`` was still true — caller surfaces a note.
+
+    Never raises.  Never echoes the admin key.  Bounded by ``max_pages``.
+    """
+    merged: dict[str, Any] = {}
+    page_cursor: str | None = None
+    fetched_pages = 0
+    last_has_more = False
+
+    for _ in range(max_pages):
+        params = dict(base_params)
+        if page_cursor:
+            params["page"] = page_cursor
+
+        body, err = await _request(
+            client,
+            path=path,
+            params=params,
+            admin_key=admin_key,
+            org_id=org_id,
+        )
+        fetched_pages += 1
+
+        if body is None:
+            # Page-1 failure → no merged data to return.  Subsequent-page
+            # failures keep what we have and surface the error.
+            if not merged:
+                return None, err, False
+            logger.warning(
+                "usage.openai.pagination_partial path=%s page=%d err=%r",
+                path,
+                fetched_pages,
+                err,
+            )
+            return merged, None, False
+
+        if not merged:
+            # Seed merged structure from the first page; preserve top-level
+            # metadata fields we don't recognise so callers can introspect.
+            merged = {k: v for k, v in body.items() if k != "data"}
+            merged["data"] = []
+
+        page_data = body.get("data") or []
+        if isinstance(page_data, list):
+            merged["data"].extend(page_data)
+
+        last_has_more = bool(body.get("has_more"))
+        next_page = body.get("next_page")
+        merged["has_more"] = last_has_more
+        merged["next_page"] = next_page
+
+        if not last_has_more or not next_page or not isinstance(next_page, str):
+            return merged, None, False
+        page_cursor = next_page
+
+    # Exhausted page budget while OpenAI still reported has_more=True.
+    return merged, None, True
 
 
 def _safe_int(value: Any) -> int:
@@ -305,10 +389,10 @@ async def collect(
 
     # ── Live read-only call. ───────────────────────────────────────────────
     start_unix = int(start.timestamp())
-    params = {
+    base_params = {
         "start_time": start_unix,
         "bucket_width": "1d",
-        "limit": _MAX_BUCKETS,
+        "limit": _PAGE_LIMIT,
     }
 
     notes: list[str] = []
@@ -320,17 +404,19 @@ async def collect(
     )
 
     async with httpx.AsyncClient(timeout=_HTTP_TIMEOUT) as client:
-        completions_payload, completions_err = await _request(
-            client,
-            path=_USAGE_COMPLETIONS_PATH,
-            params=params,
-            admin_key=admin_key,
-            org_id=org_id,
+        completions_payload, completions_err, completions_capped = (
+            await _paginated_request(
+                client,
+                path=_USAGE_COMPLETIONS_PATH,
+                base_params=base_params,
+                admin_key=admin_key,
+                org_id=org_id,
+            )
         )
-        costs_payload, costs_err = await _request(
+        costs_payload, costs_err, costs_capped = await _paginated_request(
             client,
             path=_USAGE_COSTS_PATH,
-            params=params,
+            base_params=base_params,
             admin_key=admin_key,
             org_id=org_id,
         )
@@ -360,10 +446,10 @@ async def collect(
         _logged_completions_shape = True
 
     completions = _aggregate_completions(completions_payload)
-    if completions["has_more"]:
+    if completions_capped or costs_capped:
         notes.append(
-            "OpenAI reported more usage buckets than fetched. Phase 3B will "
-            "paginate; recent totals shown."
+            f"OpenAI returned more pages than the {_MAX_PAGES}-page safety cap; "
+            "totals shown cover the most recent buckets."
         )
 
     # Determine cost path.

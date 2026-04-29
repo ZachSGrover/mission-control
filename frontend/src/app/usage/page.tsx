@@ -9,13 +9,19 @@ import { useAuthFetch } from "@/hooks/use-auth-fetch";
 import { EmptyState } from "./_components/EmptyState";
 import { RangePicker } from "./_components/RangePicker";
 import { RefreshButton } from "./_components/RefreshButton";
+import { RefreshWindowPicker } from "./_components/RefreshWindowPicker";
 import { SetupCallout } from "./_components/SetupCallout";
 import { StatCard } from "./_components/StatCard";
 import { StatusBadge } from "./_components/StatusBadge";
 import { UsagePageShell } from "./_components/UsagePageShell";
 import { fetchOverview } from "./_lib/api";
 import { formatRelative, formatTokens, formatUsd } from "./_lib/format";
-import type { ProviderTotals, RangeKey, UsageOverview } from "./_lib/types";
+import type {
+  ProviderTotals,
+  RangeKey,
+  RefreshWindowHours,
+  UsageOverview,
+} from "./_lib/types";
 
 const PROVIDER_LABELS: Record<string, string> = {
   openai: "OpenAI",
@@ -27,6 +33,7 @@ const PROVIDER_LABELS: Record<string, string> = {
 export default function UsageOverviewPage() {
   const { fetchWithAuth } = useAuthFetch();
   const [rangeKey, setRangeKey] = useState<RangeKey>("7d");
+  const [refreshWindow, setRefreshWindow] = useState<RefreshWindowHours>(24);
   const [data, setData] = useState<UsageOverview | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -72,7 +79,14 @@ export default function UsageOverviewPage() {
       actions={
         <>
           <RangePicker value={rangeKey} onChange={setRangeKey} />
-          <RefreshButton onRefreshed={() => void load(rangeKey)} />
+          <RefreshWindowPicker
+            value={refreshWindow}
+            onChange={setRefreshWindow}
+          />
+          <RefreshButton
+            windowHours={refreshWindow}
+            onRefreshed={() => void load(rangeKey)}
+          />
         </>
       }
     >

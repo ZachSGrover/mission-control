@@ -564,13 +564,37 @@ async def delete_openai_credentials(
 # ── Refresh ─────────────────────────────────────────────────────────────────
 
 
+# Strict allowlist for the manual-refresh window.  Kept tight on purpose so a
+# user cannot accidentally page through enormous time windows at the click
+# of a button (each extra page costs one outbound API request).
+_ALLOWED_WINDOW_HOURS: tuple[int, ...] = (24, 168, 720)
+
+
 @router.post("/refresh", response_model=RefreshResponse)
 async def refresh_usage(
+    window_hours: int = Query(
+        default=24,
+        description="How far back collectors should pull. Allowed: 24, 168, 720.",
+    ),
     _: AuthContext = AUTH_DEP,
     _role: str = Depends(require_owner),
     session: AsyncSession = SESSION_DEP,
 ) -> RefreshResponse:
-    """Manually run all provider collectors and persist snapshots."""
+    """Manually run all provider collectors and persist snapshots.
+
+    ``window_hours`` is optional; default 24 keeps existing behavior.
+    Validated against ``_ALLOWED_WINDOW_HOURS`` — anything else returns 400
+    BEFORE any provider call is attempted.
+    """
+    if window_hours not in _ALLOWED_WINDOW_HOURS:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=(
+                f"window_hours must be one of {list(_ALLOWED_WINDOW_HOURS)}; "
+                f"got {window_hours}."
+            ),
+        )
+
     global _last_refresh_started_at
     now_mono = time.monotonic()
     if now_mono - _last_refresh_started_at < _REFRESH_MIN_INTERVAL_SECONDS:
@@ -582,7 +606,7 @@ async def refresh_usage(
     _last_refresh_started_at = now_mono
 
     started = utcnow()
-    results = await run_collectors(session)
+    results = await run_collectors(session, window_hours=window_hours)
     finished = utcnow()
 
     return RefreshResponse(

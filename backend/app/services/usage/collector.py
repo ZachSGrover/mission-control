@@ -37,17 +37,20 @@ async def _run_one(
     session: AsyncSession,
     *,
     organization_id: UUID | None,
+    window_hours: int,
 ) -> CollectorResult:
     try:
         if name == "openai":
-            return await openai_collector.collect(session)
+            return await openai_collector.collect(session, window_hours=window_hours)
         if name == "anthropic":
-            return await anthropic_collector.collect(session)
+            return await anthropic_collector.collect(session, window_hours=window_hours)
         if name == "gemini":
-            return await gemini_collector.collect(session)
+            return await gemini_collector.collect(session, window_hours=window_hours)
         if name == "internal":
             return await internal_collector.collect(
-                session, organization_id=organization_id
+                session,
+                window_hours=window_hours,
+                organization_id=organization_id,
             )
     except Exception as exc:  # noqa: BLE001 — collectors should not raise
         logger.exception("usage.collector_unhandled provider=%s", name)
@@ -67,15 +70,25 @@ async def run_collectors(
     *,
     organization_id: UUID | None = None,
     persist: bool = True,
+    window_hours: int = 24,
 ) -> list[tuple[CollectorResult, UsageSnapshot | None]]:
     """Run every provider collector and (optionally) persist a snapshot row.
+
+    ``window_hours`` controls how far back each collector reaches.  The route
+    layer is responsible for validating the value against an allowlist before
+    invoking this function — collectors trust the value.
 
     Returns a list of ``(result, snapshot_or_none)`` pairs in ``PROVIDERS``
     order.  ``snapshot_or_none`` is ``None`` only when ``persist=False``.
     """
     output: list[tuple[CollectorResult, UsageSnapshot | None]] = []
     for name in PROVIDERS:
-        result = await _run_one(name, session, organization_id=organization_id)
+        result = await _run_one(
+            name,
+            session,
+            organization_id=organization_id,
+            window_hours=window_hours,
+        )
         snapshot: UsageSnapshot | None = None
         if persist:
             snapshot = UsageSnapshot(

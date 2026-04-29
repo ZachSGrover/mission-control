@@ -17,6 +17,7 @@ import type {
   ProviderListResponse,
   RangeKey,
   RefreshResponse,
+  RefreshWindowHours,
   UsageOverview,
   UsageSettings,
   UsageSettingsUpdate,
@@ -100,8 +101,15 @@ export async function updateSettings(
   return readJson<UsageSettings>(res);
 }
 
-export async function postRefresh(fetchFn: FetchFn): Promise<RefreshResponse> {
-  const res = await fetchFn(`${base()}/refresh`, { method: "POST" });
+export async function postRefresh(
+  fetchFn: FetchFn,
+  options: { windowHours?: RefreshWindowHours } = {},
+): Promise<RefreshResponse> {
+  const url =
+    options.windowHours !== undefined
+      ? `${base()}/refresh?window_hours=${options.windowHours}`
+      : `${base()}/refresh`;
+  const res = await fetchFn(url, { method: "POST" });
   return readJson<RefreshResponse>(res);
 }
 

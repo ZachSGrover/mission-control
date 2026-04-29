@@ -20,6 +20,7 @@ from app.api.mc_roles import require_owner
 from app.core.auth import AuthContext, get_auth_context
 from app.core.secrets_store import delete_secret, get_secret_with_source, mask_key, set_secret
 from app.db.session import get_session
+from app.services.audit_log import record_audit
 
 router = APIRouter(prefix="/integrations", tags=["integrations"])
 AUTH_DEP = Depends(get_auth_context)
@@ -101,8 +102,8 @@ async def list_integrations(
 async def save_credential(
     name: str,
     body: SetCredentialRequest,
-    _: AuthContext = AUTH_DEP,
-    _role: str = OWNER_DEP,
+    auth: AuthContext = AUTH_DEP,
+    role: str = OWNER_DEP,
     session: AsyncSession = SESSION_DEP,
 ) -> IntegrationStatus:
     """Save or update the API key for an integration. Takes effect immediately."""
@@ -119,6 +120,22 @@ async def save_credential(
         )
     db_key = INTEGRATION_KEYS[name]
     await set_secret(session, db_key, value)
+    await record_audit(
+        session,
+        event_type="integration.credential.save",
+        category="credential",
+        action="put",
+        result="success",
+        severity="warning",
+        actor_user_id=auth.user.id if auth.user else None,
+        actor_email=auth.user.email if auth.user else None,
+        actor_role=role,
+        resource_type="integration",
+        resource_id=name,
+        # Never include the credential itself; only the metadata of the action.
+        metadata={"db_key": db_key, "preview": mask_key(value)},
+    )
+    await session.commit()
     meta = INTEGRATION_META[name]
     return IntegrationStatus(
         name=name,
@@ -135,8 +152,8 @@ async def save_credential(
 @router.delete("/{name}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_credential(
     name: str,
-    _: AuthContext = AUTH_DEP,
-    _role: str = OWNER_DEP,
+    auth: AuthContext = AUTH_DEP,
+    role: str = OWNER_DEP,
     session: AsyncSession = SESSION_DEP,
 ) -> None:
     """Remove the stored credential for an integration."""
@@ -147,3 +164,18 @@ async def delete_credential(
         )
     db_key = INTEGRATION_KEYS[name]
     await delete_secret(session, db_key)
+    await record_audit(
+        session,
+        event_type="integration.credential.delete",
+        category="credential",
+        action="delete",
+        result="success",
+        severity="high",
+        actor_user_id=auth.user.id if auth.user else None,
+        actor_email=auth.user.email if auth.user else None,
+        actor_role=role,
+        resource_type="integration",
+        resource_id=name,
+        metadata={"db_key": db_key},
+    )
+    await session.commit()

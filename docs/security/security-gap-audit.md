@@ -185,6 +185,32 @@ Each step ends with a documented review checkpoint. **Do not skip**.
 
 ---
 
+## 6.1 Sprint 1 progress (2026-04-29)
+
+The following items from §2 ("What is missing") are addressed by Security
+Sprint 1 on branch `feat/security-foundation-sprint-1`:
+
+- **M1 (audit log) — partial.** `audit_events` table + `record_audit()`
+  service shipped. Wired into: integration credential save/delete,
+  provider API key save/delete, GitHub credential save/delete, role
+  set/remove, every LLM provider attempt. **Not yet wired:** login,
+  authorization denials, exports, connector runs, approval lifecycle,
+  kill-switch toggles, telegram /test probe. See
+  [`audit-events-implementation.md`](./audit-events-implementation.md)
+  §6 for the full gap list.
+- **Metadata redaction** (security plan §7.3 prerequisite) — done. A
+  new `redact_metadata()` utility under `app.core.redact` is mandatory
+  on every audit write; producers cannot bypass it.
+- **Alembic heads** — the pre-existing repo had three diverging heads;
+  Sprint 1's audit migration is a 3-way merge so post-Sprint-1 there is
+  one head.
+
+Items M2–M12 and risks R1–R13 remain open and feed Sprint 2's plan; see
+[`audit-events-implementation.md`](./audit-events-implementation.md) §10
+for the prioritized sequence.
+
+---
+
 ## 7. Files reviewed
 
 Backend:

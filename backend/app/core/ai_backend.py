@@ -18,6 +18,7 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.core.config import settings
 from app.core.secrets_store import get_api_key
+from app.services.audit_log import record_audit
 
 # ── Provider order (cloud-only; no OpenClaw / localhost path) ────────────────
 # Controlled by MC_AI_PROVIDER_ORDER env var.  Default: openai first, anthropic
@@ -151,17 +152,89 @@ async def ask_ai_detailed(
     """
     total_attempts = 0
     last_error: str | None = None
+    prompt_len = len(prompt)
 
     for provider in _PROVIDER_ORDER:
         try:
             reply, attempts = await _run_provider(provider, prompt, session)
-            return reply, provider, total_attempts + attempts, last_error
+            total_attempts += attempts
+            await _audit_llm_call(
+                session,
+                provider=provider,
+                result="success",
+                attempts=total_attempts,
+                prompt_len=prompt_len,
+                reply_len=len(reply),
+                error=None,
+            )
+            return reply, provider, total_attempts, last_error
         except Exception as exc:
             total_attempts += _MAX_ATTEMPTS
             last_error = f"{last_error + '; ' if last_error else ''}{provider}: {exc}"
             logger.warning("ai_backend.%s.unavailable error=%s", provider, exc)
+            await _audit_llm_call(
+                session,
+                provider=provider,
+                result="failed",
+                attempts=total_attempts,
+                prompt_len=prompt_len,
+                reply_len=0,
+                error=type(exc).__name__,
+            )
 
     return _NO_KEY_MSG, "none", total_attempts, last_error
+
+
+async def _audit_llm_call(
+    session: AsyncSession,
+    *,
+    provider: str,
+    result: str,
+    attempts: int,
+    prompt_len: int,
+    reply_len: int,
+    error: str | None,
+) -> None:
+    """Audit a single LLM provider attempt without ever touching prompt/reply text.
+
+    By design we log only sizes and the exception class — never prompt body,
+    reply body, or any hash that could re-identify content. The audit row is
+    added to the caller's session and committed so each call is durable even
+    if the request handler later rolls back.
+    """
+    # Late import to avoid a hard-coupled module-level dependency for a
+    # belt-and-braces type narrowing.
+    from typing import Literal as _Literal
+    from typing import cast
+
+    safe_result = cast(
+        _Literal["success", "denied", "failed", "blocked", "skipped"],
+        result if result in {"success", "denied", "failed", "blocked", "skipped"} else "failed",
+    )
+    severity: _Literal["info", "warning", "high", "critical"] = (
+        "info" if safe_result == "success" else "warning"
+    )
+    await record_audit(
+        session,
+        event_type="llm.call",
+        category="llm",
+        action="invoke",
+        result=safe_result,
+        severity=severity,
+        resource_type="llm_provider",
+        resource_id=provider,
+        metadata={
+            "provider": provider,
+            "attempts": attempts,
+            "prompt_chars": prompt_len,
+            "reply_chars": reply_len,
+            "error_class": error,
+        },
+    )
+    try:
+        await session.commit()
+    except Exception as exc:  # pragma: no cover — defensive
+        logger.warning("ai_backend.audit_commit_failed error=%s", type(exc).__name__)
 
 
 async def _call_anthropic(prompt: str, api_key: str) -> str:

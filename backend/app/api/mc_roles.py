@@ -15,6 +15,7 @@ from app.core.config import settings
 from app.core.time import utcnow
 from app.db.session import get_session
 from app.models.mc_role import VALID_ROLES, MCUserRole
+from app.services.audit_log import record_audit
 
 router = APIRouter(prefix="/roles", tags=["roles"])
 logger = logging.getLogger(__name__)
@@ -167,7 +168,7 @@ async def set_user_role(
     clerk_user_id: str,
     body: SetRoleRequest,
     auth: AuthContext = AUTH_DEP,
-    _role: str = Depends(require_owner),
+    actor_role: str = Depends(require_owner),
     session: AsyncSession = SESSION_DEP,
 ) -> UserRoleEntry:
     """Create or update a user's role. Owner only."""
@@ -215,6 +216,27 @@ async def set_user_role(
         body.disabled,
     )
 
+    await record_audit(
+        session,
+        event_type="role.set",
+        category="role",
+        action="put",
+        result="success",
+        severity="high",
+        actor_user_id=auth.user.id if auth.user else None,
+        actor_email=auth.user.email if auth.user else None,
+        actor_role=actor_role,
+        resource_type="user_role",
+        resource_id=clerk_user_id,
+        metadata={
+            "target_clerk_user_id": clerk_user_id,
+            "target_email": user.email if user else None,
+            "new_role": body.role,
+            "disabled": body.disabled,
+        },
+    )
+    await session.commit()
+
     return UserRoleEntry(
         clerk_user_id=clerk_user_id,
         email=user.email if user else None,
@@ -228,7 +250,7 @@ async def set_user_role(
 async def remove_user_role(
     clerk_user_id: str,
     auth: AuthContext = AUTH_DEP,
-    _role: str = Depends(require_owner),
+    actor_role: str = Depends(require_owner),
     session: AsyncSession = SESSION_DEP,
 ) -> None:
     """Remove a user's explicit role (they revert to viewer default)."""
@@ -243,3 +265,18 @@ async def remove_user_role(
     if row:
         await session.delete(row)
         await session.commit()
+    await record_audit(
+        session,
+        event_type="role.remove",
+        category="role",
+        action="delete",
+        result="success" if row else "skipped",
+        severity="high",
+        actor_user_id=auth.user.id if auth.user else None,
+        actor_email=auth.user.email if auth.user else None,
+        actor_role=actor_role,
+        resource_type="user_role",
+        resource_id=clerk_user_id,
+        metadata={"target_clerk_user_id": clerk_user_id, "had_explicit_role": row is not None},
+    )
+    await session.commit()

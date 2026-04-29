@@ -237,16 +237,19 @@ echo '{"system":"Backend","resolved_at":"2026-04-28T18:00:00Z"}' \
 
 - `claw_watchdog.sh` — **wired** to `hermes-alert.sh`. Live outside this
   repo. Rollback: `~/.hermes/hooks/claw_watchdog.sh.bak.20260428`.
-- `service_watchdog.sh` — **wired** to `hermes-alert.sh`. Live outside this
-  repo. Rollback: `~/.hermes/hooks/service_watchdog.sh.bak.20260428`.
-- `system_event.sh` — **not wired yet**. Still posts plain strings via
-  `notify.sh`. Recommended next hook to migrate (boot/wake events; small
-  surface; fits `tpl_machine_restarted`).
-- `health_claw_remote.sh` — **not wired yet**. Diagnostic-only script
-  (`/health claw`); does not currently post alerts.
-- `notify.sh` — still present as the legacy plain-string sender. Backs
-  `system_event.sh` and is the rollback target if any rewired hook is
-  reverted.
+- `service_watchdog.sh` — **wired** to `hermes-alert.sh`. Live outside
+  this repo. Rollback: `~/.hermes/hooks/service_watchdog.sh.bak.20260428`.
+- `system_event.sh` — **wired** to `hermes-alert.sh` (boot/wake events
+  via `tpl_machine_restarted`). Live outside this repo. Rollback:
+  `~/.hermes/hooks/system_event.sh.bak.20260428`.
+- `health_claw_remote.sh` — **not wired**, by design. Diagnostic-only
+  script invoked manually via `/health claw`; prints to stdout, does not
+  post alerts.
+- `notify.sh` — legacy plain-string sender. **No active live-hook
+  callers** as of this slice. Kept on disk for rollback compatibility —
+  the rollback `.bak` files for the three rewired hooks call it by name.
+  Safe to retire once you're confident none of the rewired hooks need to
+  be reverted.
 
 ## What's NOT in this slice
 

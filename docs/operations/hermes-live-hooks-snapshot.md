@@ -1,6 +1,6 @@
 # Hermes live hooks — operational snapshot
 
-**Snapshot taken:** 2026-04-28
+**Snapshot taken:** 2026-04-28 (refreshed after `system_event.sh` rewire)
 **Snapshot scope:** `~/.hermes/hooks/` on Zach's MacBook (the only deployment).
 
 This file is a fingerprint of the live hook scripts that drive Hermes
@@ -14,9 +14,9 @@ on the date above.
 |------|------|---------|----------|
 | `claw_watchdog.sh`     | 3866  | `769e16258f61c00e8d7b8d839ef29a58c66ed0f832fe7104fcf5bcb70bd26c9b` | `hermes-alert.sh` (structured) |
 | `service_watchdog.sh`  | 12875 | `17d4a25c9f36d258445983f7771b4b04c3a47520b2296cc1e5fff65b1a2747f4` | `hermes-alert.sh` (structured) |
-| `system_event.sh`      | 3367  | `81c60f82f9ebc7eb994cd968c4d048c1b59253aa8a5515572542e281c39c1c9c` | `notify.sh` (legacy plain-string) |
+| `system_event.sh`      | 5505  | `e41047fbdace2f3e1a676a384720544df16e2789bb18e6d1061d7c0c4def9330` | `hermes-alert.sh` (structured) |
 | `health_claw_remote.sh`| 9032  | `71a02ee0d80c68e12b78ab535fb23cb85a2574bc8db497229533eb5bec85c9c5` | none — diagnostic only, prints to stdout |
-| `notify.sh`            | 1154  | `0703d20f774cee57ca49dd0e1de843e165be2d684c62d6da18da446a2badd8c2` | (legacy sender — backs `system_event.sh`) |
+| `notify.sh`            | 1154  | `0703d20f774cee57ca49dd0e1de843e165be2d684c62d6da18da446a2badd8c2` | legacy sender — no active live-hook callers; kept for rollback compatibility |
 
 To re-verify integrity later:
 ```
@@ -41,6 +41,7 @@ impact, fix, or repair prompt.
 |-------------|------|----------|
 | `claw_watchdog.sh.bak.20260428`              | 1570 | pre-rewire `claw_watchdog.sh` |
 | `service_watchdog.sh.bak.20260428`           | 8291 | pre-rewire `service_watchdog.sh` |
+| `system_event.sh.bak.20260428`               | 3367 | pre-rewire `system_event.sh` |
 | `system_event.sh.bak.spam.20260423_090057`   | 1546 | older — predates this initiative (Apr 23 spam fix) |
 
 To roll back any rewired hook:
@@ -50,29 +51,28 @@ mv ~/.hermes/hooks/<hook>.sh.bak.20260428 ~/.hermes/hooks/<hook>.sh
 The launchd jobs run the file directly, so the next tick uses the restored
 script. No daemon restart needed.
 
-## Recommended next hook to wire
+## Recommended next steps
 
-`system_event.sh` (size 3367, SHA `81c60f82…`).
+All three production watchdog/event hooks (`claw_watchdog.sh`,
+`service_watchdog.sh`, `system_event.sh`) are now wired to
+`hermes-alert.sh`. No live hook still calls `notify.sh`.
 
-Why:
-- Smallest remaining hook still on the legacy sender — minimal blast radius.
-- A direct match for the existing `tpl_machine_restarted` template
-  (boot/wake events).
-- One-line transition logic — the rewire pattern from `claw_watchdog.sh`
-  applies almost verbatim.
-- Low-frequency: fires only on real boot or wake events, so dedupe state
-  matters less.
+Remaining candidates (lower priority):
 
-After that:
-- `health_claw_remote.sh` is a diagnostic script the user invokes manually
-  via `/health claw`. It does not currently send alerts; rewiring would
-  involve adding a structured-alert summary on failure. Lower priority —
-  it's only relevant if you want the on-demand check to also post a
-  Discord/Telegram digest of the failures it found.
-- `notify.sh` itself stays in place as the legacy fallback. It is no
-  longer the primary path for the two rewired hooks, but `system_event.sh`
-  still depends on it. Once `system_event.sh` is rewired, `notify.sh` can
-  be considered for retirement.
+- **`health_claw_remote.sh`** — diagnostic-only script invoked manually via
+  `/health claw`. It does not currently send alerts; rewiring would mean
+  posting a structured-alert summary when the on-demand check finds
+  failures. Optional. Most useful if you want a Discord/Telegram digest
+  after running the check, rather than just stdout.
+- **Retire `notify.sh`?** — no live hook calls it anymore, but the file is
+  still referenced by name in the rollback comments inside the rewired
+  hooks. It can stay until you're confident none of the three rewired
+  hooks need to be reverted; at that point it's safe to delete (and the
+  rollback comments updated).
+- **Daily summary aggregator** — documented in
+  [hermes-alerts.md](hermes-alerts.md#daily-summary-format) but not yet
+  built. Now that three hooks write dedupe state to `MC_STATE_DIR/alerts/`,
+  there's enough material to render a useful daily digest.
 
 ## What this snapshot is NOT
 

@@ -30,6 +30,7 @@ from app.api.gateway import router as gateway_router
 from app.api.gateways import router as gateways_router
 from app.api.gemini_chat import router as gemini_chat_router
 from app.api.git_save import router as git_save_router
+from app.api.hermes import router as hermes_router
 from app.api.integrations import router as integrations_router
 from app.api.journal import router as journal_router
 from app.api.judge import router as judge_router
@@ -635,6 +636,7 @@ api_v1.include_router(agents_router)
 api_v1.include_router(activity_router)
 api_v1.include_router(gateway_router)
 api_v1.include_router(gateways_router)
+api_v1.include_router(hermes_router)
 api_v1.include_router(metrics_router)
 api_v1.include_router(organizations_router)
 api_v1.include_router(souls_directory_router)

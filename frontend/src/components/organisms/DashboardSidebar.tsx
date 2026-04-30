@@ -23,6 +23,7 @@ import {
   Network,
   Plug,
   Settings,
+  Siren,
   Sliders,
   TriangleAlert,
   Users,
@@ -163,6 +164,7 @@ export function DashboardSidebar() {
           <NavLink href="/workflows" label="Workflows" Icon={GitBranch} />
           <NavLink href="/skills"    label="Skills"    Icon={Wrench} />
           <NavLink href="/activity"  label="Logs"      Icon={Activity} />
+          <NavLink href="/hermes"    label="Hermes"    Icon={Siren} />
         </NavSection>
 
         {/* Usage — AI/API spend tracking */}

@@ -4,19 +4,15 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
   Activity,
-  Bell,
   BookOpen,
   Bot,
   Brain,
-  Boxes,
-  Calendar,
   CalendarDays,
   Check,
   CloudUpload,
   FolderOpen,
   Gauge,
   GitBranch,
-  Layers,
   Layout,
   Loader2,
   MessageSquare,
@@ -24,7 +20,6 @@ import {
   Plug,
   Settings,
   Siren,
-  Sliders,
   TriangleAlert,
   Users,
   Wrench,
@@ -158,23 +153,24 @@ export function DashboardSidebar() {
 
         {/* Automation */}
         <NavSection label="Automation">
+          <NavLink href="/hermes"    label="Hermes"    Icon={Siren} />
           <NavLink href="/boards"    label="Boards"    Icon={Layout} />
           <NavLink href="/agents"    label="Agents"    Icon={Bot} />
           <NavLink href="/control"   label="Control"   Icon={Network} />
           <NavLink href="/workflows" label="Workflows" Icon={GitBranch} />
           <NavLink href="/skills"    label="Skills"    Icon={Wrench} />
           <NavLink href="/activity"  label="Logs"      Icon={Activity} />
-          <NavLink href="/hermes"    label="Hermes"    Icon={Siren} />
         </NavSection>
 
-        {/* Usage — AI/API spend tracking */}
-        <NavSection label="Usage">
-          <NavLink href="/usage"          label="Overview"  Icon={Gauge} exact />
-          <NavLink href="/usage/providers" label="Providers" Icon={Boxes} />
-          <NavLink href="/usage/daily"     label="Daily"     Icon={Calendar} />
-          <NavLink href="/usage/projects"  label="Projects"  Icon={Layers} />
-          <NavLink href="/usage/alerts"    label="Alerts"    Icon={Bell} />
-          <NavLink href="/usage/settings"  label="Settings"  Icon={Sliders} />
+        {/* Business / Intelligence — analytics + spend products.
+         *
+         * NOTE: "OnlyFans Intelligence" lives on `feat/ofi-daily-qc-scheduler`
+         * and is intentionally not in this section yet — its routes
+         * (/of-intelligence/*) don't exist on main.  When that branch merges
+         * into main, add `<NavLink href="/of-intelligence" label="OnlyFans
+         * Intelligence" Icon={Heart} />` above Usage Tracker. */}
+        <NavSection label="Business / Intelligence">
+          <NavLink href="/usage" label="Usage Tracker" Icon={Gauge} />
         </NavSection>
 
         {/* System */}

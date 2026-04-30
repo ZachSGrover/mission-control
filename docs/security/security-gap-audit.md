@@ -185,6 +185,53 @@ Each step ends with a documented review checkpoint. **Do not skip**.
 
 ---
 
+## 6.8 Sprint 8A progress (2026-04-30)
+
+Security Sprint 8A on `feat/gated-onlymonster-proof-sprint-8a` proves
+the connector gate end-to-end on the **real OnlyMonster
+integration-style path** with a typed fake client — before any
+direct OnlyFans connector is implemented.
+
+- **Read-only fake client — done.**
+  `app.services.onlymonster_fake_client.FakeOnlyMonsterClient`
+  conforms to the Sprint 6 seam's expected `read_only_pull(creator_id=...)`
+  contract. Returns deterministic synthetic data with `synthetic:
+  True` marker. Refused in production unless
+  `MC_ONLYMONSTER_ALLOW_FAKE_CLIENT=1` (audited refusal on attempt).
+- **Gated production-proof entrypoint — done.**
+  `app.services.onlymonster_gate_proof.run_onlymonster_gated_proof`
+  composes: production guard → seam (Sprint 6) → gated wrapper
+  (Sprint 5) → connector gate (Sprint 2) → fake client. Returns a
+  typed `GatedProofResult` (allowed, reason, audit_event_id,
+  rows_read, rows_written=0). Audits both block and allow paths.
+- **Owner-only status + preview endpoints — done.** `GET
+  /security/onlymonster-gate/status` returns env-flag /
+  approval / consent / kill-switch / encryption-key / real-client
+  state for a creator. `POST /security/onlymonster-gate/preview`
+  runs a single proof against the fake client.
+- **UI status — done.** `/security` page renders an OnlyMonster
+  gated sync card with the readiness snapshot, a creator-id input,
+  and a "Run gated preview" button. No "Connect" button. Last
+  preview result is shown with `allowed/blocked`, row counts,
+  `error_category`, and audit id prefix.
+- **Tests — 15 cases.** Env flag off blocks; missing approval
+  blocks; missing consent blocks; global kill switch blocks;
+  connector kill switch blocks; allowed path passes and audits
+  both seam (`connector.run.finish`) and proof
+  (`connector.gated_proof.success`); fake refused in production
+  without flag; fake allowed with flag; production proof without
+  flag audits refusal and raises; Sprint 7 OF policy untouched;
+  disabled OF shell still refuses writes; OnlyMonster modules
+  expose no write callables; result type has no payload field;
+  fake payload is synthetic-only.
+- **Direct OnlyFans untouched.** A test asserts the Sprint 7
+  policy module's `READ_ACTIONS` (10) and `WRITE_ACTIONS` (20)
+  sets are unchanged in shape.
+
+Items still open: real OnlyMonster client wiring (post-OFI-merge),
+direct OnlyFans real read-only client (Sprint 8B), and everything
+deferred from Sprints 6/7.
+
 ## 6.7 Sprint 7 progress (2026-04-30)
 
 Security Sprint 7 on `feat/of-direct-readonly-prep-sprint-7` builds

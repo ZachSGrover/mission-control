@@ -90,6 +90,37 @@ export type ConsentCreateInput = {
   notes?: string | null;
 };
 
+export type OnlyMonsterGateStatus = {
+  connector_type: string;
+  requested_action: string;
+  creator_id: string | null;
+  organization_id: string | null;
+  env_flag_enabled: boolean;
+  fake_allowed_in_production: boolean;
+  is_production: boolean;
+  approval_present: boolean;
+  consent_present: boolean;
+  kill_switch_blocking: string | null;
+  encryption_key_dedicated: boolean;
+  real_client_wired: boolean;
+  direct_onlyfans_blocked: boolean;
+  notes: string;
+};
+
+export type OnlyMonsterGatePreviewResult = {
+  allowed: boolean;
+  connector_type: string;
+  requested_action: string;
+  creator_id: string | null;
+  rows_read: number;
+  rows_written: number;
+  last_event_at_iso: string | null;
+  audit_event_id: string | null;
+  error_category: string | null;
+  used_fake_client: boolean;
+  notes: string;
+};
+
 export type OnlyFansDirectStatus = {
   connector_type: string;
   mode: string; // "disabled" | "dry_run"
@@ -225,4 +256,22 @@ export const securityApi = {
     }),
   onlyfansDirectStatus: (f: FetchFn) =>
     jsonRequest<OnlyFansDirectStatus>(f, "/onlyfans-direct/status"),
+  onlymonsterGateStatus: (f: FetchFn, opts: { creatorId?: string | null } = {}) => {
+    const params = new URLSearchParams();
+    if (opts.creatorId) params.set("creator_id", opts.creatorId);
+    const qs = params.toString();
+    return jsonRequest<OnlyMonsterGateStatus>(
+      f,
+      `/onlymonster-gate/status${qs ? `?${qs}` : ""}`,
+    );
+  },
+  onlymonsterGatePreview: (
+    f: FetchFn,
+    body: { creator_id: string; organization_id?: string | null },
+  ) =>
+    jsonRequest<OnlyMonsterGatePreviewResult>(f, "/onlymonster-gate/preview", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    }),
 };

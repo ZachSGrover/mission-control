@@ -37,6 +37,9 @@ These are the controls that **fail closed** today. They are why this checklist c
 | A.14 | Direct OnlyFans dry-run + fixture mode | `app/services/onlyfans_direct_fixtures.py`, `OnlyFansDirectConnector.dry_run` | Synthetic fixtures only; payload is computed and discarded; full policy + gate + audit chain on every call. |
 | A.15 | Direct OnlyFans credential safety contract | `app/core/onlyfans_direct_credentials.py` | Vault-only; raw cookies forbidden; frontend session storage forbidden (CI scan); revocation/rotation runbooks. |
 | A.16 | Direct OnlyFans rate-limit and session-health policy | `app/core/onlyfans_direct_rate_policy.py` | Conservative defaults (10/min, 200/hr, 2s→300s backoff); `SessionHealth` enum; `CHALLENGE_REACTION` (stop+audit+notify+manual review). |
+| A.17 | OnlyMonster gated production-proof entrypoint | `app/services/onlymonster_gate_proof.py` | `run_onlymonster_gated_proof` wraps the seam with operator-friendly safety; refuses fake-in-production; audits `connector.gated_proof.{blocked,success}`. |
+| A.18 | OnlyMonster typed fake client | `app/services/onlymonster_fake_client.py` | `FakeOnlyMonsterClient` is read-only, no network, no creds; refused in production unless `MC_ONLYMONSTER_ALLOW_FAKE_CLIENT=1`. |
+| A.19 | OnlyMonster gate readiness snapshot endpoint | `GET /api/v1/security/onlymonster-gate/status` | Returns booleans/enums only — env flag, approval present, consent present, kill-switch blocking, encryption-key dedicated, real-client wired, direct-OF blocked. |
 
 If you flipped any of these off intentionally for a development run, **flip them back before continuing this checklist.**
 
@@ -80,6 +83,9 @@ Before turning on `MC_ONLYMONSTER_GATED_SYNC_ENABLED=1` against any non-Mission-
 | C.8 | `tests/test_security_operations.py` (gate refuse paths) still passes | CI run URL |  |
 | C.9 | A single dry-run fetch is executed and an `audit_events` row with `event_type='connector.run.finish'` is observed; `metadata.rows_written == 0` | psql evidence |  |
 | C.10 | If any of the above evidence is unavailable, the run is aborted and the env flag returned to OFF | runbook discipline |  |
+| C.11 | Sprint 8A gated proof: `POST /api/v1/security/onlymonster-gate/preview` returns `allowed=true` with `used_fake_client=true` against the test creator before any real-client cutover | API call evidence |  |
+| C.12 | Sprint 8A status snapshot (`GET /api/v1/security/onlymonster-gate/status?creator_id=<id>`) shows `approval_present=true`, `consent_present=true`, `kill_switch_blocking=null`, `encryption_key_dedicated=true` | snapshot |  |
+| C.13 | Production refuses the fake client (`MC_ONLYMONSTER_ALLOW_FAKE_CLIENT` is unset in the prod environment) — verify by attempting a proof in production and observing `connector.gated_proof.blocked` with `error_category=fake_refused_in_production` | psql evidence |  |
 
 When all of C.1 → C.10 are ✅, you may run a single sandboxed read against a non-real account. **Do not expand to a real account until Section D is also ✅.**
 

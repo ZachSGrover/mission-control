@@ -771,6 +771,173 @@ class OnlyFansDirectStatusResponse(BaseModel):
     write_actions_count: int
 
 
+# ── Sprint 8A: OnlyMonster gated proof status + preview ─────────────────────
+
+
+class OnlyMonsterGateStatusResponse(BaseModel):
+    """Sprint 8A read-only status for the OnlyMonster gated read path.
+
+    Surfaces only the booleans, enums, and small ints the security
+    admin UI needs to render readiness. Never includes the
+    OnlyMonster credential, a token preview, or any fan/creator
+    payload data.
+    """
+
+    connector_type: str
+    requested_action: str
+    creator_id: str | None
+    organization_id: str | None
+    env_flag_enabled: bool  # MC_ONLYMONSTER_GATED_SYNC_ENABLED
+    fake_allowed_in_production: bool  # MC_ONLYMONSTER_ALLOW_FAKE_CLIENT
+    is_production: bool
+    approval_present: bool
+    consent_present: bool
+    kill_switch_blocking: str | None  # None | "global" | "connector" | "organization" | "creator"
+    encryption_key_dedicated: bool
+    real_client_wired: bool
+    direct_onlyfans_blocked: bool  # always True in Sprint 8A
+    notes: str
+
+
+@router.get("/onlymonster-gate/status", response_model=OnlyMonsterGateStatusResponse)
+async def onlymonster_gate_status(
+    _: AuthContext = AUTH_DEP,
+    role: str = OWNER_DEP,
+    session: AsyncSession = SESSION_DEP,
+    creator_id: str | None = None,
+) -> OnlyMonsterGateStatusResponse:
+    """Owner-only readiness snapshot for the OnlyMonster gated path.
+
+    Sprint 8A surface. Pass ``creator_id`` to check the per-creator
+    approval / consent / kill-switch state; omit it for global
+    (unscoped) readiness.
+    """
+    del role
+    import os as _os
+
+    from app.core.startup_guard import is_production
+    from app.services import connector_approvals as _approvals_svc
+    from app.services import consent as _consent_svc
+    from app.services import kill_switch as _kill_switch_svc
+    from app.services.gated_onlymonster_sync import (
+        ENV_ENABLED as _OM_ENV_ENABLED,
+    )
+    from app.services.onlymonster_fake_client import (
+        ENV_ALLOW_FAKE_IN_PROD as _OM_ENV_FAKE,
+    )
+
+    env_flag = _os.environ.get(_OM_ENV_ENABLED, "0").strip() == "1"
+    fake_allowed = _os.environ.get(_OM_ENV_FAKE, "0").strip() == "1"
+
+    approval = await _approvals_svc.is_approved(
+        session,
+        connector_type="onlymonster",
+        requested_action="creator_sync",
+        creator_id=creator_id,
+    )
+    consent = await _consent_svc.is_granted(
+        session,
+        consent_type="onlymonster_sync",
+        creator_id=creator_id,
+    )
+    blocking = await _kill_switch_svc.check_action_allowed(
+        session,
+        connector_type="onlymonster",
+        creator_id=creator_id,
+    )
+
+    return OnlyMonsterGateStatusResponse(
+        connector_type="onlymonster",
+        requested_action="creator_sync",
+        creator_id=creator_id,
+        organization_id=None,
+        env_flag_enabled=env_flag,
+        fake_allowed_in_production=fake_allowed,
+        is_production=is_production(),
+        approval_present=approval is not None,
+        consent_present=consent is not None,
+        kill_switch_blocking=blocking[0] if blocking else None,
+        encryption_key_dedicated=is_dedicated_encryption_key_configured(),
+        real_client_wired=False,  # Sprint 8A: real client lives on feat/of-intelligence
+        direct_onlyfans_blocked=True,
+        notes=(
+            "OnlyMonster gated proof: env flag and gate must both pass. "
+            "Real OnlyMonster client is not on this branch; preview runs "
+            "use the fake client only."
+        ),
+    )
+
+
+class OnlyMonsterGatePreviewRequest(BaseModel):
+    creator_id: str
+    organization_id: UUID | None = None
+
+
+class OnlyMonsterGatePreviewResponse(BaseModel):
+    """Result of an owner-initiated gated proof preview.
+
+    Always uses the fake client in Sprint 8A. The shape mirrors
+    :class:`app.services.onlymonster_gate_proof.GatedProofResult`
+    minus internal-only fields.
+    """
+
+    allowed: bool
+    connector_type: str
+    requested_action: str
+    creator_id: str | None
+    rows_read: int
+    rows_written: int
+    last_event_at_iso: str | None
+    audit_event_id: str | None
+    error_category: str | None
+    used_fake_client: bool
+    notes: str
+
+
+@router.post("/onlymonster-gate/preview", response_model=OnlyMonsterGatePreviewResponse)
+async def onlymonster_gate_preview(
+    body: OnlyMonsterGatePreviewRequest,
+    auth: AuthContext = AUTH_DEP,
+    role: str = OWNER_DEP,
+    session: AsyncSession = SESSION_DEP,
+) -> OnlyMonsterGatePreviewResponse:
+    """Owner-only: run one gated proof against the fake OnlyMonster
+    client.
+
+    The fake client is the only client wired in this branch. The
+    seam, the gated wrapper, and the gate are all real — only the
+    last hop (the OnlyMonster client) is the fake. This proves the
+    chain end-to-end on a real integration-style path before any
+    direct OnlyFans connector exists.
+    """
+    del role
+    from app.services.onlymonster_fake_client import FakeOnlyMonsterClient
+    from app.services.onlymonster_gate_proof import run_onlymonster_gated_proof
+
+    fake = FakeOnlyMonsterClient()
+    result = await run_onlymonster_gated_proof(
+        session,
+        creator_id=body.creator_id,
+        organization_id=body.organization_id,
+        actor_user_id=auth.user.id if auth.user else None,
+        actor_email=auth.user.email if auth.user else None,
+        fake_client=fake,
+    )
+    return OnlyMonsterGatePreviewResponse(
+        allowed=result.allowed,
+        connector_type=result.connector_type,
+        requested_action=result.requested_action,
+        creator_id=result.creator_id,
+        rows_read=result.rows_read,
+        rows_written=result.rows_written,
+        last_event_at_iso=result.last_event_at_iso,
+        audit_event_id=result.audit_event_id,
+        error_category=result.error_category,
+        used_fake_client=result.used_fake_client,
+        notes=result.notes,
+    )
+
+
 @router.get("/onlyfans-direct/status", response_model=OnlyFansDirectStatusResponse)
 async def onlyfans_direct_status(
     _: AuthContext = AUTH_DEP,

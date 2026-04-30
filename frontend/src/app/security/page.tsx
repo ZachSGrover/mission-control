@@ -18,6 +18,8 @@ import {
   type ConsentCreateInput,
   type ConsentSummary,
   type OnlyFansDirectStatus,
+  type OnlyMonsterGatePreviewResult,
+  type OnlyMonsterGateStatus,
   type SecurityStatus,
 } from "@/lib/security/api";
 
@@ -78,29 +80,56 @@ function SecurityAdmin() {
   const [approvals, setApprovals] = useState<ApprovalSummary[]>([]);
   const [consents, setConsents] = useState<ConsentSummary[]>([]);
   const [ofDirect, setOfDirect] = useState<OnlyFansDirectStatus | null>(null);
+  const [omGate, setOmGate] = useState<OnlyMonsterGateStatus | null>(null);
+  const [omPreviewCreatorId, setOmPreviewCreatorId] = useState<string>("");
+  const [omPreviewResult, setOmPreviewResult] = useState<OnlyMonsterGatePreviewResult | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
 
   const refresh = useCallback(async () => {
     try {
-      const [s, a, c, od] = await Promise.all([
+      const [s, a, c, od, om] = await Promise.all([
         securityApi.status(fetchWithAuth),
         securityApi.approvals(fetchWithAuth, { limit: 25 }),
         securityApi.consents(fetchWithAuth, { limit: 25 }),
         securityApi.onlyfansDirectStatus(fetchWithAuth),
+        securityApi.onlymonsterGateStatus(fetchWithAuth, {
+          creatorId: omPreviewCreatorId.trim() || null,
+        }),
       ]);
       setStatus(s);
       setApprovals(a);
       setConsents(c);
       setOfDirect(od);
+      setOmGate(om);
       setError(null);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
       setLoading(false);
     }
-  }, [fetchWithAuth]);
+  }, [fetchWithAuth, omPreviewCreatorId]);
+
+  const onOmGatePreview = async () => {
+    const id = omPreviewCreatorId.trim();
+    if (!id) {
+      setError("creator_id is required for an OnlyMonster gate preview.");
+      return;
+    }
+    setBusy(true);
+    try {
+      const r = await securityApi.onlymonsterGatePreview(fetchWithAuth, {
+        creator_id: id,
+      });
+      setOmPreviewResult(r);
+      await refresh();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy(false);
+    }
+  };
 
   useEffect(() => {
     void refresh();
@@ -284,6 +313,111 @@ function SecurityAdmin() {
             <p className="text-xs mt-2" style={{ color: "var(--text-quiet)" }}>
               Toggling the global kill switch is the highest-stakes action in the system. Every toggle is audited at severity <em>critical</em>.
             </p>
+          </Card>
+        )}
+
+        {/* OnlyMonster gated sync readiness (Sprint 8A) */}
+        {omGate && (
+          <Card
+            title="OnlyMonster gated sync"
+            hint={omGate.real_client_wired ? "real client wired" : "fake client only"}
+          >
+            <div className="space-y-2 text-sm">
+              <ul className="text-xs space-y-1" style={{ color: "var(--text-muted)" }}>
+                <li>
+                  Env flag <code>MC_ONLYMONSTER_GATED_SYNC_ENABLED</code>:{" "}
+                  <strong>{omGate.env_flag_enabled ? "on" : "off"}</strong>
+                </li>
+                <li>
+                  Approval present:{" "}
+                  <strong style={{ color: omGate.approval_present ? "rgb(5,150,105)" : "rgb(180,83,9)" }}>
+                    {omGate.approval_present ? "yes" : "no"}
+                  </strong>
+                </li>
+                <li>
+                  Consent present:{" "}
+                  <strong style={{ color: omGate.consent_present ? "rgb(5,150,105)" : "rgb(180,83,9)" }}>
+                    {omGate.consent_present ? "yes" : "no"}
+                  </strong>
+                </li>
+                <li>
+                  Kill switch:{" "}
+                  <strong style={{ color: omGate.kill_switch_blocking ? "rgb(190,18,60)" : "rgb(5,150,105)" }}>
+                    {omGate.kill_switch_blocking ?? "clear"}
+                  </strong>
+                </li>
+                <li>
+                  Encryption key dedicated:{" "}
+                  <strong>{omGate.encryption_key_dedicated ? "yes" : "no"}</strong>
+                </li>
+                <li>
+                  Real client wired: <strong>{omGate.real_client_wired ? "yes" : "no"}</strong>
+                </li>
+                <li>
+                  Direct OnlyFans:{" "}
+                  <strong style={{ color: "rgb(190,18,60)" }}>
+                    {omGate.direct_onlyfans_blocked ? "blocked" : "NOT BLOCKED"}
+                  </strong>
+                </li>
+              </ul>
+              <p className="text-xs" style={{ color: "var(--text-quiet)" }}>
+                {omGate.notes}
+              </p>
+
+              <div className="flex items-end gap-2 pt-2 border-t" style={{ borderColor: "var(--border)" }}>
+                <label className="flex-1 text-xs">
+                  <span className="block mb-1 font-medium uppercase tracking-wider" style={{ color: "var(--text-quiet)" }}>
+                    Creator ID (for preview against fake client)
+                  </span>
+                  <input
+                    type="text"
+                    value={omPreviewCreatorId}
+                    onChange={(e) => setOmPreviewCreatorId(e.target.value)}
+                    placeholder="creator-A"
+                    className="w-full rounded-md border px-2 py-1.5 text-sm"
+                    style={{ borderColor: "var(--border)", background: "var(--surface)", color: "var(--text)" }}
+                  />
+                </label>
+                <button
+                  type="button"
+                  onClick={() => void onOmGatePreview()}
+                  disabled={busy || !omPreviewCreatorId.trim()}
+                  className="rounded-md border px-3 py-1.5 text-sm disabled:opacity-50"
+                  style={{ borderColor: "var(--border)", color: "var(--text)" }}
+                >
+                  Run gated preview
+                </button>
+              </div>
+              <p className="text-xs" style={{ color: "var(--text-quiet)" }}>
+                Preview always uses the fake client. There is no &ldquo;Connect&rdquo;
+                button. Production refuses the fake client unless{" "}
+                <code>MC_ONLYMONSTER_ALLOW_FAKE_CLIENT=1</code>.
+              </p>
+
+              {omPreviewResult && (
+                <div
+                  className="rounded-md border p-2 text-xs space-y-1"
+                  style={{
+                    borderColor: omPreviewResult.allowed ? "rgb(5,150,105)" : "rgb(190,18,60)",
+                    background: "var(--surface)",
+                  }}
+                >
+                  <p style={{ color: "var(--text)" }}>
+                    Last preview:{" "}
+                    <strong style={{ color: omPreviewResult.allowed ? "rgb(5,150,105)" : "rgb(190,18,60)" }}>
+                      {omPreviewResult.allowed ? "ALLOWED" : "BLOCKED"}
+                    </strong>{" "}
+                    · creator <code>{omPreviewResult.creator_id}</code>
+                  </p>
+                  <p style={{ color: "var(--text-muted)" }}>
+                    rows_read={omPreviewResult.rows_read}, rows_written={omPreviewResult.rows_written}
+                    {omPreviewResult.error_category ? `, error=${omPreviewResult.error_category}` : ""}
+                    {omPreviewResult.audit_event_id ? `, audit_id=${omPreviewResult.audit_event_id.slice(0, 8)}…` : ""}
+                  </p>
+                  <p style={{ color: "var(--text-quiet)" }}>{omPreviewResult.notes}</p>
+                </div>
+              )}
+            </div>
           </Card>
         )}
 

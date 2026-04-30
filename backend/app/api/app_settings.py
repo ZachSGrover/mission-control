@@ -19,7 +19,6 @@ from app.core.secrets_store import (
     delete_secret,
     get_api_key_with_source,
     get_secret,
-    get_secret_with_source,
     mask_key,
     set_secret,
 )

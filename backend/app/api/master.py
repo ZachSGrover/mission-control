@@ -22,25 +22,21 @@ import asyncio
 import json
 import logging
 import os
-import time
 from datetime import datetime, timezone
-from typing import Any, Literal
+from typing import Any
 
 import httpx
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel
 
 from app.api.mc_roles import require_owner
 from app.api.workflows import (
     RENDER_API_KEY,
     RENDER_SERVICE_ID,
-    DeployResponse,
-    HealthReport,
     _get_urls,
     run_health_check,
 )
-from app.core.auth import AuthContext, get_auth_context
-from app.core.config import settings
+from app.core.auth import get_auth_context
 
 router = APIRouter(tags=["master"])
 logger = logging.getLogger(__name__)
@@ -224,8 +220,6 @@ async def _run_cycle() -> dict[str, Any]:
     _total_errors += report.fail_count
 
     # 2. Error detection
-    from app.api.workflows import ErrorReport
-
     errors: list[str] = []
     suggestions: list[str] = []
     for check in report.checks:

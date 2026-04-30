@@ -23,7 +23,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel
 
 from app.api.mc_roles import require_owner
-from app.core.auth import AuthContext, get_auth_context
+from app.core.auth import get_auth_context
 
 router = APIRouter(prefix="/workflows", tags=["workflows"])
 logger = logging.getLogger(__name__)

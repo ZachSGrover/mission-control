@@ -22,6 +22,7 @@ import os
 import time
 from collections import OrderedDict
 from threading import RLock
+from typing import Any
 
 __all__ = ["seen", "namespace_size"]
 
@@ -34,7 +35,7 @@ _mem_lock = RLock()
 _redis_warned = False
 
 
-def _redis():
+def _redis() -> Any | None:
     global _redis_warned
     try:
         import redis

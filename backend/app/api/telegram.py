@@ -19,7 +19,7 @@ from __future__ import annotations
 import logging
 import os
 import time
-from typing import Any
+from typing import Any, cast
 
 import httpx
 from fastapi import APIRouter, Depends, Header, HTTPException, Request, status
@@ -30,7 +30,7 @@ from app.api.mc_roles import require_owner
 from app.core import message_dedup, message_metrics, telegram_polling
 from app.core.ai_backend import ask_ai
 from app.core.auth import AuthContext, get_auth_context
-from app.core.secrets_store import delete_secret, get_secret_with_source, mask_key, set_secret
+from app.core.secrets_store import delete_secret, get_secret_with_source, set_secret
 from app.core.speed_layer import classify
 from app.db.session import get_session
 
@@ -127,7 +127,7 @@ async def _get_me(token: str) -> dict[str, Any]:
     async with httpx.AsyncClient(timeout=10.0) as client:
         resp = await client.get(url)
         resp.raise_for_status()
-        return resp.json()
+        return cast(dict[str, Any], resp.json())
 
 
 # ── Command handlers ──────────────────────────────────────────────────────────

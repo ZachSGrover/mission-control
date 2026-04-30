@@ -4,16 +4,17 @@ from __future__ import annotations
 
 import logging
 
+from anthropic.types import TextBlock
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel
 from sqlmodel.ext.asyncio.session import AsyncSession
-
-logger = logging.getLogger(__name__)
 
 from app.core.auth import AuthContext, get_auth_context
 from app.core.config import settings
 from app.core.secrets_store import get_api_key
 from app.db.session import get_session
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/synthesize", tags=["synthesize"])
 AUTH_DEP = Depends(get_auth_context)
@@ -153,7 +154,9 @@ async def _synthesize_with_anthropic(api_key: str, prompt: str) -> SynthesisResu
             ),
             messages=[{"role": "user", "content": prompt}],
         )
-        text = resp.content[0].text if resp.content else ""
+        text = (
+            resp.content[0].text if resp.content and isinstance(resp.content[0], TextBlock) else ""
+        )
     except Exception as exc:
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,

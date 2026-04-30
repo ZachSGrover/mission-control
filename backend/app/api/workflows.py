@@ -23,7 +23,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel
 
 from app.api.mc_roles import require_owner
-from app.core.auth import AuthContext, get_auth_context
+from app.core.auth import get_auth_context
 
 router = APIRouter(prefix="/workflows", tags=["workflows"])
 logger = logging.getLogger(__name__)
@@ -228,8 +228,8 @@ async def trigger_health_check(_role: str = OWNER_DEP) -> HealthReport:
 async def get_last_status(_role: str = OWNER_DEP) -> dict[str, Any] | None:
     """Return the last cached health check result (up to 30s old), or None."""
     if not _last_health or (time.time() - _last_health_ts) > HEALTH_CACHE_TTL:
-        return None  # type: ignore[return-value]
-    return _last_health  # type: ignore[return-value]
+        return None
+    return _last_health
 
 
 @router.post("/deploy", response_model=DeployResponse)

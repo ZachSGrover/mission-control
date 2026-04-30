@@ -123,7 +123,7 @@ async def discord_status(_: AuthContext = AUTH_DEP) -> DiscordStatusResponse:
                             return DiscordStatusResponse(
                                 connected=is_connected,
                                 bot_username=bot_name,
-                                detail=f"openclaw:{ch.get('status','')}",
+                                detail=f"openclaw:{ch.get('status', '')}",
                             )
                 _note_transition(True)
                 return DiscordStatusResponse(connected=True, detail="openclaw:gateway-reachable")

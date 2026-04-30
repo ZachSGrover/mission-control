@@ -499,7 +499,7 @@ async def lifespan(_: FastAPI) -> AsyncIterator[None]:
     from app.core import telegram_polling as _tgpoll
 
     _bg_stop = _asyncio.Event()
-    _bg_tasks: list[_asyncio.Task] = [
+    _bg_tasks: list[_asyncio.Task[None]] = [
         _asyncio.create_task(_netmon.run_forever(_bg_stop), name="network_monitor"),
         _asyncio.create_task(_tgpoll.run_supervisor(_bg_stop), name="telegram_polling_supervisor"),
     ]

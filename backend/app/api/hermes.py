@@ -63,9 +63,7 @@ def _load_one(path: Path) -> tuple[HermesIncident | None, bool]:
     if isinstance(raw, dict) and "alert" in raw and isinstance(raw["alert"], dict):
         alert = raw["alert"]
         last_fired = raw.get("last_fired_at")
-        last_fired_unix = (
-            int(last_fired) if isinstance(last_fired, (int, float)) else None
-        )
+        last_fired_unix = int(last_fired) if isinstance(last_fired, (int, float)) else None
     elif isinstance(raw, dict):
         alert = raw
         last_fired_unix = None

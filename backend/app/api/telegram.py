@@ -368,7 +368,7 @@ async def _process_incoming_message(
                 route.reason,
                 chat_id,
             )
-            response_text, provider = await ask_ai(text, session)
+            response_text, provider = await ask_ai(text, session, trigger_source="telegram")
             logger.info("telegram.ai.replied provider=%s chars=%d", provider, len(response_text))
         else:
             response_text = route.fast_reply or "👍"

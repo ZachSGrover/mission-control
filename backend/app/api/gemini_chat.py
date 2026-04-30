@@ -72,6 +72,11 @@ async def stream_chat(
         from google import genai
         from google.genai import types
 
+        # TODO(usage-logging-streaming): wire record_usage_event() on stream
+        # completion. usage_metadata may surface only on the terminal chunk
+        # (sometimes absent entirely), so this needs an end-of-stream hook
+        # rather than the inline wrap used elsewhere. Out of scope for the
+        # initial usage-logging slice.
         client = genai.Client(api_key=api_key)
         generate_kwargs: dict[str, Any] = {"model": model, "contents": contents}
         if system_instruction:

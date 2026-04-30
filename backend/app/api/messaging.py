@@ -54,7 +54,7 @@ async def route_message(
     provider = "none"
 
     if route.use_ai:
-        reply, provider = await ask_ai(body.text, session)
+        reply, provider = await ask_ai(body.text, session, trigger_source=body.source)
     else:
         # "command" means the caller should route to its own command handler —
         # surface a hint so misrouted commands don't silently no-op.

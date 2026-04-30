@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+from datetime import datetime
 
 from anthropic.types import TextBlock
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -12,9 +13,18 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 from app.core.auth import AuthContext, get_auth_context
 from app.core.config import settings
 from app.core.secrets_store import get_api_key
+from app.core.time import utcnow
 from app.db.session import get_session
+from app.services.usage.logger import (
+    current_environment,
+    extract_provider_usage,
+    record_usage_event,
+)
 
 logger = logging.getLogger(__name__)
+
+_FEATURE = "synthesize"
+_TRIGGER = "synthesize"
 
 router = APIRouter(prefix="/synthesize", tags=["synthesize"])
 AUTH_DEP = Depends(get_auth_context)
@@ -118,19 +128,19 @@ async def generate_synthesis(
             "[synthesize] anthropic key present — using Claude (%s)",
             settings.anthropic_synthesis_model,
         )
-        return await _synthesize_with_anthropic(anthropic_key.strip(), prompt)
+        return await _synthesize_with_anthropic(anthropic_key.strip(), prompt, session)
 
     logger.info("[synthesize] no anthropic key — falling back to OpenAI GPT-4o")
     openai_key = await get_api_key("openai", session, settings.openai_api_key)
     if openai_key.strip():
         logger.info("[synthesize] openai key present — using GPT-4o")
-        return await _synthesize_with_openai(openai_key.strip(), prompt)
+        return await _synthesize_with_openai(openai_key.strip(), prompt, session)
 
     logger.info("[synthesize] no openai key — falling back to Gemini")
     gemini_key = await get_api_key("gemini", session, settings.gemini_api_key)
     if gemini_key.strip():
         logger.info("[synthesize] gemini key present — using %s", settings.gemini_model)
-        return await _synthesize_with_gemini(gemini_key.strip(), prompt)
+        return await _synthesize_with_gemini(gemini_key.strip(), prompt, session)
 
     logger.error("[synthesize] no API keys configured — synthesis unavailable")
     raise HTTPException(
@@ -139,11 +149,53 @@ async def generate_synthesis(
     )
 
 
-async def _synthesize_with_anthropic(api_key: str, prompt: str) -> SynthesisResult:
+async def _record(
+    session: AsyncSession,
+    *,
+    provider: str,
+    model: str,
+    started_at: datetime,
+    response: object | None = None,
+    error: BaseException | None = None,
+) -> None:
+    """Record one usage event for a synthesize call.  Best-effort."""
+    if error is not None:
+        await record_usage_event(
+            session,
+            provider=provider,
+            model=model,
+            feature=_FEATURE,
+            trigger_source=_TRIGGER,
+            environment=current_environment(),
+            status="error",
+            error=type(error).__name__,
+            started_at=started_at,
+            ended_at=utcnow(),
+        )
+        return
+    in_tok, out_tok = extract_provider_usage(provider, response)
+    await record_usage_event(
+        session,
+        provider=provider,
+        model=model,
+        input_tokens=in_tok,
+        output_tokens=out_tok,
+        feature=_FEATURE,
+        trigger_source=_TRIGGER,
+        environment=current_environment(),
+        started_at=started_at,
+        ended_at=utcnow(),
+    )
+
+
+async def _synthesize_with_anthropic(
+    api_key: str, prompt: str, session: AsyncSession
+) -> SynthesisResult:
     from anthropic import AsyncAnthropic
 
     client = AsyncAnthropic(api_key=api_key)
     model = settings.anthropic_synthesis_model
+    started_at = utcnow()
     try:
         resp = await client.messages.create(
             model=model,
@@ -154,25 +206,28 @@ async def _synthesize_with_anthropic(api_key: str, prompt: str) -> SynthesisResu
             ),
             messages=[{"role": "user", "content": prompt}],
         )
-        text = (
-            resp.content[0].text if resp.content and isinstance(resp.content[0], TextBlock) else ""
-        )
     except Exception as exc:
+        await _record(session, provider="anthropic", model=model, started_at=started_at, error=exc)
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
             detail=f"Anthropic synthesis error: {exc}",
         ) from exc
 
+    await _record(session, provider="anthropic", model=model, started_at=started_at, response=resp)
+    text = resp.content[0].text if resp.content and isinstance(resp.content[0], TextBlock) else ""
     logger.info("[synthesize] ✓ completed via claude/%s (%d chars)", model, len(text.strip()))
     return SynthesisResult(synthesis=text.strip(), model_used=f"claude/{model}")
 
 
-async def _synthesize_with_openai(api_key: str, prompt: str) -> SynthesisResult:
+async def _synthesize_with_openai(
+    api_key: str, prompt: str, session: AsyncSession
+) -> SynthesisResult:
     from openai import AsyncOpenAI
 
     client = AsyncOpenAI(api_key=api_key)
     # Use gpt-4o for synthesis — higher quality than gpt-4o-mini
     model = "gpt-4o"
+    started_at = utcnow()
     try:
         resp = await client.chat.completions.create(
             model=model,
@@ -189,23 +244,28 @@ async def _synthesize_with_openai(api_key: str, prompt: str) -> SynthesisResult:
             temperature=0.3,
             max_tokens=4096,
         )
-        text = resp.choices[0].message.content or ""
     except Exception as exc:
+        await _record(session, provider="openai", model=model, started_at=started_at, error=exc)
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
             detail=f"OpenAI synthesis error: {exc}",
         ) from exc
 
+    await _record(session, provider="openai", model=model, started_at=started_at, response=resp)
+    text = resp.choices[0].message.content or ""
     logger.info("[synthesize] ✓ completed via openai/%s (%d chars)", model, len(text.strip()))
     return SynthesisResult(synthesis=text.strip(), model_used=f"openai/{model}")
 
 
-async def _synthesize_with_gemini(api_key: str, prompt: str) -> SynthesisResult:
+async def _synthesize_with_gemini(
+    api_key: str, prompt: str, session: AsyncSession
+) -> SynthesisResult:
     from google import genai
     from google.genai import types
 
     client = genai.Client(api_key=api_key)
     model = settings.gemini_model
+    started_at = utcnow()
     try:
         resp = client.models.generate_content(
             model=model,
@@ -218,12 +278,14 @@ async def _synthesize_with_gemini(api_key: str, prompt: str) -> SynthesisResult:
                 temperature=0.3,
             ),
         )
-        text = resp.text or ""
     except Exception as exc:
+        await _record(session, provider="gemini", model=model, started_at=started_at, error=exc)
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
             detail=f"Gemini synthesis error: {exc}",
         ) from exc
 
+    await _record(session, provider="gemini", model=model, started_at=started_at, response=resp)
+    text = resp.text or ""
     logger.info("[synthesize] ✓ completed via gemini/%s (%d chars)", model, len(text.strip()))
     return SynthesisResult(synthesis=text.strip(), model_used=f"gemini/{model}")

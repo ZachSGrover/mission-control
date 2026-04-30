@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import logging
 import re
+from datetime import datetime
 from typing import Any, Literal, cast
 
 from anthropic.types import TextBlock
@@ -15,12 +16,61 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 from app.core.auth import AuthContext, get_auth_context
 from app.core.config import settings
 from app.core.secrets_store import get_api_key
+from app.core.time import utcnow
 from app.db.session import get_session
+from app.services.usage.logger import (
+    current_environment,
+    extract_provider_usage,
+    record_usage_event,
+)
 
 router = APIRouter(prefix="/operator", tags=["operator"])
 AUTH_DEP = Depends(get_auth_context)
 SESSION_DEP = Depends(get_session)
 logger = logging.getLogger(__name__)
+
+
+_TRIGGER = "operator"
+
+
+async def _record(
+    session: AsyncSession,
+    *,
+    provider: str,
+    model: str,
+    feature: str,
+    started_at: datetime,
+    response: object | None = None,
+    error: BaseException | None = None,
+) -> None:
+    if error is not None:
+        await record_usage_event(
+            session,
+            provider=provider,
+            model=model,
+            feature=feature,
+            trigger_source=_TRIGGER,
+            environment=current_environment(),
+            status="error",
+            error=type(error).__name__,
+            started_at=started_at,
+            ended_at=utcnow(),
+        )
+        return
+    in_tok, out_tok = extract_provider_usage(provider, response)
+    await record_usage_event(
+        session,
+        provider=provider,
+        model=model,
+        input_tokens=in_tok,
+        output_tokens=out_tok,
+        feature=feature,
+        trigger_source=_TRIGGER,
+        environment=current_environment(),
+        started_at=started_at,
+        ended_at=utcnow(),
+    )
+
 
 StepType = Literal["research", "write", "analyze", "decide"]
 ProviderType = Literal["claude", "chatgpt", "gemini"]
@@ -156,23 +206,40 @@ async def create_plan(
     from anthropic import AsyncAnthropic
 
     client = AsyncAnthropic(api_key=anthropic_key.strip())
+    model = settings.anthropic_synthesis_model
+    started_at = utcnow()
 
     try:
         resp = await client.messages.create(
-            model=settings.anthropic_synthesis_model,
+            model=model,
             max_tokens=1024,
             system=PLANNING_SYSTEM,
             messages=[{"role": "user", "content": prompt}],
         )
-        text = (
-            resp.content[0].text if resp.content and isinstance(resp.content[0], TextBlock) else ""
-        )
-        logger.info("[operator/plan] raw: %s", text[:400])
     except Exception as exc:
+        await _record(
+            session,
+            provider="anthropic",
+            model=model,
+            feature="operator.plan",
+            started_at=started_at,
+            error=exc,
+        )
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
             detail=f"Planning error: {exc}",
         ) from exc
+
+    await _record(
+        session,
+        provider="anthropic",
+        model=model,
+        feature="operator.plan",
+        started_at=started_at,
+        response=resp,
+    )
+    text = resp.content[0].text if resp.content and isinstance(resp.content[0], TextBlock) else ""
+    logger.info("[operator/plan] raw: %s", text[:400])
 
     try:
         data = _extract_json(text)
@@ -212,19 +279,19 @@ async def execute_step(
         anthropic_key = await get_api_key("anthropic", session, settings.anthropic_api_key)
         if not anthropic_key.strip():
             raise HTTPException(status_code=400, detail="Anthropic API key not configured.")
-        return await _run_claude(anthropic_key.strip(), user_message, system)
+        return await _run_claude(anthropic_key.strip(), user_message, system, session)
 
     if request.provider == "chatgpt":
         openai_key = await get_api_key("openai", session, settings.openai_api_key)
         if not openai_key.strip():
             raise HTTPException(status_code=400, detail="OpenAI API key not configured.")
-        return await _run_openai(openai_key.strip(), user_message, system)
+        return await _run_openai(openai_key.strip(), user_message, system, session)
 
     if request.provider == "gemini":
         gemini_key = await get_api_key("gemini", session, settings.gemini_api_key)
         if not gemini_key.strip():
             raise HTTPException(status_code=400, detail="Gemini API key not configured.")
-        return await _run_gemini(gemini_key.strip(), user_message, system)
+        return await _run_gemini(gemini_key.strip(), user_message, system, session)
 
     raise HTTPException(status_code=400, detail=f"Unknown provider: {request.provider}")
 
@@ -243,6 +310,7 @@ async def extract_insights(
     from anthropic import AsyncAnthropic
 
     client = AsyncAnthropic(api_key=anthropic_key.strip())
+    model = settings.anthropic_synthesis_model
 
     prompt = (
         f"Goal: {request.goal}\n"
@@ -250,13 +318,35 @@ async def extract_insights(
         f"Result:\n{request.step_result[:1500]}"
     )
 
+    started_at = utcnow()
     try:
         resp = await client.messages.create(
-            model=settings.anthropic_synthesis_model,
+            model=model,
             max_tokens=512,
             system=INSIGHT_SYSTEM,
             messages=[{"role": "user", "content": prompt}],
         )
+    except Exception as exc:
+        await _record(
+            session,
+            provider="anthropic",
+            model=model,
+            feature="operator.extract_insights",
+            started_at=started_at,
+            error=exc,
+        )
+        logger.warning("[operator/extract-insights] failed: %s", exc)
+        return ExtractInsightsResponse(insights=[])
+
+    await _record(
+        session,
+        provider="anthropic",
+        model=model,
+        feature="operator.extract_insights",
+        started_at=started_at,
+        response=resp,
+    )
+    try:
         text = (
             resp.content[0].text
             if resp.content and isinstance(resp.content[0], TextBlock)
@@ -267,18 +357,21 @@ async def extract_insights(
         logger.info("[operator/extract-insights] %d insights", len(insights))
         return ExtractInsightsResponse(insights=insights)
     except Exception as exc:
-        logger.warning("[operator/extract-insights] failed: %s", exc)
+        logger.warning("[operator/extract-insights] parse failed: %s", exc)
         return ExtractInsightsResponse(insights=[])
 
 
 # ── Provider runners ──────────────────────────────────────────────────────────
 
 
-async def _run_claude(api_key: str, user_message: str, system: str) -> ExecuteResponse:
+async def _run_claude(
+    api_key: str, user_message: str, system: str, session: AsyncSession
+) -> ExecuteResponse:
     from anthropic import AsyncAnthropic
 
     client = AsyncAnthropic(api_key=api_key)
     model = settings.anthropic_synthesis_model
+    started_at = utcnow()
     try:
         resp = await client.messages.create(
             model=model,
@@ -286,20 +379,39 @@ async def _run_claude(api_key: str, user_message: str, system: str) -> ExecuteRe
             system=system,
             messages=[{"role": "user", "content": user_message}],
         )
-        text = (
-            resp.content[0].text if resp.content and isinstance(resp.content[0], TextBlock) else ""
-        ).strip()
-        logger.info("[operator/execute] claude/%s done (%d chars)", model, len(text))
     except Exception as exc:
+        await _record(
+            session,
+            provider="anthropic",
+            model=model,
+            feature="operator.execute",
+            started_at=started_at,
+            error=exc,
+        )
         raise HTTPException(status_code=502, detail=f"Claude error: {exc}") from exc
+    await _record(
+        session,
+        provider="anthropic",
+        model=model,
+        feature="operator.execute",
+        started_at=started_at,
+        response=resp,
+    )
+    text = (
+        resp.content[0].text if resp.content and isinstance(resp.content[0], TextBlock) else ""
+    ).strip()
+    logger.info("[operator/execute] claude/%s done (%d chars)", model, len(text))
     return ExecuteResponse(result=text, provider=f"claude/{model}")
 
 
-async def _run_openai(api_key: str, user_message: str, system: str) -> ExecuteResponse:
+async def _run_openai(
+    api_key: str, user_message: str, system: str, session: AsyncSession
+) -> ExecuteResponse:
     from openai import AsyncOpenAI
 
     client = AsyncOpenAI(api_key=api_key)
     model = "gpt-4o"
+    started_at = utcnow()
     try:
         resp = await client.chat.completions.create(
             model=model,
@@ -310,19 +422,38 @@ async def _run_openai(api_key: str, user_message: str, system: str) -> ExecuteRe
                 {"role": "user", "content": user_message},
             ],
         )
-        text = (resp.choices[0].message.content or "").strip()
-        logger.info("[operator/execute] openai/%s done (%d chars)", model, len(text))
     except Exception as exc:
+        await _record(
+            session,
+            provider="openai",
+            model=model,
+            feature="operator.execute",
+            started_at=started_at,
+            error=exc,
+        )
         raise HTTPException(status_code=502, detail=f"OpenAI error: {exc}") from exc
+    await _record(
+        session,
+        provider="openai",
+        model=model,
+        feature="operator.execute",
+        started_at=started_at,
+        response=resp,
+    )
+    text = (resp.choices[0].message.content or "").strip()
+    logger.info("[operator/execute] openai/%s done (%d chars)", model, len(text))
     return ExecuteResponse(result=text, provider=f"openai/{model}")
 
 
-async def _run_gemini(api_key: str, user_message: str, system: str) -> ExecuteResponse:
+async def _run_gemini(
+    api_key: str, user_message: str, system: str, session: AsyncSession
+) -> ExecuteResponse:
     from google import genai
     from google.genai import types
 
     client = genai.Client(api_key=api_key)
     model = settings.gemini_model
+    started_at = utcnow()
     try:
         resp = client.models.generate_content(
             model=model,
@@ -332,8 +463,24 @@ async def _run_gemini(api_key: str, user_message: str, system: str) -> ExecuteRe
                 temperature=0.4,
             ),
         )
-        text = (resp.text or "").strip()
-        logger.info("[operator/execute] gemini/%s done (%d chars)", model, len(text))
     except Exception as exc:
+        await _record(
+            session,
+            provider="gemini",
+            model=model,
+            feature="operator.execute",
+            started_at=started_at,
+            error=exc,
+        )
         raise HTTPException(status_code=502, detail=f"Gemini error: {exc}") from exc
+    await _record(
+        session,
+        provider="gemini",
+        model=model,
+        feature="operator.execute",
+        started_at=started_at,
+        response=resp,
+    )
+    text = (resp.text or "").strip()
+    logger.info("[operator/execute] gemini/%s done (%d chars)", model, len(text))
     return ExecuteResponse(result=text, provider=f"gemini/{model}")

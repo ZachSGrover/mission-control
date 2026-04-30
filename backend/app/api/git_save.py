@@ -7,6 +7,7 @@ import logging
 import subprocess
 from datetime import datetime
 from pathlib import Path
+from typing import Any
 
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel
@@ -41,7 +42,7 @@ class SaveResponse(BaseModel):
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
 
-def _run(args: list[str], *, env: dict | None = None) -> tuple[int, str, str]:
+def _run(args: list[str], *, env: dict[str, Any] | None = None) -> tuple[int, str, str]:
     """Run a git command synchronously, return (returncode, stdout, stderr)."""
     result = subprocess.run(
         args,
@@ -54,7 +55,7 @@ def _run(args: list[str], *, env: dict | None = None) -> tuple[int, str, str]:
     return result.returncode, result.stdout.strip(), result.stderr.strip()
 
 
-def _git(*args: str, env: dict | None = None) -> tuple[int, str, str]:
+def _git(*args: str, env: dict[str, Any] | None = None) -> tuple[int, str, str]:
     return _run(["git", *args], env=env)
 
 

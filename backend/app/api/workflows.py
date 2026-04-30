@@ -228,8 +228,8 @@ async def trigger_health_check(_role: str = OWNER_DEP) -> HealthReport:
 async def get_last_status(_role: str = OWNER_DEP) -> dict[str, Any] | None:
     """Return the last cached health check result (up to 30s old), or None."""
     if not _last_health or (time.time() - _last_health_ts) > HEALTH_CACHE_TTL:
-        return None  # type: ignore[return-value]
-    return _last_health  # type: ignore[return-value]
+        return None
+    return _last_health
 
 
 @router.post("/deploy", response_model=DeployResponse)

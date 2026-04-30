@@ -19,7 +19,7 @@ from __future__ import annotations
 import logging
 import os
 import time
-from typing import Any
+from typing import Any, cast
 
 import httpx
 from fastapi import APIRouter, Depends, Header, HTTPException, Request, status
@@ -127,7 +127,7 @@ async def _get_me(token: str) -> dict[str, Any]:
     async with httpx.AsyncClient(timeout=10.0) as client:
         resp = await client.get(url)
         resp.raise_for_status()
-        return resp.json()
+        return cast(dict[str, Any], resp.json())
 
 
 # ── Command handlers ──────────────────────────────────────────────────────────

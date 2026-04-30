@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import json
+from collections.abc import AsyncIterator
+from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.responses import StreamingResponse
@@ -66,12 +68,12 @@ async def stream_chat(
         gemini_role = "model" if m.role == "assistant" else "user"
         contents.append({"role": gemini_role, "parts": [{"text": m.content}]})
 
-    async def generate() -> object:
+    async def generate() -> AsyncIterator[str]:
         from google import genai
         from google.genai import types
 
         client = genai.Client(api_key=api_key)
-        generate_kwargs: dict = {"model": model, "contents": contents}
+        generate_kwargs: dict[str, Any] = {"model": model, "contents": contents}
         if system_instruction:
             generate_kwargs["config"] = types.GenerateContentConfig(
                 system_instruction=system_instruction["parts"][0]["text"]

@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import json
+from collections.abc import AsyncIterator
+from typing import cast
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.responses import StreamingResponse
@@ -56,16 +58,20 @@ async def stream_chat(
     model = (request.model or settings.openai_model).strip()
     messages = [{"role": m.role, "content": m.content} for m in request.messages]
 
-    async def generate() -> object:
+    async def generate() -> AsyncIterator[str]:
         from openai import APIError as OpenAIAPIError
-        from openai import AsyncOpenAI
+        from openai import AsyncOpenAI, AsyncStream
+        from openai.types.chat import ChatCompletionChunk
 
         client = AsyncOpenAI(api_key=api_key)
         try:
-            stream = await client.chat.completions.create(
-                model=model,
-                messages=messages,  # type: ignore[arg-type]
-                stream=True,
+            stream = cast(
+                AsyncStream[ChatCompletionChunk],
+                await client.chat.completions.create(
+                    model=model,
+                    messages=messages,  # type: ignore[arg-type]
+                    stream=True,
+                ),
             )
             async for chunk in stream:
                 choice = chunk.choices[0] if chunk.choices else None

@@ -93,10 +93,7 @@ async def _enrich(row: MCAllowedUser, session: AsyncSession) -> AllowedUserEntry
         role_row = role_result.first()
 
     email = row.email or (user.email if user else None)
-    display_role = (
-        role_row.role if role_row
-        else (row.pending_role or "viewer")
-    )
+    display_role = role_row.role if role_row else (row.pending_role or "viewer")
 
     return AllowedUserEntry(
         clerk_user_id=row.clerk_user_id,

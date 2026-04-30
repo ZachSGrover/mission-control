@@ -12,8 +12,10 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
+from collections.abc import Awaitable, Callable
 from typing import Final
 
+from anthropic.types import TextBlock
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.core.config import settings
@@ -55,7 +57,7 @@ def _is_transient(exc: BaseException) -> bool:
 
 
 async def _attempt_with_retry(
-    coro_factory,  # zero-arg callable returning a coroutine
+    coro_factory: Callable[[], Awaitable[str]],
     provider: str,
     timeout_s: float,
 ) -> tuple[str, int]:
@@ -174,7 +176,7 @@ async def _call_anthropic(prompt: str, api_key: str) -> str:
         system=_SYSTEM_PROMPT,
         messages=[{"role": "user", "content": prompt}],
     )
-    parts = [block.text for block in message.content if getattr(block, "type", None) == "text"]
+    parts = [block.text for block in message.content if isinstance(block, TextBlock)]
     return "".join(parts).strip() or "(empty reply)"
 
 

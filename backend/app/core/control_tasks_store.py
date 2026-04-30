@@ -102,7 +102,7 @@ class Task:
 _redis_warned = False
 
 
-def _redis():
+def _redis() -> Any | None:
     """Return a redis.Redis client or None if unavailable."""
     global _redis_warned
     try:
@@ -130,11 +130,11 @@ def _task_key(task_id: str) -> str:
     return _TASK_KEY_FMT.format(task_id=task_id)
 
 
-def _save_task_redis(client, task: Task) -> None:
+def _save_task_redis(client: Any, task: Task) -> None:
     client.set(_task_key(task.id), json.dumps(task.to_dict()), ex=_TASK_TTL_S)
 
 
-def _load_task_redis(client, task_id: str) -> Task | None:
+def _load_task_redis(client: Any, task_id: str) -> Task | None:
     raw = client.get(_task_key(task_id))
     if not raw:
         return None
@@ -146,7 +146,7 @@ def _load_task_redis(client, task_id: str) -> Task | None:
         return None
 
 
-def _sweep_inflight_redis(client) -> int:
+def _sweep_inflight_redis(client: Any) -> int:
     """Re-queue tasks that have been inflight past the visibility timeout."""
     cutoff = time.time() - _CLAIM_TIMEOUT_S
     stuck_ids = client.zrangebyscore(_INFLIGHT_KEY, "-inf", cutoff)
@@ -172,7 +172,7 @@ def _sweep_inflight_redis(client) -> int:
     return recovered
 
 
-def _drain_scheduled_redis(client) -> None:
+def _drain_scheduled_redis(client: Any) -> None:
     now = time.time()
     ready = client.zrangebyscore(_SCHEDULED_KEY, "-inf", now)
     if not ready:
@@ -330,8 +330,8 @@ def claim_next(device_id: str, kinds: list[str] | None = None) -> Task | None:
 
     _sweep_inflight_memory()
     with _mem_lock:
-        skipped: list[str] = []
-        claimed: Task | None = None
+        skipped = []
+        claimed = None
         while _mem_queue:
             tid = _mem_queue.popleft()
             task = _mem_tasks.get(tid)

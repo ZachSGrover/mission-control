@@ -10,6 +10,7 @@ from __future__ import annotations
 import time
 from dataclasses import dataclass, field
 from threading import RLock
+from typing import Any
 
 __all__ = ["Device", "record_heartbeat", "list_devices", "is_online"]
 
@@ -24,7 +25,7 @@ class Device:
     capabilities: list[str] = field(default_factory=list)
     current_task: str | None = None
     last_seen: float = 0.0
-    meta: dict = field(default_factory=dict)
+    meta: dict[str, Any] = field(default_factory=dict)
 
 
 _devices: dict[str, Device] = {}
@@ -35,7 +36,7 @@ def record_heartbeat(
     name: str,
     capabilities: list[str] | None = None,
     current_task: str | None = None,
-    meta: dict | None = None,
+    meta: dict[str, Any] | None = None,
 ) -> Device:
     with _lock:
         existing = _devices.get(device_id)

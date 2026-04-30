@@ -5,8 +5,9 @@ from __future__ import annotations
 import json
 import logging
 import re
-from typing import Literal
+from typing import Any, Literal, cast
 
+from anthropic.types import TextBlock
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel
 from sqlmodel.ext.asyncio.session import AsyncSession
@@ -108,22 +109,22 @@ INSIGHT_SYSTEM = (
 # ── JSON extraction ───────────────────────────────────────────────────────────
 
 
-def _extract_json(text: str) -> dict:
+def _extract_json(text: str) -> dict[str, Any]:
     text = text.strip()
     try:
-        return json.loads(text)
+        return cast(dict[str, Any], json.loads(text))
     except json.JSONDecodeError:
         pass
     match = re.search(r"```(?:json)?\s*([\s\S]*?)\s*```", text)
     if match:
         try:
-            return json.loads(match.group(1).strip())
+            return cast(dict[str, Any], json.loads(match.group(1).strip()))
         except json.JSONDecodeError:
             pass
     match = re.search(r"\{[\s\S]*\}", text)
     if match:
         try:
-            return json.loads(match.group(0))
+            return cast(dict[str, Any], json.loads(match.group(0)))
         except json.JSONDecodeError:
             pass
     raise ValueError(f"No valid JSON found in: {text[:300]}")
@@ -163,7 +164,9 @@ async def create_plan(
             system=PLANNING_SYSTEM,
             messages=[{"role": "user", "content": prompt}],
         )
-        text = resp.content[0].text if resp.content else ""
+        text = (
+            resp.content[0].text if resp.content and isinstance(resp.content[0], TextBlock) else ""
+        )
         logger.info("[operator/plan] raw: %s", text[:400])
     except Exception as exc:
         raise HTTPException(
@@ -254,7 +257,11 @@ async def extract_insights(
             system=INSIGHT_SYSTEM,
             messages=[{"role": "user", "content": prompt}],
         )
-        text = resp.content[0].text if resp.content else "{}"
+        text = (
+            resp.content[0].text
+            if resp.content and isinstance(resp.content[0], TextBlock)
+            else "{}"
+        )
         data = _extract_json(text)
         insights = [Insight(**i) for i in data.get("insights", [])]
         logger.info("[operator/extract-insights] %d insights", len(insights))
@@ -279,7 +286,9 @@ async def _run_claude(api_key: str, user_message: str, system: str) -> ExecuteRe
             system=system,
             messages=[{"role": "user", "content": user_message}],
         )
-        text = (resp.content[0].text if resp.content else "").strip()
+        text = (
+            resp.content[0].text if resp.content and isinstance(resp.content[0], TextBlock) else ""
+        ).strip()
         logger.info("[operator/execute] claude/%s done (%d chars)", model, len(text))
     except Exception as exc:
         raise HTTPException(status_code=502, detail=f"Claude error: {exc}") from exc

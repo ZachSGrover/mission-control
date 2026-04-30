@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from typing import Any, cast
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel
@@ -86,7 +87,7 @@ def _build_judge_prompt(request: JudgeRequest) -> str:
     return "\n".join(lines)
 
 
-def _parse_judge_response(raw: str) -> dict:  # type: ignore[type-arg]
+def _parse_judge_response(raw: str) -> dict[str, Any]:
     text = raw.strip()
     # Strip markdown code fences if present
     if text.startswith("```"):
@@ -94,7 +95,7 @@ def _parse_judge_response(raw: str) -> dict:  # type: ignore[type-arg]
         text = "\n".join(lines[1:])
         if text.rstrip().endswith("```"):
             text = text.rstrip()[: text.rstrip().rfind("```")]
-    return json.loads(text)
+    return cast(dict[str, Any], json.loads(text))
 
 
 @router.post("/evaluate", response_model=JudgeResult)

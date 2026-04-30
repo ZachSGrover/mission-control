@@ -24,7 +24,7 @@ set of buckets, not free-form strings carrying details.
 from __future__ import annotations
 
 import logging
-from typing import Final, Literal
+from typing import Final, Literal, Protocol, runtime_checkable
 from uuid import UUID
 
 from sqlmodel.ext.asyncio.session import AsyncSession
@@ -177,3 +177,83 @@ def notify_channel_status() -> NotifyStubResult:
     admin UI. Sprint 8B always returns ``"not_configured"``.
     """
     return "not_configured"
+
+
+# ── Sprint 8C: ChallengeNotifier Protocol + NoOp implementation ────────────
+
+
+# Sprint 8C extends the notify status vocabulary with ``would_notify``
+# so a future Sprint 8D Slack/Telegram wiring can record "I would have
+# sent — here is the audit row" without actually sending. The 8B
+# stub return type stays narrow; the new union below is what the
+# Protocol uses.
+ChallengeNotifyStatus = Literal["not_configured", "skipped", "would_notify"]
+
+
+@runtime_checkable
+class ChallengeNotifier(Protocol):
+    """Typed contract for a challenge-event notifier.
+
+    Implementations MUST NOT include cookies, raw response bodies,
+    headers, or session values in their payload to the notify
+    channel. The audit row written by
+    :func:`record_session_challenged` is the only system of record
+    for the event; any human-facing notify is best-effort
+    notification, not data transport.
+    """
+
+    def status(self) -> ChallengeNotifyStatus:
+        """Return the current channel status for the admin UI.
+
+        ``not_configured`` means no channel is wired.
+        ``skipped`` means a channel is wired but the operator
+        has explicitly muted it for this incident or window.
+        ``would_notify`` means a channel is wired and active.
+        """
+        ...
+
+    def notify(
+        self,
+        *,
+        reason_category: ChallengeReason,
+        creator_id: str | None = None,
+    ) -> ChallengeNotifyStatus:
+        """Best-effort notification; returns the channel status
+        the call had at the time of attempt. Never raises for
+        ordinary delivery failures (network, throttle, etc.) —
+        those are logged and the audit row is unchanged.
+        """
+        ...
+
+
+class NoOpChallengeNotifier:
+    """Sprint 8C default. Sends nothing. Returns
+    ``"not_configured"`` from both :meth:`status` and :meth:`notify`.
+
+    A future Sprint 8D replaces this with a Slack / Telegram /
+    email implementation behind the same Protocol, with no caller
+    change required. The audit row remains the source of truth.
+    """
+
+    def status(self) -> ChallengeNotifyStatus:
+        return "not_configured"
+
+    def notify(
+        self,
+        *,
+        reason_category: ChallengeReason,
+        creator_id: str | None = None,
+    ) -> ChallengeNotifyStatus:
+        del reason_category, creator_id
+        logger.info(
+            "of_direct.NoOpChallengeNotifier.notify: not_configured "
+            "(Sprint 8C); audit row is the source of truth"
+        )
+        return "not_configured"
+
+
+# Default singleton the connector and admin status use until a real
+# notifier is wired. Replacing this attribute at runtime is
+# intentional — it's how Sprint 8D will activate Slack/Telegram
+# without touching call sites.
+DEFAULT_NOTIFIER: ChallengeNotifier = NoOpChallengeNotifier()

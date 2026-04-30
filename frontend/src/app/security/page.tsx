@@ -460,7 +460,27 @@ function SecurityAdmin() {
                 <li>
                   Notify channel: <strong>{ofDirect.notify_channel_status}</strong>
                 </li>
+                <li>
+                  Sandbox mode:{" "}
+                  <strong style={{ color: ofDirect.sandbox_available ? "rgb(180,83,9)" : "var(--text-muted)" }}>
+                    {ofDirect.sandbox_available ? "available (not yet attempted)" : "blocked"}
+                  </strong>
+                </li>
+                <li>
+                  Real client skeleton:{" "}
+                  <strong>{ofDirect.real_client_skeleton_present ? "present (every method raises)" : "absent"}</strong>
+                </li>
               </ul>
+              {ofDirect.sandbox_missing_prerequisites.length > 0 && (
+                <div className="text-xs" style={{ color: "var(--text-muted)" }}>
+                  <strong>Sandbox missing prerequisites:</strong>
+                  <ul className="list-disc ml-5 mt-1">
+                    {ofDirect.sandbox_missing_prerequisites.map((m) => (
+                      <li key={m}>{m}</li>
+                    ))}
+                  </ul>
+                </div>
+              )}
               <p className="text-xs" style={{ color: "var(--text-quiet)" }}>
                 {ofDirect.notes}
               </p>

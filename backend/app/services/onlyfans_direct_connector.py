@@ -31,6 +31,7 @@ the dry-run path is the contract.
 from __future__ import annotations
 
 import logging
+import os
 from dataclasses import dataclass
 from typing import Any, Final, Literal
 from uuid import UUID
@@ -41,6 +42,10 @@ from app.core.connector_gate import GateVerdict, is_connector_action_allowed
 from app.core.onlyfans_direct_client import (
     READ_ACTION_TO_METHOD,
     OnlyFansReadOnlyClient,
+)
+from app.core.onlyfans_direct_credential_ref import (
+    CredentialReference,
+    check_credential_status,
 )
 from app.core.onlyfans_direct_policy import (
     BlockedActionError,
@@ -70,7 +75,7 @@ _REAL_CLIENT_TODO: Final[str] = (
     "app.integrations.onlyfans.client.OnlyFansReadOnlyClient (not yet present)"
 )
 
-ConnectorMode = Literal["disabled", "dry_run"]
+ConnectorMode = Literal["disabled", "dry_run", "sandbox"]
 
 
 # Forbidden input keys. If a caller hands the constructor a credentials
@@ -161,6 +166,62 @@ class DryRunResult:
     rows_read: int = 0  # number of records the fake returned (0 in disabled mode)
 
 
+# Sprint 8C: env flag that gates the sandbox attempt path.
+ENV_SANDBOX_ALLOWED: Final[str] = "MC_OF_DIRECT_SANDBOX_ALLOWED"
+
+
+# Sprint 8C: SandboxBlockedReason vocabulary. Anything not in this set
+# means the gate has a new failure mode that hasn't been added — fail
+# closed by classifying as "unknown_error".
+SandboxBlockedReason = Literal[
+    "env_flag_disabled",
+    "production_environment",
+    "policy_refused",
+    "credential_missing",
+    "credential_revoked",
+    "credential_rotated",
+    "credential_stale",
+    "credential_wrong_provider",
+    "no_approval",
+    "no_consent",
+    "kill_switch",
+    "vault_unavailable",
+    "no_owner_signoff",
+    "real_client_not_enabled",  # all checks pass but the skeleton refuses
+    "unknown_error",
+]
+
+
+@dataclass(frozen=True)
+class SandboxResult:
+    """Outcome of :meth:`OnlyFansDirectConnector.dry_run_sandbox`.
+
+    All fields are safe scalars / enums. There is **no** ``payload``,
+    ``data``, ``raw``, ``messages``, or ``fans`` field. The Sprint 8C
+    skeleton's read methods all raise; even when all prerequisites
+    pass, the result records the *attempt*, not any retrieved data.
+    """
+
+    allowed: bool
+    blocked_reason: SandboxBlockedReason | None
+    connector_type: str
+    requested_action: str
+    creator_id: str | None
+    organization_id: str | None
+    audit_event_id: str | None
+    notes: str
+    # Sandbox prereq breakdown — useful for the admin UI / runbooks.
+    env_flag_set: bool
+    is_production: bool
+    credential_status: str  # CredentialStatusKind enum value
+    approval_present: bool
+    consent_present: bool
+    kill_switch_blocking: str | None
+    vault_available: bool
+    owner_signoff_present: bool
+    notify_channel_status: str  # ChallengeNotifyStatus enum value
+
+
 def _safe_rows_read(payload: object) -> int:
     """Compute a safe scalar count of records in a fake-client payload.
 
@@ -218,6 +279,7 @@ class OnlyFansDirectConnector:
         *,
         mode: ConnectorMode = "disabled",
         client: OnlyFansReadOnlyClient | None = None,
+        credential_ref: CredentialReference | None = None,
         **kwargs: Any,
     ) -> None:
         forbidden = _FORBIDDEN_CREDENTIAL_KEYS & set(kwargs.keys())
@@ -228,19 +290,32 @@ class OnlyFansDirectConnector:
                 "must be resolved through the creator credential vault, never passed "
                 "as cookies, session tokens, or plaintext."
             )
-        if mode not in ("disabled", "dry_run"):
+        if mode not in ("disabled", "dry_run", "sandbox"):
             raise ValueError(
-                f"Invalid mode {mode!r}. Sprint 8B supports 'disabled' "
-                "(default) and 'dry_run' only. There is no production mode."
+                f"Invalid mode {mode!r}. Sprint 8C supports 'disabled' "
+                "(default), 'dry_run', and 'sandbox'. There is no production mode."
             )
         if mode == "dry_run" and client is None:
             raise ValueError(
                 "mode='dry_run' requires a client (OnlyFansReadOnlyClient). "
                 "Sprint 8B accepts only the fake client; pass FakeOnlyFansReadOnlyClient()."
             )
+        if mode == "sandbox":
+            if client is None:
+                raise ValueError(
+                    "mode='sandbox' requires a client (OnlyFansReadOnlyClient). "
+                    "Sprint 8C accepts only the RealOnlyFansReadOnlyClient skeleton; "
+                    "every read method on the skeleton still raises until Sprint 8D."
+                )
+            if credential_ref is None:
+                raise ValueError(
+                    "mode='sandbox' requires a credential_ref (CredentialReference). "
+                    "Raw cookie/session/password kwargs are forbidden."
+                )
         # Intentionally drop other kwargs on the floor.
         self._mode: ConnectorMode = mode
         self._client: OnlyFansReadOnlyClient | None = client
+        self._credential_ref: CredentialReference | None = credential_ref
 
     # ── status ──────────────────────────────────────────────────────────────
 
@@ -254,18 +329,27 @@ class OnlyFansDirectConnector:
         # Sprint 8B: mode reflects the constructor arg. ``enabled`` and
         # ``real_client_wired`` remain False — the disabled mode is the
         # default, and dry_run only ever uses the fake client.
-        notes = (
-            "Direct OnlyFans connector is disabled. Read-only "
-            "implementation has not been written. See "
-            "docs/security/direct-onlyfans-readiness-checklist.md."
-            if self._mode == "disabled"
-            else (
+        if self._mode == "disabled":
+            notes = (
+                "Direct OnlyFans connector is disabled. Read-only "
+                "implementation has not been written. See "
+                "docs/security/direct-onlyfans-readiness-checklist.md."
+            )
+        elif self._mode == "dry_run":
+            notes = (
                 "Direct OnlyFans connector is in dry_run mode. The "
                 "configured client is a fake implementation backed by "
                 "Sprint 7 fixtures; there is no real network call. "
                 "Production mode does not exist."
             )
-        )
+        else:
+            # sandbox
+            notes = (
+                "Direct OnlyFans connector is in sandbox mode. The "
+                "configured client is the Sprint 8C real-client "
+                "skeleton; every read method still raises until "
+                "Sprint 8D wires the real network call."
+            )
         return ConnectorStatus(
             connector_type=CONNECTOR_TYPE,
             mode=self._mode,
@@ -544,6 +628,274 @@ class OnlyFansDirectConnector:
         )
         await session.commit()
         return str(row.id) if row is not None else None
+
+    # ── Sprint 8C: sandbox dry-run with all prerequisite gates ──────────────
+
+    async def dry_run_sandbox(
+        self,
+        session: AsyncSession,
+        *,
+        action: str,
+        creator_id: str,
+        organization_id: UUID | None = None,
+        actor_user_id: UUID | None = None,
+        actor_email: str | None = None,
+    ) -> SandboxResult:
+        """Run the sandbox-mode prerequisite chain end-to-end.
+
+        Sandbox mode requires ALL of:
+
+        1. ``MC_OF_DIRECT_SANDBOX_ALLOWED=1`` env flag.
+        2. Non-production environment.
+        3. Action is in :data:`READ_ACTIONS` (policy gate).
+        4. Connector approval row live for ``(onlyfans_direct, read,
+           creator_id)``.
+        5. Client consent live for ``onlyfans_direct_read`` /
+           ``creator_id``.
+        6. No kill switch active at any scope (global / connector /
+           organization / creator).
+        7. Vault available (dedicated encryption key configured).
+        8. Credential vault row resolved through the configured
+           reference is ``"active"`` (not missing, revoked, rotated,
+           stale, or wrong provider).
+        9. Owner sign-off audit row exists for the creator
+           (``connector.golive.sandbox``).
+
+        On any miss: returns a :class:`SandboxResult` with
+        ``allowed=False``, populated ``blocked_reason``, and writes
+        a ``connector.sandbox.blocked`` audit row.
+
+        On all-pass: invokes the configured client's read method
+        (which is the Sprint 8C skeleton — every method raises
+        :class:`RealClientNotEnabledError`). Captures the exception,
+        writes ``connector.sandbox.blocked`` with reason
+        ``real_client_not_enabled``, and returns ``allowed=False``.
+
+        **There is no path through this method that performs a real
+        network call.** A future Sprint 8D will replace the real
+        client's method bodies; this gate is structurally complete
+        already.
+        """
+        from app.services import connector_approvals as _approvals_svc
+        from app.services import consent as _consent_svc
+        from app.services import kill_switch as _kill_switch_svc
+        from app.services.onlyfans_direct_session_health import DEFAULT_NOTIFIER
+
+        # 0. Mode check — only sandbox mode may run this method.
+        if self._mode != "sandbox":
+            raise RuntimeError(
+                f"dry_run_sandbox requires mode='sandbox'; current mode is "
+                f"{self._mode!r}. Construct OnlyFansDirectConnector(mode='sandbox', ...)."
+            )
+
+        # Default everything to "not yet checked" so the result can
+        # surface the prereq snapshot whichever step we exit on.
+        env_flag_set = os.environ.get(ENV_SANDBOX_ALLOWED, "0").strip() == "1"
+        from app.core.startup_guard import is_production as _is_production
+        from app.core.secrets_store import (
+            is_dedicated_encryption_key_configured,
+        )
+
+        in_prod = _is_production()
+        cred_status_str = "unknown"
+        approval_present = False
+        consent_present = False
+        kill_blocking: tuple[str, str | None] | None = None
+        vault_available = is_dedicated_encryption_key_configured()
+        owner_signoff_present = False
+        notify_status = DEFAULT_NOTIFIER.status()
+
+        async def _audit_blocked(reason: SandboxBlockedReason, notes: str) -> SandboxResult:
+            audit_row = await record_audit(
+                session,
+                event_type="connector.sandbox.blocked",
+                category="connector",
+                action="dry_run_sandbox",
+                result="blocked",
+                severity="info",
+                actor_user_id=actor_user_id,
+                actor_email=actor_email,
+                organization_id=organization_id,
+                creator_id=creator_id,
+                resource_type="connector_run",
+                resource_id=f"{CONNECTOR_TYPE}:sandbox:{action}",
+                metadata={
+                    "connector_type": CONNECTOR_TYPE,
+                    "requested_action": action,
+                    "mode": "sandbox",
+                    "blocked_reason": reason,
+                },
+            )
+            await session.commit()
+            return SandboxResult(
+                allowed=False,
+                blocked_reason=reason,
+                connector_type=CONNECTOR_TYPE,
+                requested_action=action,
+                creator_id=creator_id,
+                organization_id=str(organization_id) if organization_id else None,
+                audit_event_id=str(audit_row.id) if audit_row is not None else None,
+                notes=notes,
+                env_flag_set=env_flag_set,
+                is_production=in_prod,
+                credential_status=cred_status_str,
+                approval_present=approval_present,
+                consent_present=consent_present,
+                kill_switch_blocking=kill_blocking[0] if kill_blocking else None,
+                vault_available=vault_available,
+                owner_signoff_present=owner_signoff_present,
+                notify_channel_status=notify_status,
+            )
+
+        # 1. env flag
+        if not env_flag_set:
+            return await _audit_blocked(
+                "env_flag_disabled",
+                f"Set {ENV_SANDBOX_ALLOWED}=1 to enable the sandbox path.",
+            )
+        # 2. production refusal
+        if in_prod:
+            return await _audit_blocked(
+                "production_environment",
+                "Sandbox mode is non-production only.",
+            )
+        # 3. policy
+        verdict_policy: PolicyVerdict = evaluate_action(action)
+        if not verdict_policy.allowed:
+            if verdict_policy.classification == "write":
+                # Same as Sprint 7: write actions raise loudly so a
+                # test that asks for a write fails loud.
+                raise BlockedActionError(f"dry_run_sandbox refused: {action!r} is a write action.")
+            return await _audit_blocked("policy_refused", verdict_policy.reason)
+        # 4-7. connector gate (kill switch, approval, consent, vault)
+        gate_verdict: GateVerdict = await is_connector_action_allowed(
+            session,
+            connector_type=CONNECTOR_TYPE,
+            requested_action="read",
+            organization_id=organization_id,
+            creator_id=creator_id,
+        )
+        # Populate snapshot fields from the gate's component checks
+        # so the result carries full prereq breakdown even on block.
+        approval_row = await _approvals_svc.is_approved(
+            session,
+            connector_type=CONNECTOR_TYPE,
+            requested_action="read",
+            organization_id=organization_id,
+            creator_id=creator_id,
+        )
+        approval_present = approval_row is not None
+        consent_row = await _consent_svc.is_granted(
+            session,
+            consent_type="onlyfans_direct_read",
+            organization_id=organization_id,
+            creator_id=creator_id,
+        )
+        consent_present = consent_row is not None
+        kill_blocking = await _kill_switch_svc.check_action_allowed(
+            session,
+            connector_type=CONNECTOR_TYPE,
+            organization_id=organization_id,
+            creator_id=creator_id,
+        )
+        if not gate_verdict.allowed:
+            reason: SandboxBlockedReason
+            if gate_verdict.reason in (
+                "kill_switch_global",
+                "kill_switch_connector",
+                "kill_switch_organization",
+                "kill_switch_creator",
+            ):
+                reason = "kill_switch"
+            elif gate_verdict.reason in ("no_approval", "approval_expired", "approval_revoked"):
+                reason = "no_approval"
+            elif gate_verdict.reason == "no_consent":
+                reason = "no_consent"
+            elif gate_verdict.reason == "vault_unavailable":
+                reason = "vault_unavailable"
+            else:
+                reason = "unknown_error"
+            return await _audit_blocked(
+                reason,
+                f"Connector gate blocked: {gate_verdict.reason} / {gate_verdict.detail}",
+            )
+        # 8. credential vault reference status
+        if self._credential_ref is None:
+            # Constructor enforces non-None for sandbox mode, but
+            # mypy can't see that here; defensive guard.
+            return await _audit_blocked(
+                "credential_missing",
+                "Internal: sandbox mode is missing credential_ref.",
+            )
+        cred_report = await check_credential_status(session, ref=self._credential_ref)
+        cred_status_str = cred_report.kind
+        if cred_report.kind != "active":
+            mapping: dict[str, SandboxBlockedReason] = {
+                "missing": "credential_missing",
+                "revoked": "credential_revoked",
+                "rotated": "credential_rotated",
+                "stale": "credential_stale",
+                "wrong_provider": "credential_wrong_provider",
+            }
+            return await _audit_blocked(
+                mapping.get(cred_report.kind, "credential_missing"),
+                cred_report.notes,
+            )
+        # 9. owner sign-off
+        from app.services.onlyfans_direct_owner_signoff import has_owner_signoff
+
+        owner_signoff_present = await has_owner_signoff(
+            session,
+            creator_id=creator_id,
+            organization_id=organization_id,
+        )
+        if not owner_signoff_present:
+            return await _audit_blocked(
+                "no_owner_signoff",
+                (
+                    "No connector.golive.sandbox audit row found for this "
+                    "creator. Record one via record_owner_signoff."
+                ),
+            )
+
+        # All prerequisites pass. Invoke the configured client's
+        # read method. Sprint 8C's RealOnlyFansReadOnlyClient skeleton
+        # raises RealClientNotEnabledError on every method; we capture
+        # that and audit. There is no fall-through to a network call.
+        from app.services.onlyfans_direct_real_client import (
+            RealClientNotEnabledError,
+        )
+
+        if self._client is None:
+            return await _audit_blocked(
+                "real_client_not_enabled",
+                "Sandbox mode has no client configured.",
+            )
+        method_name = READ_ACTION_TO_METHOD.get(action)
+        if method_name is None:
+            return await _audit_blocked(
+                "unknown_error",
+                f"No client method mapped for read action {action!r}.",
+            )
+        method = getattr(self._client, method_name)
+        try:
+            await method(creator_id=creator_id)
+        except RealClientNotEnabledError:
+            return await _audit_blocked(
+                "real_client_not_enabled",
+                (
+                    "All sandbox prerequisites pass; the real client "
+                    "skeleton refuses to perform any read until Sprint 8D."
+                ),
+            )
+        # If a future Sprint 8D returns successfully here, we still
+        # do not record the payload. The future method body must be
+        # responsible for its own audit; this gate's job is the
+        # prerequisite chain.
+        return await _audit_blocked(
+            "real_client_not_enabled",
+            "Sprint 8C skeleton; Sprint 8D will wire the real read.",
+        )
 
     # ── refusal of any "real" mode call ─────────────────────────────────────
 

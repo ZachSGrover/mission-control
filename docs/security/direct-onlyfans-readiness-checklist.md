@@ -44,6 +44,11 @@ These are the controls that **fail closed** today. They are why this checklist c
 | A.21 | Direct OnlyFans fake read-only client | `app/services/onlyfans_direct_fake_client.py` | Subclass of abstract base; refused in production unless `MC_OF_DIRECT_ALLOW_FAKE_CLIENT=1`; refuses cookie/session kwargs; returns synthetic-only payloads. |
 | A.22 | `mode="dry_run"` on `OnlyFansDirectConnector` | `app/services/onlyfans_direct_connector.py` | Calls the fake through the gate, discards the payload, audits with safe scalar `rows_read`. No `mode="real"` / `"production"` exists. |
 | A.23 | `connector.session.challenged` audit + notify stub | `app/services/onlyfans_direct_session_health.py` | Fixed reason vocabulary; refuses raw response bodies / cookies / session tokens; notify stub returns `not_configured`. |
+| A.24 | Real OnlyFans read-only client skeleton | `app/services/onlyfans_direct_real_client.py` | Subclass of abstract base; every method raises `RealClientNotEnabledError`; constructor accepts only typed `CredentialReference`; no network imports. |
+| A.25 | Typed credential vault reference (value-free) | `app/core/onlyfans_direct_credential_ref.py` | `CredentialReference` carries only ids/provider/type; `check_credential_status` returns metadata-only report. |
+| A.26 | `mode="sandbox"` on `OnlyFansDirectConnector` | `app/services/onlyfans_direct_connector.py` | 9-step prereq gate (env flag, prod check, policy, approval, consent, kill switch, vault, credential active, owner sign-off); audits each block; refuses to call real client because skeleton raises. |
+| A.27 | Owner sign-off audit event | `app/services/onlyfans_direct_owner_signoff.py` | `connector.golive.sandbox` event at severity `high`; `record_owner_signoff` + `has_owner_signoff` helpers. |
+| A.28 | `ChallengeNotifier` Protocol + `NoOpChallengeNotifier` | `app/services/onlyfans_direct_session_health.py` | Runtime-checkable Protocol; `DEFAULT_NOTIFIER` is the no-op default; Sprint 8D wires Slack/Telegram by replacing `DEFAULT_NOTIFIER`. |
 
 If you flipped any of these off intentionally for a development run, **flip them back before continuing this checklist.**
 
@@ -140,8 +145,13 @@ This section is pre-state. After Sprint 7, the **policy boundary** and **disable
 | E.15 | `mode="dry_run"` calls the fake through the gate | ✅ Sprint 8B | `OnlyFansDirectConnector(mode="dry_run", client=...)` |
 | E.16 | `connector.session.challenged` audit category | ✅ Sprint 8B | `record_session_challenged()` writes to audit pipeline |
 | E.17 | Challenge notify stub | ⚠ stub only (Sprint 8B) | Returns `not_configured`; real channel is Sprint 8C work |
-| E.18 | Real OnlyFans read-only client | ❌ Sprint 8C | Subclass of abstract base; behind separate env flag |
-| E.19 | `mode="sandbox"` for real test account | ❌ Sprint 8C | Requires E.17 (notify) + E.18 (real client) |
+| E.18 | Real OnlyFans read-only client | ⚠ skeleton present (Sprint 8C) | `RealOnlyFansReadOnlyClient` subclasses abstract base; every method raises `RealClientNotEnabledError`; no method bodies until Sprint 8D. |
+| E.19 | `mode="sandbox"` for real test account | ⚠ structurally ready (Sprint 8C) | Constructor + `dry_run_sandbox()` 9-step gate present; refuses unless `MC_OF_DIRECT_SANDBOX_ALLOWED=1` and non-production; real client skeleton refuses every read until 8D. |
+| E.20 | Typed credential vault reference (value-free) | ✅ Sprint 8C | `CredentialReference`; `check_credential_status` returns metadata-only report. |
+| E.21 | Owner sign-off audit event | ✅ Sprint 8C | `connector.golive.sandbox`; required by sandbox gate. |
+| E.22 | Challenge notifier Protocol | ✅ Sprint 8C | `ChallengeNotifier`; default `NoOpChallengeNotifier`. |
+| E.23 | Real challenge notifier wired (Slack/Telegram) | ❌ Sprint 8D | Replace `DEFAULT_NOTIFIER`; audit row remains source of truth. |
+| E.24 | Real OnlyFans read method bodies (per-method) | ❌ Sprint 8D | One method at a time; allowlist filter; per-method audit schema. |
 
 The honest summary: **direct OnlyFans is still not unblocked.** Sprint 7 lands the policy boundary, the disabled shell, the dry-run path, the credential contract, and the rate-limit/session-health scaffolding. The remaining red gates (E.5, E.6, E.7, E.11, E.12) are explicit; lighting any of them green requires the work named in `security-sprint-7-direct-of-prep.md` §10–§11.
 

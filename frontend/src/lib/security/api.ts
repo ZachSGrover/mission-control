@@ -141,6 +141,11 @@ export type OnlyFansDirectStatus = {
   real_account_connection_blocked: boolean;
   read_actions_count: number;
   write_actions_count: number;
+  // Sprint 8C additions
+  sandbox_env_flag_set: boolean;
+  sandbox_available: boolean;
+  real_client_skeleton_present: boolean;
+  sandbox_missing_prerequisites: string[];
 };
 
 export type GatePreviewResult = {

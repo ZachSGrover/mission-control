@@ -776,6 +776,11 @@ class OnlyFansDirectStatusResponse(BaseModel):
     notify_channel_status: str  # "not_configured" | "skipped"
     production_mode_blocked: bool  # always True
     real_account_connection_blocked: bool  # always True
+    # Sprint 8C additions
+    sandbox_env_flag_set: bool  # MC_OF_DIRECT_SANDBOX_ALLOWED
+    sandbox_available: bool  # env flag set AND not production
+    real_client_skeleton_present: bool  # always True post-Sprint-8C
+    sandbox_missing_prerequisites: list[str]  # human-readable list
 
 
 # ── Sprint 8A: OnlyMonster gated proof status + preview ─────────────────────
@@ -976,6 +981,24 @@ async def onlyfans_direct_status(
     # flag is set. We never actually construct one here; the UI uses
     # the boolean to render the readiness state.
     dry_run_available = (not in_prod) or fake_allowed
+    # Sprint 8C: sandbox availability + missing-prereq breakdown.
+    from app.services.onlyfans_direct_connector import (
+        ENV_SANDBOX_ALLOWED as _OF_ENV_SANDBOX,
+    )
+
+    sandbox_env_flag_set = _os.environ.get(_OF_ENV_SANDBOX, "0").strip() == "1"
+    sandbox_available = sandbox_env_flag_set and (not in_prod)
+    missing_sandbox: list[str] = []
+    if not sandbox_env_flag_set:
+        missing_sandbox.append(f"{_OF_ENV_SANDBOX}=1 not set")
+    if in_prod:
+        missing_sandbox.append("running in production environment")
+    if not is_dedicated_encryption_key_configured():
+        missing_sandbox.append("SETTINGS_ENCRYPTION_KEY not configured (vault unavailable)")
+    if notify_channel_status() == "not_configured":
+        # Notify is not strictly required to *attempt* a sandbox run,
+        # but the operator should know it isn't wired.
+        missing_sandbox.append("challenge notify channel not configured (informational)")
     return OnlyFansDirectStatusResponse(
         connector_type=snapshot.connector_type,
         mode=snapshot.mode,
@@ -995,4 +1018,8 @@ async def onlyfans_direct_status(
         notify_channel_status=notify_channel_status(),
         production_mode_blocked=True,
         real_account_connection_blocked=True,
+        sandbox_env_flag_set=sandbox_env_flag_set,
+        sandbox_available=sandbox_available,
+        real_client_skeleton_present=True,
+        sandbox_missing_prerequisites=missing_sandbox,
     )

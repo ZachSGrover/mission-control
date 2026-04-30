@@ -185,6 +185,75 @@ Each step ends with a documented review checkpoint. **Do not skip**.
 
 ---
 
+## 6.10 Sprint 8C progress (2026-04-30)
+
+Security Sprint 8C on `feat/of-direct-sandbox-readonly-sprint-8c`
+adds the **structural sandbox path** for the future test-only OnlyFans
+account. No real network call, no real read method bodies, no real
+account connection. The next sprint can start writing read methods
+one at a time without re-touching the gate.
+
+- **Real read-only client skeleton — done.**
+  `RealOnlyFansReadOnlyClient` (in `app.services.onlyfans_direct_real_client`)
+  subclasses `AbstractOnlyFansReadOnlyClient` from Sprint 8B.
+  Constructor accepts only a typed `CredentialReference`; refuses
+  cookie / session / password kwargs via the Sprint 7
+  `assert_no_forbidden_credential_keys`. Every read method raises
+  `RealClientNotEnabledError`. No HTTP / browser-automation imports
+  in the file (verified by test).
+- **Typed credential vault reference — done.**
+  `app.core.onlyfans_direct_credential_ref` defines
+  `CredentialReference` (value-free; carries only
+  `creator_id, credential_id, provider, credential_type`) and
+  `check_credential_status()` returning a `CredentialStatusReport`
+  with kind ∈ `missing` / `active` / `rotated` / `revoked` /
+  `stale` / `wrong_provider`. The helper performs no decryption.
+- **`mode="sandbox"` + 9-step prereq gate — done.**
+  `OnlyFansDirectConnector(mode="sandbox", client=..., credential_ref=...)`
+  exposes `dry_run_sandbox(action, creator_id, ...)`. Chain:
+  env flag → non-production → policy → approval → consent →
+  kill switch → vault → credential active → owner sign-off →
+  client method (which raises). Each block path audits a
+  `connector.sandbox.blocked` row with a typed `blocked_reason`.
+  Even on full pass-through, no real network call is performed
+  because the real client skeleton refuses every read.
+- **`ChallengeNotifier` Protocol + NoOp default — done.**
+  `app.services.onlyfans_direct_session_health` now exposes a
+  runtime-checkable Protocol with `status()` and `notify()`
+  methods returning `not_configured` / `skipped` /
+  `would_notify`. `DEFAULT_NOTIFIER` is a module-level singleton
+  that Sprint 8D replaces to wire Slack/Telegram.
+- **Owner sign-off audit — done.**
+  `app.services.onlyfans_direct_owner_signoff` writes
+  `connector.golive.sandbox` (severity `high`) and exposes
+  `has_owner_signoff()` for the sandbox gate. Production code
+  must not auto-record sign-off; this is operator-driven.
+- **Status surface extended.** `GET /security/onlyfans-direct/status`
+  now returns `sandbox_env_flag_set`,
+  `sandbox_available`, `real_client_skeleton_present`, and
+  `sandbox_missing_prerequisites: list[str]`. The frontend card
+  renders the missing-prereq list when sandbox isn't yet
+  available.
+- **Tests — 26 cases.** Real client subclass shape, no write
+  methods, no network imports, constructor refuses cookies,
+  wrong-provider refused, every method raises;
+  `mode="sandbox"` requires both client and credential_ref;
+  invalid mode raises; sandbox blocks on missing env flag, in
+  production, missing approval, missing consent, kill switch,
+  revoked credential, missing credential, no owner sign-off;
+  all-pass refusal lands on `real_client_not_enabled`;
+  `check_credential_status` for missing/active/wrong_provider;
+  `NoOpChallengeNotifier` returns `not_configured`;
+  `record_owner_signoff` + `has_owner_signoff` round-trip;
+  Sprint 7 disabled-default and Sprint 8B dry_run modes still
+  work; no network imports anywhere across all
+  `onlyfans_direct_*` modules.
+
+Items still open: real OnlyFans read method bodies (Sprint 8D),
+real challenge notifier wiring, admin endpoint for owner
+sign-off, sandbox-account go-live drill, all G7/G8 items from
+earlier sprints.
+
 ## 6.9 Sprint 8B progress (2026-04-30)
 
 Security Sprint 8B on `feat/of-direct-readonly-dryrun-sprint-8b`

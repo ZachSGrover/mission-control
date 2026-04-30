@@ -14,8 +14,9 @@ Design intent:
 from __future__ import annotations
 
 import logging
+import os
 from datetime import datetime
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 from uuid import UUID
 
 from app.core.time import utcnow
@@ -26,6 +27,48 @@ if TYPE_CHECKING:
     from sqlmodel.ext.asyncio.session import AsyncSession
 
 logger = logging.getLogger(__name__)
+
+
+def current_environment() -> str:
+    """Return the active environment label for usage rows (defaults to ``local``)."""
+    return os.getenv("MC_ENV", "local")
+
+
+def extract_provider_usage(provider: str, response: Any) -> tuple[int, int]:
+    """Best-effort ``(input_tokens, output_tokens)`` extraction from an SDK response.
+
+    Returns ``(0, 0)`` when usage isn't exposed (e.g. streaming, errors, or
+    unfamiliar response shapes).  Never raises — callers should not have to
+    guard against telemetry shape drift.
+    """
+    try:
+        if provider == "anthropic":
+            usage = getattr(response, "usage", None)
+            if usage is None:
+                return 0, 0
+            return (
+                int(getattr(usage, "input_tokens", 0) or 0),
+                int(getattr(usage, "output_tokens", 0) or 0),
+            )
+        if provider == "openai":
+            usage = getattr(response, "usage", None)
+            if usage is None:
+                return 0, 0
+            return (
+                int(getattr(usage, "prompt_tokens", 0) or 0),
+                int(getattr(usage, "completion_tokens", 0) or 0),
+            )
+        if provider == "gemini":
+            usage = getattr(response, "usage_metadata", None)
+            if usage is None:
+                return 0, 0
+            return (
+                int(getattr(usage, "prompt_token_count", 0) or 0),
+                int(getattr(usage, "candidates_token_count", 0) or 0),
+            )
+    except Exception:  # noqa: BLE001 — best-effort telemetry helper
+        return 0, 0
+    return 0, 0
 
 
 async def record_usage_event(

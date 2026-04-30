@@ -63,6 +63,10 @@ async def stream_chat(
         from openai import AsyncOpenAI, AsyncStream
         from openai.types.chat import ChatCompletionChunk
 
+        # TODO(usage-logging-streaming): wire record_usage_event() on stream
+        # completion. Token counts only arrive in the terminal chunk (or not at
+        # all), so this needs an end-of-stream hook rather than the inline wrap
+        # used elsewhere. Out of scope for the initial usage-logging slice.
         client = AsyncOpenAI(api_key=api_key)
         try:
             stream = cast(

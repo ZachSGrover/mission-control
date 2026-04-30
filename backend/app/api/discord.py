@@ -186,7 +186,7 @@ async def handle_discord_message(
     provider = "none"
 
     if route.use_ai:
-        reply, provider = await ask_ai(body.text, session)
+        reply, provider = await ask_ai(body.text, session, trigger_source="discord")
     else:
         reply = route.fast_reply or "👍"
 

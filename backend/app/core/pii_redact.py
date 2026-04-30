@@ -1,0 +1,96 @@
+"""PII redaction for outbound LLM prompts.
+
+Distinct from :mod:`app.core.redact` — that module is for audit
+*metadata*. **This** module is for prompt *content* about to leave the
+process for a third-party LLM API.
+
+Goals (Sprint 3):
+- Strip obvious credential / token / API-key shaped substrings.
+- Strip email addresses and phone numbers (the most reliable PII shape
+  for the kind of data Mission Control actually handles).
+- Strip ``Bearer …`` / ``Basic …`` headers if a caller pasted one.
+- Do **not** destroy normal business utility — short identifiers like
+  "creator-A" or "FY24Q1" stay intact.
+
+Non-goals:
+- Full PII redaction. Names, addresses, free-text identifiers, and
+  message bodies are out of scope. The goal is to reduce the worst
+  surface (credentials + structured PII), not pretend we have
+  enterprise-grade DLP.
+
+Usage::
+
+    safe_prompt, was_redacted, marker_count = redact_for_llm(prompt)
+    # Caller can audit ``was_redacted`` without ever logging the
+    # original ``prompt``.
+"""
+
+from __future__ import annotations
+
+import re
+from typing import Final
+
+REDACTED_MARKER: Final[str] = "[REDACTED]"
+
+# Order matters: token / key patterns first so they don't get partially
+# redacted by a less-specific pattern further down. Each pattern is
+# *intentionally* conservative — false negatives are preferred over
+# false positives, because over-redacting destroys utility.
+_PATTERNS: Final[list[tuple[str, re.Pattern[str]]]] = [
+    # Bearer / Basic auth headers (with at least 16 chars of token).
+    ("auth_header", re.compile(r"\b(?:Bearer|Basic)\s+[A-Za-z0-9_\-\./+=]{16,}", re.I)),
+    # OpenAI sk-..., GitHub ghp_, AWS AKIA, Slack xoxb-, Stripe sk_live_/pk_live_.
+    (
+        "vendor_key",
+        re.compile(
+            r"\b(?:sk-[A-Za-z0-9]{20,}|sk_live_[A-Za-z0-9]{20,}|pk_live_[A-Za-z0-9]{20,}"
+            r"|ghp_[A-Za-z0-9]{30,}|AKIA[0-9A-Z]{16}|xoxb-[A-Za-z0-9-]{10,}"
+            r"|AIza[0-9A-Za-z_\-]{35})"
+        ),
+    ),
+    # JWT-shaped triple-segment tokens.
+    (
+        "jwt",
+        re.compile(r"\beyJ[A-Za-z0-9_\-]{15,}\.[A-Za-z0-9_\-]{10,}\.[A-Za-z0-9_\-]{10,}\b"),
+    ),
+    # Email addresses.
+    ("email", re.compile(r"\b[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}\b")),
+    # Phone numbers — conservative: at least 10 digits, optional +/spaces/-/parens.
+    (
+        "phone",
+        re.compile(r"(?:\+?\d[\d\s\-\(\)]{8,}\d)"),
+    ),
+    # Long opaque hex / base64 strings >= 32 chars (catches loose API
+    # keys not matched above). Letters+digits only; pure-digit runs are
+    # excluded so order numbers don't trigger this.
+    (
+        "long_token",
+        re.compile(r"\b(?=[A-Za-z0-9_\-]*[A-Za-z])[A-Za-z0-9_\-]{32,}\b"),
+    ),
+]
+
+
+def redact_for_llm(text: str) -> tuple[str, bool, dict[str, int]]:
+    """Return a redacted copy of ``text`` plus metadata about what changed.
+
+    The third element is a per-category count of how many substrings
+    were redacted, e.g. ``{"email": 2, "phone": 1}``. Useful for
+    auditing "was redaction applied?" without ever logging the
+    original text.
+
+    The original ``text`` is not mutated; a new string is returned.
+    """
+    if not text:
+        return text, False, {}
+
+    counts: dict[str, int] = {}
+    redacted = text
+    for label, pattern in _PATTERNS:
+        if not pattern.search(redacted):
+            continue
+        new_text, n = pattern.subn(REDACTED_MARKER, redacted)
+        if n:
+            counts[label] = counts.get(label, 0) + n
+            redacted = new_text
+
+    return redacted, bool(counts), counts

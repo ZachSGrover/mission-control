@@ -48,6 +48,7 @@ class KillSwitchSummary(BaseModel):
 class SecurityStatusResponse(BaseModel):
     timestamp: str
     encryption_key_dedicated: bool
+    is_production: bool
     kill_switches: list[KillSwitchSummary]
     audit_events_24h: int
     audit_events_7d: int
@@ -55,6 +56,8 @@ class SecurityStatusResponse(BaseModel):
     approvals_approved_live: int
     consents_granted_live: int
     creator_credentials_active: int
+    legacy_gateway_token_count: int
+    audit_retention_preview: dict[str, int]
     missing_prerequisites: list[str]
 
 
@@ -64,6 +67,7 @@ def _missing_prerequisites(
     creator_credentials_active: int,
     consents_granted_live: int,
     audit_events_24h: int,
+    legacy_gateway_token_count: int = 0,
 ) -> list[str]:
     out: list[str] = []
     if not encryption_key_dedicated:
@@ -86,6 +90,13 @@ def _missing_prerequisites(
             "No audit events in the last 24h — either the system is idle "
             "or the audit pipeline is silently broken. Confirm by writing "
             "a credential and checking the row count."
+        )
+    if legacy_gateway_token_count > 0:
+        out.append(
+            f"{legacy_gateway_token_count} gateway row(s) still hold a "
+            "plaintext `token` column value. Run "
+            "`app.services.gateway_tokens.migrate_legacy_tokens` once "
+            "with `dry_run=False` to encrypt them."
         )
     return out
 
@@ -157,9 +168,27 @@ async def security_status(
 
     encryption_key_dedicated = is_dedicated_encryption_key_configured()
 
+    # Sprint 3: legacy plaintext gateway tokens still on disk.
+    from app.models.gateways import Gateway
+
+    legacy_gateway_count = await _scalar_count(
+        session,
+        select(func.count())
+        .select_from(Gateway)
+        .where(Gateway.token.is_not(None))  # type: ignore[union-attr]
+        .where(Gateway.token != ""),
+    )
+
+    # Sprint 3: dry-run preview of audit retention purge.
+    from app.core.startup_guard import is_production
+    from app.services.audit_retention import preview_purge
+
+    retention_preview = await preview_purge(session, now=now)
+
     return SecurityStatusResponse(
         timestamp=now.isoformat(),
         encryption_key_dedicated=encryption_key_dedicated,
+        is_production=is_production(),
         kill_switches=ks_summaries,
         audit_events_24h=audit_24h,
         audit_events_7d=audit_7d,
@@ -167,11 +196,14 @@ async def security_status(
         approvals_approved_live=approved_live,
         consents_granted_live=consents_live,
         creator_credentials_active=creds_active,
+        legacy_gateway_token_count=legacy_gateway_count,
+        audit_retention_preview=retention_preview,
         missing_prerequisites=_missing_prerequisites(
             encryption_key_dedicated=encryption_key_dedicated,
             creator_credentials_active=creds_active,
             consents_granted_live=consents_live,
             audit_events_24h=audit_24h,
+            legacy_gateway_token_count=legacy_gateway_count,
         ),
     )
 

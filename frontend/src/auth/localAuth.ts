@@ -34,8 +34,25 @@ export function getLocalAuthToken(): string | null {
   }
   // Fall back to the token baked in at build time — eliminates manual login
   // for personal local deployments.
+  //
+  // Sprint 3 hardening: refuse this fallback in production builds.
+  // ``NEXT_PUBLIC_*`` variables are inlined into the client bundle, so
+  // any value here is effectively shipped to every visitor. The local
+  // auth dev convenience must not become a production back door.
   const envToken = process.env.NEXT_PUBLIC_LOCAL_AUTH_TOKEN;
+  const isProduction = process.env.NODE_ENV === "production";
   if (envToken && envToken.length >= 50) {
+    if (isProduction) {
+      // Loud, non-fatal warning — the app keeps working, just without
+      // the build-time fallback. Operators see the message in the
+      // browser console; production should never reach this branch.
+      // eslint-disable-next-line no-console
+      console.warn(
+        "[security] NEXT_PUBLIC_LOCAL_AUTH_TOKEN is set in a production build. " +
+          "Ignoring it; this fallback is dev-only.",
+      );
+      return null;
+    }
     localToken = envToken;
     return envToken;
   }

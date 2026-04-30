@@ -482,6 +482,12 @@ async def lifespan(_: FastAPI) -> AsyncIterator[None]:
         settings.environment,
         settings.db_auto_migrate,
     )
+    # Sprint 3 hardening: refuse to start in production without a
+    # dedicated SETTINGS_ENCRYPTION_KEY. Local/dev/test fall back as
+    # before for ergonomics.
+    from app.core.startup_guard import assert_production_encryption_configured
+
+    assert_production_encryption_configured()
     await init_db()
     _log_key_availability()
     if settings.rate_limit_backend == RateLimitBackend.REDIS:
@@ -527,6 +533,13 @@ app = MissionControlFastAPI(
     lifespan=lifespan,
     openapi_tags=OPENAPI_TAGS,
 )
+
+# Sprint 3 hardening: audit 401 / 403 responses with throttling. The
+# handler is registered before any router so it catches denials from
+# every dependency.
+from app.core.denial_audit import install_denial_audit_handler  # noqa: E402
+
+install_denial_audit_handler(app)
 
 # Known production frontend origins — always allowed even if not in CORS_ORIGINS env var.
 # Update this list when adding new custom domains or Render service URLs.

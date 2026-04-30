@@ -149,14 +149,23 @@ async def ask_ai_detailed(
     All calls go directly to the hosted cloud APIs — no OpenClaw / localhost
     gateway is involved.  Each provider retries transient errors with
     exponential backoff before the next in the chain is tried.
+
+    Sprint 3 hardening: the prompt is run through
+    :func:`app.core.pii_redact.redact_for_llm` before being handed to
+    the provider client. The redactor strips obvious credentials,
+    emails, phone numbers, and JWT-shaped strings. The original
+    ``prompt`` is never logged.
     """
+    from app.core.pii_redact import redact_for_llm
+
+    redacted_prompt, was_redacted, redaction_counts = redact_for_llm(prompt)
     total_attempts = 0
     last_error: str | None = None
-    prompt_len = len(prompt)
+    prompt_len = len(redacted_prompt)
 
     for provider in _PROVIDER_ORDER:
         try:
-            reply, attempts = await _run_provider(provider, prompt, session)
+            reply, attempts = await _run_provider(provider, redacted_prompt, session)
             total_attempts += attempts
             await _audit_llm_call(
                 session,
@@ -166,6 +175,8 @@ async def ask_ai_detailed(
                 prompt_len=prompt_len,
                 reply_len=len(reply),
                 error=None,
+                redaction_applied=was_redacted,
+                redaction_counts=redaction_counts,
             )
             return reply, provider, total_attempts, last_error
         except Exception as exc:
@@ -180,6 +191,8 @@ async def ask_ai_detailed(
                 prompt_len=prompt_len,
                 reply_len=0,
                 error=type(exc).__name__,
+                redaction_applied=was_redacted,
+                redaction_counts=redaction_counts,
             )
 
     return _NO_KEY_MSG, "none", total_attempts, last_error
@@ -194,6 +207,8 @@ async def _audit_llm_call(
     prompt_len: int,
     reply_len: int,
     error: str | None,
+    redaction_applied: bool = False,
+    redaction_counts: dict[str, int] | None = None,
 ) -> None:
     """Audit a single LLM provider attempt without ever touching prompt/reply text.
 
@@ -229,6 +244,8 @@ async def _audit_llm_call(
             "prompt_chars": prompt_len,
             "reply_chars": reply_len,
             "error_class": error,
+            "pii_redaction_applied": redaction_applied,
+            "pii_redaction_counts": redaction_counts or {},
         },
     )
     try:

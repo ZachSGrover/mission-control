@@ -185,6 +185,46 @@ Each step ends with a documented review checkpoint. **Do not skip**.
 
 ---
 
+## 6.3 Sprint 3 progress (2026-04-29)
+
+The following items from §2 / §3 are addressed by Security Sprint 3 on
+branch `feat/security-hardening-sprint-3`:
+
+- **R4 (plaintext `gateways.token`) — partial.** New writes encrypt
+  via `app.services.gateway_tokens.set_token`; legacy rows have a
+  one-shot migrator (`migrate_legacy_tokens`). API responses still
+  expose `token` for backwards compat (Sprint 4 task to deprecate).
+- **R5 (`app_settings` global) — foundation done.** New
+  `organization_id` column + `app.services.app_settings_scoped`
+  helpers; existing route call sites still global, scheduled for
+  migration in Sprint 4.
+- **R2 (`SETTINGS_ENCRYPTION_KEY` fallback) — closed for production.**
+  `app.core.startup_guard.assert_production_encryption_configured`
+  refuses to start the app in production without a dedicated key.
+  Local/dev fallback unchanged.
+- **G3 (denial audit) — done.** 401/403 throttled audit hook in
+  `app.core.denial_audit`. Login-success audit deferred to Clerk
+  webhook (Sprint 4).
+- **M5 (data retention) — foundation done.** Per-category retention
+  helpers in `app.services.audit_retention`; default dry-run.
+  Scheduling is Sprint 4.
+- **M6 (LLM PII redaction) — done for outbound prompts.**
+  `app.core.pii_redact.redact_for_llm` wired into `ask_ai_detailed`.
+- **Connector gate wiring — wrapper added, not yet wired.**
+  `app.services.connector_run.run_with_gate` is tested but not
+  attached to any hot path. First production wiring is Sprint 4.
+- **R1 (`NEXT_PUBLIC_LOCAL_AUTH_TOKEN` footgun) — runtime guard
+  added.** Fallback is refused with a console warning when
+  `NODE_ENV=production`.
+
+Items still open: G1 (`GatewayRead` token exposure), G2 (call-site
+migration to org-scoped settings), G3 (login-success audit), G4
+(per-dep denial detail), G5 (retention scheduling), G6 (connector gate
+wiring into real sync), G10 (per-creator key partitioning), G11
+(frontend security dashboard). See
+[`security-sprint-3-implementation.md`](./security-sprint-3-implementation.md)
+§11 and §12 for the prioritised Sprint 4 plan.
+
 ## 6.2 Sprint 2 progress (2026-04-29)
 
 The following items from §2 ("What is missing") and §3 ("What is risky")

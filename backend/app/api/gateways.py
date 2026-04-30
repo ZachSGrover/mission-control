@@ -24,6 +24,7 @@ from app.schemas.gateways import (
     GatewayUpdate,
 )
 from app.schemas.pagination import DefaultLimitOffsetPage
+from app.services.gateway_tokens import set_token as set_gateway_token
 from app.services.openclaw.admin_service import GatewayAdminLifecycleService
 from app.services.openclaw.session_service import GatewayTemplateSyncQuery
 
@@ -94,7 +95,12 @@ async def create_gateway(
     auth: AuthContext = AUTH_DEP,
     ctx: OrganizationContext = ORG_ADMIN_DEP,
 ) -> Gateway:
-    """Create a gateway and provision or refresh its main agent."""
+    """Create a gateway and provision or refresh its main agent.
+
+    Sprint 3: the plaintext ``payload.token`` is encrypted via
+    :func:`app.services.gateway_tokens.set_token` immediately after the
+    row is created, so the legacy ``token`` column is never written to.
+    """
     service = GatewayAdminLifecycleService(session)
     await service.assert_gateway_runtime_compatible(
         url=payload.url,
@@ -103,10 +109,20 @@ async def create_gateway(
         disable_device_pairing=payload.disable_device_pairing,
     )
     data = payload.model_dump()
+    plaintext_token = data.pop("token", None)
     gateway_id = uuid4()
     data["id"] = gateway_id
     data["organization_id"] = ctx.organization.id
     gateway = await crud.create(session, Gateway, **data)
+    if plaintext_token:
+        await set_gateway_token(
+            session,
+            gateway,
+            plaintext_token,
+            actor_user_id=auth.user.id if auth.user else None,
+            actor_email=auth.user.email if auth.user else None,
+        )
+        await session.commit()
     await service.ensure_main_agent(gateway, auth, action="provision")
     return gateway
 
@@ -141,15 +157,25 @@ async def update_gateway(
         organization_id=ctx.organization.id,
     )
     updates = payload.model_dump(exclude_unset=True)
+    # Sprint 3: extract token from the patch payload so it goes through
+    # ``set_gateway_token`` and lands in ``encrypted_token``, never the
+    # legacy plaintext column.
+    token_change_requested = "token" in updates
+    plaintext_token = updates.pop("token", None)
     if (
         "url" in updates
-        or "token" in updates
+        or token_change_requested
         or "allow_insecure_tls" in updates
         or "disable_device_pairing" in updates
     ):
         raw_next_url = updates.get("url", gateway.url)
         next_url = raw_next_url.strip() if isinstance(raw_next_url, str) else ""
-        next_token = updates.get("token", gateway.token)
+        next_token = (
+            plaintext_token
+            if token_change_requested
+            else (gateway.encrypted_token and "")  # don't leak plaintext to compat check
+            or gateway.token
+        )
         next_allow_insecure_tls = bool(
             updates.get("allow_insecure_tls", gateway.allow_insecure_tls),
         )
@@ -164,6 +190,15 @@ async def update_gateway(
                 disable_device_pairing=next_disable_device_pairing,
             )
     await crud.patch(session, gateway, updates)
+    if token_change_requested:
+        await set_gateway_token(
+            session,
+            gateway,
+            plaintext_token,
+            actor_user_id=auth.user.id if auth.user else None,
+            actor_email=auth.user.email if auth.user else None,
+        )
+        await session.commit()
     await service.ensure_main_agent(gateway, auth, action="update")
     return gateway
 

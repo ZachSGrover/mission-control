@@ -540,6 +540,12 @@ def test_notify_channel_status_returns_not_configured() -> None:
 def test_no_network_imports_in_of_direct_modules() -> None:
     """Walk every ``onlyfans_direct_*`` module under ``app.core`` and
     ``app.services`` and assert none import a network client.
+
+    Sprint 8E exemption: ``onlyfans_direct_transport.py`` is the
+    one OF-direct file that may import ``httpx`` (the existing
+    repo-wide async HTTP client). The exemption is reviewed in
+    that file's module docstring and pinned to ``httpx`` only —
+    every other forbidden import is still refused.
     """
     repo_root = Path(__file__).resolve().parents[1]
     forbidden_imports = {
@@ -554,6 +560,9 @@ def test_no_network_imports_in_of_direct_modules() -> None:
         "selenium_wire",
         "puppeteer",
     }
+    per_file_allowlist: dict[str, frozenset[str]] = {
+        "app/services/onlyfans_direct_transport.py": frozenset({"httpx"}),
+    }
     targets: list[str] = []
     for parent in (Path("app/core"), Path("app/services")):
         full = repo_root / parent
@@ -563,9 +572,12 @@ def test_no_network_imports_in_of_direct_modules() -> None:
     assert targets, "expected to find onlyfans_direct_* modules"
 
     for rel in targets:
+        allowed = per_file_allowlist.get(rel, frozenset())
         full = repo_root / rel
         text = full.read_text(encoding="utf-8")
         for fi in forbidden_imports:
+            if fi in allowed:
+                continue
             for line in text.splitlines():
                 stripped = line.strip()
                 if stripped.startswith(f"import {fi}") or stripped.startswith(f"from {fi} "):

@@ -170,6 +170,21 @@ class DryRunResult:
 ENV_SANDBOX_ALLOWED: Final[str] = "MC_OF_DIRECT_SANDBOX_ALLOWED"
 
 
+# Sprint 8E: only these three actions can be selected via the
+# sandbox path. Sprint 8D made the other 7 raise via the real
+# client skeleton; Sprint 8E makes the refusal explicit at the
+# selector layer too, so a future caller cannot accidentally
+# route an unimplemented action through the sandbox gate and
+# trigger an audit-noisy ``real_client_not_enabled`` block.
+ALLOWED_SANDBOX_ACTIONS: Final[frozenset[str]] = frozenset(
+    {
+        "account_profile_read",
+        "account_stats_read",
+        "revenue_summary_read",
+    }
+)
+
+
 # Sprint 8C: SandboxBlockedReason vocabulary. Anything not in this set
 # means the gate has a new failure mode that hasn't been added — fail
 # closed by classifying as "unknown_error".
@@ -793,6 +808,20 @@ class OnlyFansDirectConnector:
                 # test that asks for a write fails loud.
                 raise BlockedActionError(f"dry_run_sandbox refused: {action!r} is a write action.")
             return await _audit_blocked("policy_refused", verdict_policy.reason)
+        # Sprint 8E: explicit allowlist for sandbox-runnable actions.
+        # The Sprint 8D real client will also refuse the other 7 reads
+        # (they raise RealClientNotEnabledError), but failing earlier
+        # here means the audit row says "real_client_not_enabled" with
+        # the unimplemented action name — useful for runbooks.
+        if action not in ALLOWED_SANDBOX_ACTIONS:
+            return await _audit_blocked(
+                "real_client_not_enabled",
+                (
+                    f"action {action!r} is not in the Sprint 8E sandbox "
+                    f"allowlist {sorted(ALLOWED_SANDBOX_ACTIONS)}. "
+                    "Other read methods are still unimplemented."
+                ),
+            )
         # 4-7. connector gate (kill switch, approval, consent, vault)
         gate_verdict: GateVerdict = await is_connector_action_allowed(
             session,

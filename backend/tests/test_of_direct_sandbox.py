@@ -661,6 +661,10 @@ async def test_record_owner_signoff_writes_event_and_has_owner_signoff_finds_it(
 
 
 def test_no_network_imports_in_any_of_direct_module_after_8c() -> None:
+    """Sprint 8E exemption: ``onlyfans_direct_transport.py`` may
+    import ``httpx`` only. Every other forbidden import remains
+    refused in every OF-direct module.
+    """
     repo_root = Path(__file__).resolve().parents[1]
     forbidden = {
         "httpx",
@@ -674,6 +678,9 @@ def test_no_network_imports_in_any_of_direct_module_after_8c() -> None:
         "selenium_wire",
         "puppeteer",
     }
+    per_file_allowlist: dict[str, frozenset[str]] = {
+        "app/services/onlyfans_direct_transport.py": frozenset({"httpx"}),
+    }
     targets: list[str] = []
     for parent in (Path("app/core"), Path("app/services")):
         full = repo_root / parent
@@ -681,8 +688,11 @@ def test_no_network_imports_in_any_of_direct_module_after_8c() -> None:
             targets.append(str(path.relative_to(repo_root)))
 
     for rel in targets:
+        allowed = per_file_allowlist.get(rel, frozenset())
         text = (repo_root / rel).read_text(encoding="utf-8")
         for fi in forbidden:
+            if fi in allowed:
+                continue
             for line in text.splitlines():
                 stripped = line.strip()
                 if stripped.startswith(f"import {fi}") or stripped.startswith(f"from {fi} "):

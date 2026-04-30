@@ -53,6 +53,11 @@ These are the controls that **fail closed** today. They are why this checklist c
 | A.30 | Strict response schemas + allowlist parsers | `app/core/onlyfans_direct_schemas.py` | `AccountProfileSummary`, `AccountStatsSummary`, `RevenueSummary` dataclasses; parsers drop unknown keys; `safe_field_counts` returns scalars only. |
 | A.31 | Three account-level read methods implemented | `app/services/onlyfans_direct_real_client.py` | `read_account_profile`, `read_account_stats`, `read_revenue_summary` use the configured transport, parse through allowlists, return typed safe dicts. The other 7 reads still raise `RealClientNotEnabledError`. |
 | A.32 | Sandbox connector handles success / challenge / unexpected | `app/services/onlyfans_direct_connector.py:dry_run_sandbox` | Audits `connector.sandbox.success` (safe field counts), `connector.session.challenged` (Sprint 8B vocabulary, calls `DEFAULT_NOTIFIER`), or `connector.sandbox.failed` (status code only). |
+| A.33 | Real HTTP transport wired (httpx, sandbox-only) | `app/services/onlyfans_direct_transport.py:RealHTTPTransport` | Refuses unless production check + both env flags pass; safe header filter; classify_status matrix; per-file walker-test allowlist; no credential attribute after construction. |
+| A.34 | Vault-backed credential loader | `app/services/onlyfans_direct_credential_loader.py` | Resolves vault row + decrypts inside `load()`; allowlist parses to header-shaped `CredentialMaterial`; refuses missing / revoked / wrong-provider / non-JSON. |
+| A.35 | Owner sign-off admin endpoint | `POST /api/v1/security/onlyfans-direct/sandbox-signoff` | Owner-gated; records `connector.golive.sandbox`; refuses empty creator_id; does not auto-approve / consent / run. |
+| A.36 | Sandbox method allowlist | `ALLOWED_SANDBOX_ACTIONS` in `onlyfans_direct_connector.py` | Sandbox path early-refuses any action outside the three implemented reads. |
+| A.37 | Safe notify payload builder | `app/services/onlyfans_direct_session_health.py:build_safe_notify_payload` | Bounded fields, no cookie / session / response-body / credential-value keys. |
 
 If you flipped any of these off intentionally for a development run, **flip them back before continuing this checklist.**
 
@@ -156,9 +161,11 @@ This section is pre-state. After Sprint 7, the **policy boundary** and **disable
 | E.22 | Challenge notifier Protocol | ✅ Sprint 8C | `ChallengeNotifier`; default `NoOpChallengeNotifier`. |
 | E.23 | Real challenge notifier wired (Slack/Telegram) | ❌ Sprint 8E | Replace `DEFAULT_NOTIFIER`; audit row remains source of truth. |
 | E.24 | Real OnlyFans read method bodies (per-method) | ⚠ partial (Sprint 8D) | Account-level reads done; chat / fan / vault / post / story / mass-message reads remain blocked. |
-| E.25 | Real `RealHTTPTransport.fetch()` body | ❌ Sprint 8E | Currently raises `TransportNotEnabledError`. |
-| E.26 | Test-only OnlyFans credential paired in vault | ❌ Sprint 8E (operator) | Operator action; not in code. |
-| E.27 | Sandbox dry-run with real transport against test account | ❌ Sprint 8E | Requires E.25 + E.26. |
+| E.25 | Real `RealHTTPTransport.fetch()` body | ✅ Sprint 8E | Uses `httpx`; refuses unless flags + non-prod + base_url; classify_status matrix; per-file walker-test allowlist. |
+| E.26 | Test-only OnlyFans credential paired in vault | ❌ Sprint 8F (operator) | Operator action; not in code. JSON wire shape: `{cookie?, authorization?, user_agent?}`. |
+| E.27 | Sandbox dry-run with real transport against test account | ❌ Sprint 8F | Requires E.26 + endpoint mapping review (sprint-8e doc §10). |
+| E.28 | Real challenge notifier (Slack/Telegram) | ❌ Sprint 8F | `build_safe_notify_payload` helper added in 8E; channel wiring deferred. |
+| E.29 | Endpoint mapping review (replace synthetic paths) | ❌ Sprint 8F | Synthetic paths in `onlyfans_direct_real_client.py`; replace before any real fetch. |
 
 The honest summary: **direct OnlyFans is still not unblocked.** Sprint 7 lands the policy boundary, the disabled shell, the dry-run path, the credential contract, and the rate-limit/session-health scaffolding. The remaining red gates (E.5, E.6, E.7, E.11, E.12) are explicit; lighting any of them green requires the work named in `security-sprint-7-direct-of-prep.md` §10–§11.
 

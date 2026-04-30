@@ -784,6 +784,10 @@ class OnlyFansDirectStatusResponse(BaseModel):
     # Sprint 8D additions
     sandbox_read_methods_implemented: list[str]  # has a body via fake transport
     sandbox_read_methods_blocked: list[str]  # still raises RealClientNotEnabledError
+    # Sprint 8E additions
+    real_client_env_flag_set: bool  # MC_OF_DIRECT_REAL_CLIENT_ALLOWED
+    sandbox_transport_configured: bool  # both env flags AND non-production
+    sandbox_signoff_endpoint_path: str  # the admin path that records connector.golive.sandbox
 
 
 # ── Sprint 8A: OnlyMonster gated proof status + preview ─────────────────────
@@ -953,6 +957,76 @@ async def onlymonster_gate_preview(
     )
 
 
+# ── Sprint 8E: owner sign-off endpoint ───────────────────────────────────────
+
+
+class SandboxSignoffRequest(BaseModel):
+    """Body for ``POST /security/onlyfans-direct/sandbox-signoff``.
+
+    Carries only the creator id and an optional operator note.
+    The endpoint records a ``connector.golive.sandbox`` audit row
+    at severity ``high``. It does NOT auto-approve the connector,
+    grant consent, or run a read.
+    """
+
+    creator_id: str
+    notes: str | None = None
+
+
+class SandboxSignoffResponse(BaseModel):
+    creator_id: str
+    audit_event_id: str | None
+    notes_recorded: bool
+
+
+@router.post(
+    "/onlyfans-direct/sandbox-signoff",
+    response_model=SandboxSignoffResponse,
+    status_code=201,
+)
+async def onlyfans_direct_sandbox_signoff(
+    body: SandboxSignoffRequest,
+    auth: AuthContext = AUTH_DEP,
+    role: str = OWNER_DEP,
+    session: AsyncSession = SESSION_DEP,
+) -> SandboxSignoffResponse:
+    """Owner-only: record a sandbox owner sign-off for a creator.
+
+    Sprint 8C / 8D / 8E sandbox path refuses to run unless an
+    audit row with ``event_type='connector.golive.sandbox'``
+    exists for the creator. This endpoint is the only operator
+    surface that records one — production code MUST NOT auto-call
+    it.
+    """
+    del role
+    if not body.creator_id.strip():
+        raise HTTPException(
+            status_code=_http_status.HTTP_400_BAD_REQUEST,
+            detail="creator_id must not be empty",
+        )
+    if auth.user is None or auth.user.id is None:
+        # The endpoint is owner-gated; auth.user should always be
+        # set. Defensive guard.
+        raise HTTPException(
+            status_code=_http_status.HTTP_400_BAD_REQUEST,
+            detail="owner identity could not be resolved",
+        )
+    from app.services.onlyfans_direct_owner_signoff import record_owner_signoff
+
+    audit_id = await record_owner_signoff(
+        session,
+        creator_id=body.creator_id.strip(),
+        owner_user_id=auth.user.id,
+        owner_email=auth.user.email or "unknown@example.test",
+        notes=body.notes,
+    )
+    return SandboxSignoffResponse(
+        creator_id=body.creator_id.strip(),
+        audit_event_id=audit_id,
+        notes_recorded=bool(body.notes),
+    )
+
+
 @router.get("/onlyfans-direct/status", response_model=OnlyFansDirectStatusResponse)
 async def onlyfans_direct_status(
     _: AuthContext = AUTH_DEP,
@@ -1011,6 +1085,14 @@ async def onlyfans_direct_status(
     )
     sandbox_blocked_methods = sorted(set(READ_ACTIONS) - set(sandbox_implemented))
 
+    # Sprint 8E: real-client env flag + transport-configurable status.
+    from app.services.onlyfans_direct_transport import (
+        ENV_REAL_CLIENT_ALLOWED as _OF_ENV_REAL,
+    )
+
+    real_client_env_flag_set = _os.environ.get(_OF_ENV_REAL, "0").strip() == "1"
+    sandbox_transport_configured = sandbox_env_flag_set and real_client_env_flag_set and not in_prod
+
     return OnlyFansDirectStatusResponse(
         connector_type=snapshot.connector_type,
         mode=snapshot.mode,
@@ -1036,4 +1118,7 @@ async def onlyfans_direct_status(
         sandbox_missing_prerequisites=missing_sandbox,
         sandbox_read_methods_implemented=sandbox_implemented,
         sandbox_read_methods_blocked=sandbox_blocked_methods,
+        real_client_env_flag_set=real_client_env_flag_set,
+        sandbox_transport_configured=sandbox_transport_configured,
+        sandbox_signoff_endpoint_path="/api/v1/security/onlyfans-direct/sandbox-signoff",
     )

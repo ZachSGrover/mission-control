@@ -38,10 +38,20 @@ Status surface:
 
 from __future__ import annotations
 
+import json as _json
 import logging
 import os
 from dataclasses import dataclass, field
-from typing import Any, Final, Mapping, Protocol, runtime_checkable
+from typing import Any, Awaitable, Callable, Final, Mapping, Protocol, runtime_checkable
+
+# Sprint 8E: ``httpx`` is the existing repo-wide async HTTP client
+# (already used by app.core.auth, app.core.telegram_polling, app.api.*).
+# It is imported here at module level so the no-network-import walker
+# tests must explicitly allow it in this *one* file. Both walker tests
+# (Sprint 8B and Sprint 8D) skip ``onlyfans_direct_transport.py`` for
+# this single audited reason; every other ``onlyfans_direct_*.py``
+# module must remain network-import-free.
+import httpx
 
 logger = logging.getLogger(__name__)
 
@@ -178,43 +188,127 @@ class FakeTransport:
         return self.responses[path]
 
 
-# ── Real HTTP transport (NOT WIRED) ─────────────────────────────────────────
+# ── Real HTTP transport — Sprint 8E ─────────────────────────────────────────
+
+
+# Sprint 8E: timeouts for the real transport. Conservative values; a
+# future sprint can lower them but should not raise without review.
+_DEFAULT_CONNECT_TIMEOUT_S: Final[float] = 10.0
+_DEFAULT_READ_TIMEOUT_S: Final[float] = 20.0
+
+
+# Sprint 8E: response headers we are willing to round-trip into the
+# audit pipeline (as a small summary). Anything not in this set is
+# dropped entirely. ``set-cookie``, ``cookie``, ``authorization``,
+# ``x-bc``, etc. are deliberately absent.
+_SAFE_HEADER_KEYS: Final[frozenset[str]] = frozenset(
+    {
+        "content-type",
+        "content-length",
+        "x-ratelimit-remaining",
+        "x-ratelimit-limit",
+        "retry-after",
+    }
+)
+
+
+@dataclass(frozen=True)
+class CredentialMaterial:
+    """Header-shaped credential material the loader returns.
+
+    Carries only what :class:`RealHTTPTransport` will set on the
+    outbound request. The dataclass is intentionally narrow — the
+    transport reads these fields, builds headers, and the dataclass
+    falls out of scope at function exit. There is no encrypted
+    blob, no cookie jar, no session object.
+
+    A future sprint that needs more (e.g. additional X-BC fingerprint
+    fields) should extend this dataclass deliberately, with an
+    audit-safety review.
+    """
+
+    cookie: str | None = None
+    authorization: str | None = None
+    user_agent: str | None = None
+
+
+class CredentialLoaderError(RuntimeError):
+    """Raised by a credential loader when the credential cannot be
+    resolved (missing row, decrypt failure, wrong provider). The
+    transport translates this into a blocked sandbox result; it
+    never surfaces the original exception's contents.
+    """
+
+
+CredentialLoaderFn = Callable[[], Awaitable[CredentialMaterial]]
+
+
+@runtime_checkable
+class CredentialLoader(Protocol):
+    """Async credential loader the transport calls inside
+    :meth:`RealHTTPTransport.fetch`.
+
+    Implementations MUST:
+
+    - Resolve the credential from the encrypted vault at call time.
+    - Drop the decrypted value before returning.
+    - Return a :class:`CredentialMaterial` carrying only the header
+      fields the transport will set.
+    - Never log, audit, or persist the decrypted value.
+    """
+
+    async def load(self) -> CredentialMaterial: ...
 
 
 class RealHTTPTransport:
-    """Placeholder for a future real HTTP transport.
+    """Real HTTP transport for the sandbox path.
 
-    Sprint 8D does NOT wire a real HTTP client. This class exists
-    so the call site has a typed shape to swap in later, and so
-    the env-flag check is reviewable here.
+    Sprint 8E wires the actual ``httpx`` call. Every safety property
+    must hold:
 
-    Future Sprint 8E+ wiring rules (binding):
+    - Constructor refuses unless **both**
+      ``MC_OF_DIRECT_SANDBOX_ALLOWED=1`` (Sprint 8C) AND
+      ``MC_OF_DIRECT_REAL_CLIENT_ALLOWED=1`` (Sprint 8D) are set,
+      AND we are not in production.
+    - Constructor accepts only ``base_url`` and ``credential_loader``.
+      No cookie / session / password kwargs.
+    - ``fetch`` resolves the credential by calling
+      ``credential_loader.load()`` *inside the method scope*. The
+      decrypted material is used to build the request headers and
+      dropped before return. No attribute on the transport instance
+      carries the credential.
+    - Response is classified into one of:
+      - :class:`TransportResponse` (status 200 + parseable JSON).
+      - :class:`ChallengeDetectedError` for 401 / 403 / 429 / HTML
+        when JSON expected / suspicious redirects.
+      - :class:`UnexpectedStatusError` for 5xx, empty body, or
+        malformed JSON.
+    - Headers exposed to callers / audit are filtered through
+      :data:`_SAFE_HEADER_KEYS`. No ``Set-Cookie``, no
+      ``Authorization``, no ``X-BC`` ever appears in
+      :class:`TransportResponse` or any log line.
+    - The ``json_body`` is the parsed JSON only — never the raw
+      response bytes.
 
-    1. The HTTP client import (``httpx`` is the most likely
-       candidate) goes inside :meth:`fetch` so the module-level
-       no-network-import test continues to pass during the
-       transitional commit. The test must be expanded explicitly,
-       reviewed against this docstring, before any module-level
-       import.
-    2. The implementation refuses to construct unless BOTH
-       ``MC_OF_DIRECT_SANDBOX_ALLOWED=1`` (Sprint 8C) AND
-       ``MC_OF_DIRECT_REAL_CLIENT_ALLOWED=1`` (this sprint) are
-       set in the environment.
-    3. The implementation never returns raw bytes; it always parses
-       to JSON and surfaces a :class:`TransportResponse`.
-    4. Cookies / session tokens are resolved inside :meth:`fetch`
-       from the encrypted vault and dropped on stack exit. No
-       attribute on the transport instance carries them.
+    **Endpoint mapping is still synthetic.** The path constants in
+    ``onlyfans_direct_real_client`` (``/sandbox/account/profile``
+    etc.) are pinned for sandbox-server compatibility tests. Before
+    pointing this transport at a real OnlyFans-compatible endpoint,
+    an operator must:
 
-    Until Sprint 8E lands these, every method here raises
-    :class:`TransportNotEnabledError`.
+    1. Replace each path constant with the actual endpoint URL.
+    2. Validate the response shape against
+       ``AccountProfileSummary`` etc. *with sample synthetic data*
+       before any real-account fetch.
+    3. Walk ``docs/security/security-sprint-8e-of-sandbox-transport.md`` §10.
     """
 
-    def __init__(self) -> None:
-        # Refuse construction outside the sandbox + real-client flag
-        # combination. The check happens at __init__ so a future
-        # contributor's first call after wiring fails loudly if the
-        # flags aren't set.
+    def __init__(
+        self,
+        *,
+        base_url: str,
+        credential_loader: CredentialLoader,
+    ) -> None:
         from app.core import startup_guard
         from app.services.onlyfans_direct_connector import ENV_SANDBOX_ALLOWED
 
@@ -226,6 +320,60 @@ class RealHTTPTransport:
             raise TransportNotEnabledError(
                 f"RealHTTPTransport requires {ENV_REAL_CLIENT_ALLOWED}=1."
             )
+        if not base_url:
+            raise ValueError("RealHTTPTransport requires a non-empty base_url.")
+        # Strip trailing slash so path concatenation is predictable.
+        self._base_url = base_url.rstrip("/")
+        self._loader = credential_loader
+
+    @staticmethod
+    def safe_header_summary(headers: Mapping[str, str]) -> dict[str, str]:
+        """Return a small dict of headers safe for audit / status.
+
+        Drops every key not in :data:`_SAFE_HEADER_KEYS`. Values are
+        bounded at 200 chars.
+        """
+        out: dict[str, str] = {}
+        for k, v in headers.items():
+            if k.lower() in _SAFE_HEADER_KEYS:
+                s = str(v)
+                out[k.lower()] = s[:200]
+        return out
+
+    @staticmethod
+    def classify_status(
+        *,
+        status_code: int,
+        content_type: str | None,
+        body_text: str,
+    ) -> None:
+        """Raise the right typed error for non-success responses.
+
+        Returns ``None`` on success (status 200 with non-empty body
+        and JSON-compatible content type). Raises
+        :class:`ChallengeDetectedError` or
+        :class:`UnexpectedStatusError` otherwise.
+
+        Pure function — a test can drive the classification matrix
+        without standing up an httpx mock.
+        """
+        if status_code == 401:
+            raise ChallengeDetectedError(reason_category="login_required", status_code=status_code)
+        if status_code == 403:
+            raise ChallengeDetectedError(reason_category="captcha", status_code=status_code)
+        if status_code == 429:
+            raise ChallengeDetectedError(
+                reason_category="rate_limit_response", status_code=status_code
+            )
+        if 500 <= status_code < 600:
+            raise UnexpectedStatusError(status_code=status_code)
+        if status_code != 200:
+            raise UnexpectedStatusError(status_code=status_code)
+        ct = (content_type or "").lower()
+        if ct and "json" not in ct and "html" in ct:
+            raise ChallengeDetectedError(reason_category="unexpected_html", status_code=status_code)
+        if not body_text.strip():
+            raise UnexpectedStatusError(status_code=status_code)
 
     async def fetch(
         self,
@@ -233,9 +381,82 @@ class RealHTTPTransport:
         path: str,
         params: Mapping[str, str] | None = None,
     ) -> TransportResponse:
-        del path, params
-        raise TransportNotEnabledError(
-            "RealHTTPTransport.fetch is not wired in Sprint 8D. A future "
-            "Sprint 8E+ will replace this body with a deliberately narrow "
-            "HTTP call inside this method only."
+        """Perform one safe sandbox read.
+
+        Steps:
+
+        1. Resolve credential by calling ``self._loader.load()``.
+           The decrypted material is in scope **only inside this
+           method**.
+        2. Build request headers from the loader output. Drop the
+           loader output reference after this step.
+        3. ``httpx.AsyncClient`` request with explicit timeouts and
+           ``follow_redirects=False`` (a redirect is itself a
+           challenge signal).
+        4. Classify the response. Non-200 paths raise typed errors
+           the connector wrapper catches and audits.
+        5. On 200, parse JSON. Malformed JSON is treated as
+           unexpected.
+        6. Return :class:`TransportResponse` with safe fields only.
+        """
+        try:
+            material = await self._loader.load()
+        except CredentialLoaderError:
+            raise
+        except Exception as exc:
+            logger.warning("of_direct.transport.loader_failed type=%s", type(exc).__name__)
+            raise UnexpectedStatusError(status_code=0) from None
+
+        headers: dict[str, str] = {"Accept": "application/json"}
+        if material.cookie:
+            headers["Cookie"] = material.cookie
+        if material.authorization:
+            headers["Authorization"] = material.authorization
+        if material.user_agent:
+            headers["User-Agent"] = material.user_agent
+        # Drop the loader output reference. ``headers`` still holds
+        # the values, but the dataclass instance can be GC'd; the
+        # ``headers`` dict is cleared in the finally block below.
+        del material
+
+        url = f"{self._base_url}{path}"
+        timeout = httpx.Timeout(
+            connect=_DEFAULT_CONNECT_TIMEOUT_S,
+            read=_DEFAULT_READ_TIMEOUT_S,
+            write=10.0,
+            pool=10.0,
+        )
+        try:
+            async with httpx.AsyncClient(timeout=timeout, follow_redirects=False) as client:
+                response = await client.get(url, headers=headers, params=dict(params or {}))
+        except httpx.HTTPError as exc:
+            logger.warning("of_direct.transport.http_error type=%s", type(exc).__name__)
+            raise UnexpectedStatusError(status_code=0) from None
+        finally:
+            headers.clear()
+
+        if 300 <= response.status_code < 400:
+            raise ChallengeDetectedError(reason_category="other", status_code=response.status_code)
+
+        body_text = response.text
+        content_type = response.headers.get("content-type")
+        self.classify_status(
+            status_code=response.status_code,
+            content_type=content_type,
+            body_text=body_text,
+        )
+
+        try:
+            json_body: Any = _json.loads(body_text)
+        except _json.JSONDecodeError:
+            logger.warning(
+                "of_direct.transport.malformed_json status=%d",
+                response.status_code,
+            )
+            raise UnexpectedStatusError(status_code=response.status_code) from None
+
+        return TransportResponse(
+            status_code=response.status_code,
+            json_body=json_body,
+            content_type=(content_type or "")[:80] if content_type else None,
         )

@@ -490,6 +490,21 @@ function SecurityAdmin() {
                   <strong style={{ color: "rgb(190,18,60)" }}>Sandbox reads still blocked ({ofDirect.sandbox_read_methods_blocked.length}):</strong>{" "}
                   {ofDirect.sandbox_read_methods_blocked.join(", ") || "—"}
                 </p>
+                <p>
+                  Real-client env flag (<code>MC_OF_DIRECT_REAL_CLIENT_ALLOWED</code>):{" "}
+                  <strong style={{ color: ofDirect.real_client_env_flag_set ? "rgb(180,83,9)" : "var(--text-muted)" }}>
+                    {ofDirect.real_client_env_flag_set ? "on" : "off"}
+                  </strong>
+                </p>
+                <p>
+                  Sandbox transport configured:{" "}
+                  <strong style={{ color: ofDirect.sandbox_transport_configured ? "rgb(180,83,9)" : "var(--text-muted)" }}>
+                    {ofDirect.sandbox_transport_configured ? "yes" : "no"}
+                  </strong>
+                </p>
+                <p>
+                  Owner sign-off endpoint: <code>{ofDirect.sandbox_signoff_endpoint_path}</code>
+                </p>
               </div>
               <p className="text-xs" style={{ color: "var(--text-quiet)" }}>
                 {ofDirect.notes}

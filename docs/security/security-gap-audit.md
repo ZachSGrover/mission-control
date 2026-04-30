@@ -185,6 +185,75 @@ Each step ends with a documented review checkpoint. **Do not skip**.
 
 ---
 
+## 6.12 Sprint 8E progress (2026-04-30)
+
+Security Sprint 8E on `feat/of-direct-sandbox-transport-sprint-8e`
+wires the **real HTTP transport** for the three Sprint 8D
+account-level reads, behind hard environment flags, vault
+credential references, owner sign-off, and the full Sprint 8C
+sandbox gate. The transport is real; reaching it requires every
+gate to pass; production mode does not exist.
+
+- **Real HTTP transport — done.** `RealHTTPTransport` uses
+  `httpx` (existing repo dep). Constructor refuses unless
+  non-production + `MC_OF_DIRECT_SANDBOX_ALLOWED=1` +
+  `MC_OF_DIRECT_REAL_CLIENT_ALLOWED=1` + non-empty `base_url`.
+  Constructor signature has only `base_url` and
+  `credential_loader` — no cookie / session kwargs possible. No
+  credential attribute exists on the instance after construction
+  (verified by test).
+- **Vault-backed credential loader — done.**
+  `VaultBackedCredentialLoader` resolves the vault row and
+  decrypts inside `load()`. Plaintext is replaced by `""` and
+  dropped before return. Wire-shape allowlist accepts only
+  `{cookie, authorization, user_agent}` keys; refuses missing /
+  revoked / wrong-provider / non-JSON. Returns
+  `CredentialMaterial` (header-shaped, bounded length).
+- **Challenge detection matrix — done.** `classify_status` is a
+  pure function: 401→login_required, 403→captcha,
+  429→rate_limit_response, 5xx→unexpected, HTML when JSON
+  expected→unexpected_html, 200+empty→unexpected,
+  3xx (with `follow_redirects=False`)→other,
+  malformed JSON→unexpected.
+- **Safe notify payload builder — done.**
+  `build_safe_notify_payload(reason_category, creator_id,
+  connector_type, timestamp_iso, safe_action_label)` returns a
+  bounded dict[str, str] with no cookie / session / response-body
+  / credential keys. The `NoOpChallengeNotifier` default remains;
+  Sprint 8F wires a real Slack/Telegram channel.
+- **Owner sign-off admin endpoint — done.**
+  `POST /api/v1/security/onlyfans-direct/sandbox-signoff` —
+  owner-gated, records `connector.golive.sandbox` audit row, refuses
+  empty creator_id. Does not auto-approve / consent / run.
+- **Sandbox method allowlist — done.** `ALLOWED_SANDBOX_ACTIONS`
+  frozenset; early refusal for any other action.
+- **Status surface extended.** `OnlyFansDirectStatusResponse` adds
+  `real_client_env_flag_set`, `sandbox_transport_configured`,
+  `sandbox_signoff_endpoint_path`. Frontend card renders the new
+  state and shows the sign-off endpoint path.
+- **Walker tests updated.** Three walker tests
+  (`test_no_network_imports_in_of_direct_modules`,
+  `test_no_network_imports_after_8d`,
+  `test_no_network_imports_in_any_of_direct_module_after_8c`)
+  carry a per-file allowlist that names
+  `onlyfans_direct_transport.py` and only that file. Every other
+  OF-direct module remains network-import-free.
+- **Tests — 34 cases.** Constructor refusal matrix (production,
+  missing flags, empty base_url); classify_status matrix
+  (401/403/429/5xx/HTML/empty/200); fetch end-to-end with
+  `httpx.MockTransport` for each branch; cookie value never in
+  result; vault loader (active / revoked / wrong-provider /
+  non-JSON); safe header summary drops dangerous headers; safe
+  notify payload strips secrets and bounds values; owner sign-off
+  endpoint records audit row, refuses empty creator_id; sandbox
+  early-refuses non-allowlisted actions; loader / transport
+  modules have no forbidden imports.
+
+Items still open: real challenge notifier wired (Sprint 8F);
+endpoint mapping review (synthetic paths replaced with real
+sandbox URLs); test-only credential paired in vault; first real
+sandbox dry-run against the test account.
+
 ## 6.11 Sprint 8D progress (2026-04-30)
 
 Security Sprint 8D on `feat/of-direct-sandbox-reads-sprint-8d`

@@ -149,6 +149,10 @@ export type OnlyFansDirectStatus = {
   // Sprint 8D additions
   sandbox_read_methods_implemented: string[];
   sandbox_read_methods_blocked: string[];
+  // Sprint 8E additions
+  real_client_env_flag_set: boolean;
+  sandbox_transport_configured: boolean;
+  sandbox_signoff_endpoint_path: string;
 };
 
 export type GatePreviewResult = {

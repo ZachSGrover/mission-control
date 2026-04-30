@@ -179,6 +179,42 @@ def notify_channel_status() -> NotifyStubResult:
     return "not_configured"
 
 
+# ── Sprint 8E: safe notify payload builder ──────────────────────────────────
+
+
+# Sprint 8E: a Slack/Telegram message MUST carry only these fields.
+# A future real notifier serialises this dict to its channel format.
+# Tests assert no forbidden key (cookie, session, response body,
+# credential value) appears in the output.
+def build_safe_notify_payload(
+    *,
+    reason_category: ChallengeReason,
+    creator_id: str | None,
+    connector_type: str = CONNECTOR_TYPE,
+    timestamp_iso: str | None = None,
+    safe_action_label: str = "sandbox-read",
+) -> dict[str, str]:
+    """Construct an audit-safe payload for a future Slack/Telegram
+    notify. No raw response body, no headers, no cookies, no
+    session values, no credential id beyond what is already public.
+
+    The output is a flat dict[str, str] with bounded values. A
+    future real notifier serialises it to whatever its channel
+    expects.
+    """
+    payload: dict[str, str] = {
+        "connector_type": connector_type[:50],
+        "reason_category": reason_category,
+        "safe_action_label": safe_action_label[:50],
+    }
+    if creator_id is not None:
+        # Bound creator_id length to keep the payload tight.
+        payload["creator_id"] = creator_id[:80]
+    if timestamp_iso is not None:
+        payload["timestamp_iso"] = timestamp_iso[:50]
+    return payload
+
+
 # ── Sprint 8C: ChallengeNotifier Protocol + NoOp implementation ────────────
 
 

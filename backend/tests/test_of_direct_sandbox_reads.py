@@ -205,9 +205,14 @@ def test_fake_transport_satisfies_protocol() -> None:
 
 
 def test_transport_module_has_no_network_imports() -> None:
+    """Sprint 8E exemption: ``onlyfans_direct_transport.py`` may
+    import ``httpx`` only. Other forbidden imports must still be
+    absent.
+    """
     repo_root = Path(__file__).resolve().parents[1]
     rel = "app/services/onlyfans_direct_transport.py"
     text = (repo_root / rel).read_text(encoding="utf-8")
+    allowed_for_this_file = frozenset({"httpx"})
     for forbidden in (
         "httpx",
         "requests",
@@ -220,6 +225,8 @@ def test_transport_module_has_no_network_imports() -> None:
         "selenium_wire",
         "puppeteer",
     ):
+        if forbidden in allowed_for_this_file:
+            continue
         for line in text.splitlines():
             stripped = line.strip()
             if stripped.startswith(f"import {forbidden}") or stripped.startswith(
@@ -228,52 +235,27 @@ def test_transport_module_has_no_network_imports() -> None:
                 pytest.fail(f"{rel} imports {forbidden!r}: {line!r}")
 
 
-def test_real_http_transport_refuses_construction_without_flags(
+# Sprint 8E: the constructor and fetch behavior of RealHTTPTransport
+# is exercised in detail by ``tests/test_of_direct_sandbox_transport.py``.
+# The Sprint 8D placeholder tests below have been replaced with two
+# minimal smoke checks here so this file's invariants stay focused
+# on the schemas / fake-client / sandbox-gate scope.
+
+
+def test_real_http_transport_now_has_constructor_args(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    from app.services.onlyfans_direct_transport import (
-        RealHTTPTransport,
-        TransportNotEnabledError,
-    )
+    """Sprint 8E updated `RealHTTPTransport` to require `base_url`
+    and `credential_loader`. The Sprint 8D no-arg construction
+    path no longer exists.
+    """
+    from app.services.onlyfans_direct_transport import RealHTTPTransport
 
-    # Production refusal regardless of flags.
-    from app.core import startup_guard
+    import inspect
 
-    monkeypatch.setattr(startup_guard, "is_production", lambda: True)
-    monkeypatch.setenv(ENV_SANDBOX_ALLOWED, "1")
-    monkeypatch.setenv("MC_OF_DIRECT_REAL_CLIENT_ALLOWED", "1")
-    with pytest.raises(TransportNotEnabledError, match="production"):
-        RealHTTPTransport()
-
-    # Non-production but missing sandbox flag.
-    monkeypatch.setattr(startup_guard, "is_production", lambda: False)
-    monkeypatch.delenv(ENV_SANDBOX_ALLOWED, raising=False)
-    with pytest.raises(TransportNotEnabledError, match="MC_OF_DIRECT_SANDBOX_ALLOWED"):
-        RealHTTPTransport()
-
-    # Sandbox flag set but real-client flag missing.
-    monkeypatch.setenv(ENV_SANDBOX_ALLOWED, "1")
-    monkeypatch.delenv("MC_OF_DIRECT_REAL_CLIENT_ALLOWED", raising=False)
-    with pytest.raises(TransportNotEnabledError, match="MC_OF_DIRECT_REAL_CLIENT_ALLOWED"):
-        RealHTTPTransport()
-
-
-@pytest.mark.asyncio
-async def test_real_http_transport_fetch_raises_not_enabled(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    from app.services.onlyfans_direct_transport import (
-        RealHTTPTransport,
-        TransportNotEnabledError,
-    )
-    from app.core import startup_guard
-
-    monkeypatch.setattr(startup_guard, "is_production", lambda: False)
-    monkeypatch.setenv(ENV_SANDBOX_ALLOWED, "1")
-    monkeypatch.setenv("MC_OF_DIRECT_REAL_CLIENT_ALLOWED", "1")
-    transport = RealHTTPTransport()
-    with pytest.raises(TransportNotEnabledError, match="not wired"):
-        await transport.fetch(path="/anything")
+    sig = inspect.signature(RealHTTPTransport.__init__)
+    assert "base_url" in sig.parameters
+    assert "credential_loader" in sig.parameters
 
 
 # ── Phase 2: schemas ───────────────────────────────────────────────────────
@@ -753,6 +735,10 @@ async def test_no_raw_body_or_cookies_in_any_audit_row_after_sandbox_success() -
 
 
 def test_no_network_imports_after_8d() -> None:
+    """Sprint 8E exemption: ``onlyfans_direct_transport.py`` may
+    import ``httpx`` only. Every other forbidden import remains
+    refused in every OF-direct module.
+    """
     repo_root = Path(__file__).resolve().parents[1]
     forbidden = {
         "httpx",
@@ -766,14 +752,20 @@ def test_no_network_imports_after_8d() -> None:
         "selenium_wire",
         "puppeteer",
     }
+    per_file_allowlist: dict[str, frozenset[str]] = {
+        "app/services/onlyfans_direct_transport.py": frozenset({"httpx"}),
+    }
     targets: list[str] = []
     for parent in (Path("app/core"), Path("app/services")):
         full = repo_root / parent
         for path in full.glob("onlyfans_direct_*.py"):
             targets.append(str(path.relative_to(repo_root)))
     for rel in targets:
+        allowed = per_file_allowlist.get(rel, frozenset())
         text = (repo_root / rel).read_text(encoding="utf-8")
         for fi in forbidden:
+            if fi in allowed:
+                continue
             for line in text.splitlines():
                 stripped = line.strip()
                 if stripped.startswith(f"import {fi}") or stripped.startswith(f"from {fi} "):

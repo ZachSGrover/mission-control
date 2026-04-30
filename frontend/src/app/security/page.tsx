@@ -445,6 +445,21 @@ function SecurityAdmin() {
                   {ofDirect.backoff_initial_seconds}s → {ofDirect.backoff_max_seconds}s
                 </li>
                 <li>Real client wired: <strong>{ofDirect.real_client_wired ? "yes" : "no"}</strong></li>
+                <li>
+                  Production mode:{" "}
+                  <strong style={{ color: "rgb(190,18,60)" }}>
+                    {ofDirect.production_mode_blocked ? "blocked" : "NOT BLOCKED"}
+                  </strong>
+                </li>
+                <li>
+                  Dry-run mode available:{" "}
+                  <strong style={{ color: ofDirect.dry_run_available ? "rgb(5,150,105)" : "var(--text-muted)" }}>
+                    {ofDirect.dry_run_available ? "yes (fake client)" : "no (production without flag)"}
+                  </strong>
+                </li>
+                <li>
+                  Notify channel: <strong>{ofDirect.notify_channel_status}</strong>
+                </li>
               </ul>
               <p className="text-xs" style={{ color: "var(--text-quiet)" }}>
                 {ofDirect.notes}

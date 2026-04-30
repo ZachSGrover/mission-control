@@ -40,6 +40,10 @@ These are the controls that **fail closed** today. They are why this checklist c
 | A.17 | OnlyMonster gated production-proof entrypoint | `app/services/onlymonster_gate_proof.py` | `run_onlymonster_gated_proof` wraps the seam with operator-friendly safety; refuses fake-in-production; audits `connector.gated_proof.{blocked,success}`. |
 | A.18 | OnlyMonster typed fake client | `app/services/onlymonster_fake_client.py` | `FakeOnlyMonsterClient` is read-only, no network, no creds; refused in production unless `MC_ONLYMONSTER_ALLOW_FAKE_CLIENT=1`. |
 | A.19 | OnlyMonster gate readiness snapshot endpoint | `GET /api/v1/security/onlymonster-gate/status` | Returns booleans/enums only — env flag, approval present, consent present, kill-switch blocking, encryption-key dedicated, real-client wired, direct-OF blocked. |
+| A.20 | Direct OnlyFans read-only client interface | `app/core/onlyfans_direct_client.py` | Protocol + abstract base; one async method per Sprint 7 read action; all base methods raise `NotImplementedError`; no write-shaped names. |
+| A.21 | Direct OnlyFans fake read-only client | `app/services/onlyfans_direct_fake_client.py` | Subclass of abstract base; refused in production unless `MC_OF_DIRECT_ALLOW_FAKE_CLIENT=1`; refuses cookie/session kwargs; returns synthetic-only payloads. |
+| A.22 | `mode="dry_run"` on `OnlyFansDirectConnector` | `app/services/onlyfans_direct_connector.py` | Calls the fake through the gate, discards the payload, audits with safe scalar `rows_read`. No `mode="real"` / `"production"` exists. |
+| A.23 | `connector.session.challenged` audit + notify stub | `app/services/onlyfans_direct_session_health.py` | Fixed reason vocabulary; refuses raw response bodies / cookies / session tokens; notify stub returns `not_configured`. |
 
 If you flipped any of these off intentionally for a development run, **flip them back before continuing this checklist.**
 
@@ -129,8 +133,15 @@ This section is pre-state. After Sprint 7, the **policy boundary** and **disable
 | E.8 | A second owner approval is required to flip `mode='read_write'` (no single-operator privilege escalation) | ⚠ partially structural | `mode="read_write"` is not implementable today; `WRITE_ACTIONS` are policy-blocked; the second-approval gate must still be designed before any write graduation. |
 | E.9 | Credential safety contract enforced: no raw cookies, no frontend session storage | ✅ Sprint 7 | `app.core.onlyfans_direct_credentials` enforces refusal at construction; CI test scans `frontend/src` for forbidden patterns. |
 | E.10 | Dry-run path with synthetic fixtures proves the gating chain end-to-end | ✅ Sprint 7 | `OnlyFansDirectConnector.dry_run(...)` audits policy + gate + (would-fetch); fixture payload is computed and discarded. |
-| E.11 | Real `OnlyFansReadOnlyClient` is implemented and wired into the shell | ❌ does not exist | Sprint 8B work; required before any non-fixture path. |
-| E.12 | A real OnlyFans test-only account is paired through the shell | ❌ blocked by E.11 | Section §10 of `security-sprint-7-direct-of-prep.md` lists the full prerequisite chain. |
+| E.11 | Real `OnlyFansReadOnlyClient` is implemented and wired into the shell | ❌ does not exist | `AbstractOnlyFansReadOnlyClient` shape pinned in Sprint 8B; concrete real subclass is Sprint 8C work. |
+| E.12 | A real OnlyFans test-only account is paired through the shell | ❌ blocked by E.11 | Section §8 of `security-sprint-8b-of-dryrun.md` lists the full prerequisite chain. |
+| E.13 | Read-only client interface (Protocol + abstract base) | ✅ Sprint 8B | `app.core.onlyfans_direct_client` |
+| E.14 | Fake read-only client (synthetic, refused in production) | ✅ Sprint 8B | `app.services.onlyfans_direct_fake_client` |
+| E.15 | `mode="dry_run"` calls the fake through the gate | ✅ Sprint 8B | `OnlyFansDirectConnector(mode="dry_run", client=...)` |
+| E.16 | `connector.session.challenged` audit category | ✅ Sprint 8B | `record_session_challenged()` writes to audit pipeline |
+| E.17 | Challenge notify stub | ⚠ stub only (Sprint 8B) | Returns `not_configured`; real channel is Sprint 8C work |
+| E.18 | Real OnlyFans read-only client | ❌ Sprint 8C | Subclass of abstract base; behind separate env flag |
+| E.19 | `mode="sandbox"` for real test account | ❌ Sprint 8C | Requires E.17 (notify) + E.18 (real client) |
 
 The honest summary: **direct OnlyFans is still not unblocked.** Sprint 7 lands the policy boundary, the disabled shell, the dry-run path, the credential contract, and the rate-limit/session-health scaffolding. The remaining red gates (E.5, E.6, E.7, E.11, E.12) are explicit; lighting any of them green requires the work named in `security-sprint-7-direct-of-prep.md` §10–§11.
 

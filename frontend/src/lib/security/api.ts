@@ -132,6 +132,13 @@ export type OnlyFansDirectStatus = {
   backoff_max_seconds: number;
   session_health: string;
   notes: string;
+  // Sprint 8B additions
+  dry_run_available: boolean;
+  fake_allowed_in_production: boolean;
+  is_production: boolean;
+  notify_channel_status: string;
+  production_mode_blocked: boolean;
+  real_account_connection_blocked: boolean;
   read_actions_count: number;
   write_actions_count: number;
 };

@@ -185,6 +185,71 @@ Each step ends with a documented review checkpoint. **Do not skip**.
 
 ---
 
+## 6.9 Sprint 8B progress (2026-04-30)
+
+Security Sprint 8B on `feat/of-direct-readonly-dryrun-sprint-8b`
+graduates the direct-OnlyFans path one step beyond Sprint 7's
+fixture-only dry-run: a typed read-only **client interface**, a
+**fake implementation** that satisfies the interface, and a
+`mode="dry_run"` connector path that calls the fake through the
+gate. Real account connection is still blocked; production mode
+still does not exist.
+
+- **Read-only client Protocol + abstract base — done.**
+  `app.core.onlyfans_direct_client` defines `OnlyFansReadOnlyClient`
+  (runtime-checkable Protocol) and `AbstractOnlyFansReadOnlyClient`
+  (concrete base whose every method raises `NotImplementedError`).
+  Ten read methods, one per Sprint 7 `READ_ACTIONS` entry. No
+  callable named after any write action or starting with a write
+  verb. `READ_ACTION_TO_METHOD` table maps action → method name
+  for the connector dispatch.
+- **Fake read-only client — done.**
+  `FakeOnlyFansReadOnlyClient` subclasses the abstract base.
+  Constructor refuses cookie / session / password / x-bc kwargs
+  via Sprint 7's `assert_no_forbidden_credential_keys`. Refused in
+  production unless `MC_OF_DIRECT_ALLOW_FAKE_CLIENT=1`. Each method
+  returns a fresh dict copy of the matching Sprint 7 fixture with
+  a `creator_id_echo` field; refuses to return any payload missing
+  the `synthetic: True` marker.
+- **`mode="dry_run"` extension to the connector — done.**
+  `OnlyFansDirectConnector(mode="dry_run", client=...)` validates
+  the mode (only `"disabled"` and `"dry_run"` accepted), requires
+  a client when in dry_run mode, still refuses cookie kwargs.
+  `dry_run(action, ...)` routes to the client method, computes a
+  safe scalar `rows_read`, **discards the payload**, and audits
+  `connector.dry_run.pass` with `used_fake_client=true`. Sprint 7's
+  `mode="disabled"` path (fixture compute-and-discard) is unchanged.
+- **`connector.session.challenged` audit + notify stub — done.**
+  `record_session_challenged()` writes one warning-severity audit
+  row with a fixed reason vocabulary (`captcha`, `login_required`,
+  `rate_limit_response`, `unexpected_status`, `unexpected_html`,
+  `session_expired`, `session_revoked`, `platform_block`, `other`).
+  Refuses any `extra_metadata` key in the forbidden set (response
+  bodies, cookies, session tokens, headers, csrf). `notify_challenge_stub()`
+  returns `"not_configured"`; sends nothing.
+- **Status surface extended.** `GET /security/onlyfans-direct/status`
+  now also returns `dry_run_available`, `fake_allowed_in_production`,
+  `is_production`, `notify_channel_status`, `production_mode_blocked`
+  (always true), `real_account_connection_blocked` (always true).
+  The frontend card renders all of them.
+- **Tests — 29 cases.** Protocol/abstract shape, every read action
+  mapped, no write-shaped callables on any new surface, abstract
+  raises NotImplementedError, fake refuses cookies, fake refused in
+  production, fake allowed with flag, fake returns synthetic only,
+  default mode = disabled, dry_run requires client, invalid mode
+  raises, dry_run blocks on missing approval, dry_run blocks on
+  missing consent, dry_run blocks on global kill switch, dry_run
+  blocks on connector kill switch, dry_run allowed path calls
+  fake and audits with safe `rows_read`, no payload field on
+  result, no fan-PII in audit metadata, session.challenged audit
+  refuses forbidden metadata keys, notify stub returns
+  `not_configured`, no network imports anywhere, Sprint 7 policy
+  invariants intact, disabled-mode still refuses writes.
+
+Items still open: real `OnlyFansReadOnlyClient` (Sprint 8C+),
+real notify channel wiring, sandbox graduation, real creator
+go-live, all G7/G8 items from earlier sprints.
+
 ## 6.8 Sprint 8A progress (2026-04-30)
 
 Security Sprint 8A on `feat/gated-onlymonster-proof-sprint-8a` proves

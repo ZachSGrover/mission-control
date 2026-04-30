@@ -38,6 +38,10 @@ from uuid import UUID
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.core.connector_gate import GateVerdict, is_connector_action_allowed
+from app.core.onlyfans_direct_client import (
+    READ_ACTION_TO_METHOD,
+    OnlyFansReadOnlyClient,
+)
 from app.core.onlyfans_direct_policy import (
     BlockedActionError,
     PolicyVerdict,
@@ -151,6 +155,39 @@ class DryRunResult:
     audit_event_id: str | None
     used_fixture: bool
     notes: str
+    # Sprint 8B additions. Safe scalars only.
+    mode: ConnectorMode = "disabled"
+    used_fake_client: bool = False
+    rows_read: int = 0  # number of records the fake returned (0 in disabled mode)
+
+
+def _safe_rows_read(payload: object) -> int:
+    """Compute a safe scalar count of records in a fake-client payload.
+
+    Inspects only the dict shape — never persists or returns the
+    payload itself. Looks for common list-shaped fields (``messages``,
+    ``threads``, ``items``, ``posts``, ``stories``, ``campaigns``,
+    ``fans_sample_metadata``) and returns the largest length found.
+    Falls back to 0 if the payload is not a dict or has no list field.
+    Worst-case behaviour is to under-report — never to leak content.
+    """
+    if not isinstance(payload, dict):
+        return 0
+    candidates = (
+        "messages",
+        "threads",
+        "items",
+        "posts",
+        "stories",
+        "campaigns",
+        "fans_sample_metadata",
+    )
+    best = 0
+    for key in candidates:
+        value = payload.get(key)
+        if isinstance(value, list):
+            best = max(best, len(value))
+    return best
 
 
 class OnlyFansDirectConnector:
@@ -176,7 +213,13 @@ class OnlyFansDirectConnector:
     would in turn fail the Sprint 7 tests.
     """
 
-    def __init__(self, **kwargs: Any) -> None:
+    def __init__(
+        self,
+        *,
+        mode: ConnectorMode = "disabled",
+        client: OnlyFansReadOnlyClient | None = None,
+        **kwargs: Any,
+    ) -> None:
         forbidden = _FORBIDDEN_CREDENTIAL_KEYS & set(kwargs.keys())
         if forbidden:
             raise CookieRefusedError(
@@ -185,8 +228,19 @@ class OnlyFansDirectConnector:
                 "must be resolved through the creator credential vault, never passed "
                 "as cookies, session tokens, or plaintext."
             )
-        # Intentionally store nothing. The disabled shell has no fields
-        # that could leak. ``kwargs`` is dropped on the floor.
+        if mode not in ("disabled", "dry_run"):
+            raise ValueError(
+                f"Invalid mode {mode!r}. Sprint 8B supports 'disabled' "
+                "(default) and 'dry_run' only. There is no production mode."
+            )
+        if mode == "dry_run" and client is None:
+            raise ValueError(
+                "mode='dry_run' requires a client (OnlyFansReadOnlyClient). "
+                "Sprint 8B accepts only the fake client; pass FakeOnlyFansReadOnlyClient()."
+            )
+        # Intentionally drop other kwargs on the floor.
+        self._mode: ConnectorMode = mode
+        self._client: OnlyFansReadOnlyClient | None = client
 
     # ── status ──────────────────────────────────────────────────────────────
 
@@ -197,21 +251,32 @@ class OnlyFansDirectConnector:
         in this sprint. The fields exist so the admin UI can render
         the same shape unchanged when Sprint 8+ flips them.
         """
+        # Sprint 8B: mode reflects the constructor arg. ``enabled`` and
+        # ``real_client_wired`` remain False — the disabled mode is the
+        # default, and dry_run only ever uses the fake client.
+        notes = (
+            "Direct OnlyFans connector is disabled. Read-only "
+            "implementation has not been written. See "
+            "docs/security/direct-onlyfans-readiness-checklist.md."
+            if self._mode == "disabled"
+            else (
+                "Direct OnlyFans connector is in dry_run mode. The "
+                "configured client is a fake implementation backed by "
+                "Sprint 7 fixtures; there is no real network call. "
+                "Production mode does not exist."
+            )
+        )
         return ConnectorStatus(
             connector_type=CONNECTOR_TYPE,
-            mode="disabled",
+            mode=self._mode,
             enabled=False,
             real_client_wired=False,
             rate_max_per_minute=DEFAULT_MAX_REQUESTS_PER_MINUTE,
             rate_max_per_hour=DEFAULT_MAX_REQUESTS_PER_HOUR,
             backoff_initial_seconds=DEFAULT_BACKOFF.initial_seconds,
             backoff_max_seconds=DEFAULT_BACKOFF.max_seconds,
-            session_health="disabled",
-            notes=(
-                "Direct OnlyFans connector is disabled. Read-only "
-                "implementation has not been written. See "
-                "docs/security/direct-onlyfans-readiness-checklist.md."
-            ),
+            session_health="disabled" if self._mode == "disabled" else "healthy",
+            notes=notes,
         )
 
     # ── dry-run ─────────────────────────────────────────────────────────────
@@ -315,9 +380,60 @@ class OnlyFansDirectConnector:
                 notes="gate_blocked",
             )
 
-        # 3. Even if both prior checks pass, the shell is permanently
-        # disabled. We still compute the fixture payload (to prove the
-        # fixture path works) and discard it without persisting.
+        # 3a. mode="dry_run" — call the configured client. Sprint 8B
+        # accepts only the fake; the fake's constructor enforces
+        # production refusal via MC_OF_DIRECT_ALLOW_FAKE_CLIENT.
+        if self._mode == "dry_run" and self._client is not None:
+            method_name = READ_ACTION_TO_METHOD.get(action)
+            if method_name is None:
+                # Should never happen — policy already classified as
+                # read, which means action is in READ_ACTIONS, which
+                # means it must be in READ_ACTION_TO_METHOD. Defensive.
+                raise RuntimeError(
+                    f"No client method mapped for read action {action!r}; "
+                    "READ_ACTION_TO_METHOD is out of sync with READ_ACTIONS."
+                )
+            method = getattr(self._client, method_name)
+            payload = await method(creator_id=creator_id or "")
+            # Compute a safe scalar summary and DROP the payload before
+            # any further code can see it. We never persist, audit, or
+            # return the payload itself.
+            rows_read = _safe_rows_read(payload)
+            del payload
+
+            audit_id = await self._audit_dry_run_pass(
+                session,
+                action=action,
+                organization_id=organization_id,
+                creator_id=creator_id,
+                actor_user_id=actor_user_id,
+                actor_email=actor_email,
+                used_fake_client=True,
+                rows_read=rows_read,
+            )
+            return DryRunResult(
+                allowed=True,
+                classification="read",
+                policy_reason=verdict_policy.reason,
+                gate_reason=gate_verdict.reason,
+                gate_detail=gate_verdict.detail,
+                connector_type=CONNECTOR_TYPE,
+                requested_action=action,
+                creator_id=creator_id,
+                organization_id=str(organization_id) if organization_id else None,
+                audit_event_id=audit_id,
+                used_fixture=True,
+                notes=(
+                    "dry_run_pass_via_fake_client — production mode does "
+                    "not exist; the client is a fake implementation."
+                ),
+                mode="dry_run",
+                used_fake_client=True,
+                rows_read=rows_read,
+            )
+
+        # 3b. mode="disabled" (Sprint 7 path). Compute and discard the
+        # fixture payload; record the dry-run pass; return.
         _fixture = fixture_payload_for(action)
         del _fixture  # explicit drop so reviewers see the no-leak intent.
 
@@ -328,6 +444,8 @@ class OnlyFansDirectConnector:
             creator_id=creator_id,
             actor_user_id=actor_user_id,
             actor_email=actor_email,
+            used_fake_client=False,
+            rows_read=0,
         )
         return DryRunResult(
             allowed=True,
@@ -345,6 +463,9 @@ class OnlyFansDirectConnector:
                 "dry_run_pass_fixture_only — connector is disabled; "
                 f"future real implementation must replace {_REAL_CLIENT_TODO}."
             ),
+            mode="disabled",
+            used_fake_client=False,
+            rows_read=0,
         )
 
     # ── audit helpers ───────────────────────────────────────────────────────
@@ -396,6 +517,8 @@ class OnlyFansDirectConnector:
         creator_id: str | None,
         actor_user_id: UUID | None,
         actor_email: str | None,
+        used_fake_client: bool = False,
+        rows_read: int = 0,
     ) -> str | None:
         row = await record_audit(
             session,
@@ -415,6 +538,8 @@ class OnlyFansDirectConnector:
                 "requested_action": action,
                 "mode": "dry_run",
                 "fixture_only": True,
+                "used_fake_client": used_fake_client,
+                "rows_read": rows_read,
             },
         )
         await session.commit()

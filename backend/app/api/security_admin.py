@@ -769,6 +769,13 @@ class OnlyFansDirectStatusResponse(BaseModel):
     notes: str
     read_actions_count: int
     write_actions_count: int
+    # Sprint 8B additions
+    dry_run_available: bool
+    fake_allowed_in_production: bool
+    is_production: bool
+    notify_channel_status: str  # "not_configured" | "skipped"
+    production_mode_blocked: bool  # always True
+    real_account_connection_blocked: bool  # always True
 
 
 # ── Sprint 8A: OnlyMonster gated proof status + preview ─────────────────────
@@ -951,10 +958,24 @@ async def onlyfans_direct_status(
     disabled" card.
     """
     del role
+    import os as _os
+
     from app.core.onlyfans_direct_policy import READ_ACTIONS, WRITE_ACTIONS
+    from app.core.startup_guard import is_production as _is_production
     from app.services.onlyfans_direct_connector import OnlyFansDirectConnector
+    from app.services.onlyfans_direct_fake_client import (
+        ENV_ALLOW_FAKE_IN_PROD as _OF_ENV_FAKE,
+    )
+    from app.services.onlyfans_direct_session_health import notify_channel_status
 
     snapshot = OnlyFansDirectConnector().status()
+    fake_allowed = _os.environ.get(_OF_ENV_FAKE, "0").strip() == "1"
+    in_prod = _is_production()
+    # Dry-run is "available" iff we can construct the fake client at
+    # all — i.e. either we're not in production or the explicit drill
+    # flag is set. We never actually construct one here; the UI uses
+    # the boolean to render the readiness state.
+    dry_run_available = (not in_prod) or fake_allowed
     return OnlyFansDirectStatusResponse(
         connector_type=snapshot.connector_type,
         mode=snapshot.mode,
@@ -968,4 +989,10 @@ async def onlyfans_direct_status(
         notes=snapshot.notes,
         read_actions_count=len(READ_ACTIONS),
         write_actions_count=len(WRITE_ACTIONS),
+        dry_run_available=dry_run_available,
+        fake_allowed_in_production=fake_allowed,
+        is_production=in_prod,
+        notify_channel_status=notify_channel_status(),
+        production_mode_blocked=True,
+        real_account_connection_blocked=True,
     )

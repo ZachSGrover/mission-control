@@ -26,11 +26,11 @@ from __future__ import annotations
 import logging
 import time
 from datetime import datetime, timedelta
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import func
-from sqlmodel import select
+from sqlmodel import col, select
 
 from app.api.mc_roles import require_owner
 from app.core.auth import AuthContext, get_auth_context
@@ -99,7 +99,7 @@ async def _get_alert_config(session: AsyncSession) -> UsageAlertConfig:
     """
     row = (
         await session.exec(
-            select(UsageAlertConfig).where(UsageAlertConfig.organization_id.is_(None))
+            select(UsageAlertConfig).where(col(UsageAlertConfig.organization_id).is_(None))
         )
     ).first()
     if row is None:
@@ -115,7 +115,7 @@ async def _latest_snapshot_per_provider(
 ) -> dict[str, UsageSnapshot]:
     """Return the most recent snapshot keyed by provider.  Empty dict if none."""
     snapshots = list(
-        await session.exec(select(UsageSnapshot).order_by(UsageSnapshot.captured_at.desc()))
+        await session.exec(select(UsageSnapshot).order_by(col(UsageSnapshot.captured_at).desc()))
     )
     latest: dict[str, UsageSnapshot] = {}
     for snap in snapshots:
@@ -287,15 +287,20 @@ async def get_projects(
     Empty until ``record_usage_event`` callers are wired in Phase 2+.
     """
     start, end = _resolve_range(range_key)
+    # SQLAlchemy / sqlmodel typing can't pick a select() overload for a 6-
+    # column heterogeneous projection that mixes columns and aggregates.
+    # ``col(UsageEvent.id)`` fixes the ``count`` argument type, and the
+    # remaining overload-resolution gap is a known mypy limitation we
+    # narrowly suppress here.
     rows = list(
         await session.exec(
-            select(
+            select(  # type: ignore[call-overload]
                 UsageEvent.project,
                 UsageEvent.feature,
                 func.coalesce(func.sum(UsageEvent.input_tokens), 0),
                 func.coalesce(func.sum(UsageEvent.output_tokens), 0),
                 func.coalesce(func.sum(UsageEvent.estimated_cost_usd), 0.0),
-                func.count(UsageEvent.id),
+                func.count(col(UsageEvent.id)),
             )
             .where(UsageEvent.started_at >= start, UsageEvent.started_at < end)
             .group_by(UsageEvent.project, UsageEvent.feature)
@@ -351,7 +356,7 @@ async def get_alerts(
         await session.exec(
             select(UsageSnapshot)
             .where(UsageSnapshot.status == "error")
-            .order_by(UsageSnapshot.captured_at.desc())
+            .order_by(col(UsageSnapshot.captured_at).desc())
         )
     ).first()
 
@@ -359,7 +364,7 @@ async def get_alerts(
         await session.exec(
             select(UsageSnapshot)
             .where(UsageSnapshot.status == "ok")
-            .order_by(UsageSnapshot.captured_at.desc())
+            .order_by(col(UsageSnapshot.captured_at).desc())
         )
     ).first()
 
@@ -395,7 +400,7 @@ _ANTHROPIC_ADMIN_KEY_DBKEY = "admin_key.anthropic"
 _ANTHROPIC_ORG_ID_DBKEY = "admin_org_id.anthropic"
 
 
-async def _load_openai_credentials_status(session: AsyncSession) -> dict:
+async def _load_openai_credentials_status(session: AsyncSession) -> dict[str, Any]:
     """Read OpenAI admin credential status from DB (with .env fallback)."""
     from app.core.config import settings as app_settings
     from app.core.secrets_store import get_secret_with_source, mask_key
@@ -420,7 +425,7 @@ async def _load_openai_credentials_status(session: AsyncSession) -> dict:
     }
 
 
-async def _load_anthropic_credentials_status(session: AsyncSession) -> dict:
+async def _load_anthropic_credentials_status(session: AsyncSession) -> dict[str, Any]:
     """Read Anthropic admin credential status from DB (with .env fallback)."""
     from app.core.config import settings as app_settings
     from app.core.secrets_store import get_secret_with_source, mask_key
@@ -502,7 +507,7 @@ async def update_settings(
 # ── OpenAI Admin Usage credentials ──────────────────────────────────────────
 
 
-def _credentials_status_from_dict(data: dict) -> CredentialsStatus:
+def _credentials_status_from_dict(data: dict[str, Any]) -> CredentialsStatus:
     return CredentialsStatus(
         admin_configured=data["admin_configured"],
         admin_source=data["admin_source"],

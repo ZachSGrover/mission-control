@@ -18,7 +18,12 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.api.mc_roles import require_owner
 from app.core.auth import AuthContext, get_auth_context
-from app.core.secrets_store import delete_secret, get_secret_with_source, mask_key, set_secret
+from app.core.secrets_store import mask_key
+from app.services.settings_scope import (
+    delete_secret_scoped,
+    get_secret_scoped,
+    set_secret_scoped,
+)
 from app.db.session import get_session
 from app.services.audit_log import record_audit
 
@@ -78,9 +83,12 @@ async def list_integrations(
     session: AsyncSession = SESSION_DEP,
 ) -> list[IntegrationStatus]:
     """Return credential status for all supported integrations."""
+    # Sprint 6: route through the scoped wrapper. ``organization_id=None``
+    # keeps legacy global behaviour today; future sprints can resolve the
+    # caller's org context and pass it here without re-touching this file.
     result: list[IntegrationStatus] = []
     for name, db_key in INTEGRATION_KEYS.items():
-        value, source = await get_secret_with_source(session, db_key)
+        value, source = await get_secret_scoped(session, db_key, organization_id=None)
         configured = bool(value and value.strip())
         meta = INTEGRATION_META[name]
         result.append(
@@ -119,7 +127,7 @@ async def save_credential(
             detail="Credential value must not be empty.",
         )
     db_key = INTEGRATION_KEYS[name]
-    await set_secret(session, db_key, value)
+    await set_secret_scoped(session, db_key, value, organization_id=None)
     await record_audit(
         session,
         event_type="integration.credential.save",
@@ -163,7 +171,7 @@ async def delete_credential(
             detail=f"Unknown integration '{name}'. Valid: {sorted(INTEGRATION_KEYS)}",
         )
     db_key = INTEGRATION_KEYS[name]
-    await delete_secret(session, db_key)
+    await delete_secret_scoped(session, db_key, organization_id=None)
     await record_audit(
         session,
         event_type="integration.credential.delete",

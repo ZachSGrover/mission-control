@@ -70,6 +70,26 @@ export type GatewayMigrationResult = {
   dry_run: boolean;
 };
 
+export type ApprovalCreateInput = {
+  connector_type: string;
+  requested_action: string;
+  organization_id?: string | null;
+  creator_id?: string | null;
+  risk_level?: string;
+  expires_at_iso?: string | null;
+  reason?: string | null;
+};
+
+export type ConsentCreateInput = {
+  consent_type: string;
+  organization_id?: string | null;
+  creator_id?: string | null;
+  source?: string | null;
+  document_reference?: string | null;
+  expires_at_iso?: string | null;
+  notes?: string | null;
+};
+
 export type GatePreviewResult = {
   allowed: boolean;
   reason: string;
@@ -172,6 +192,18 @@ export const securityApi = {
     },
   ) =>
     jsonRequest<GatePreviewResult>(f, "/connector-gate/preview", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    }),
+  createApproval: (f: FetchFn, body: ApprovalCreateInput) =>
+    jsonRequest<ApprovalSummary>(f, "/approvals", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    }),
+  createConsent: (f: FetchFn, body: ConsentCreateInput) =>
+    jsonRequest<ConsentSummary>(f, "/consents", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body),

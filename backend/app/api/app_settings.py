@@ -16,12 +16,13 @@ from app.core.auth import AuthContext, get_auth_context
 from app.core.secrets_store import (
     GITHUB_KEYS,
     PROVIDER_KEYS,
-    delete_secret,
     get_api_key_with_source,
     get_secret,
-    get_secret_with_source,
     mask_key,
-    set_secret,
+)
+from app.services.settings_scope import (
+    delete_secret_scoped,
+    set_secret_scoped,
 )
 from app.db.session import get_session
 from app.services.audit_log import record_audit
@@ -103,7 +104,7 @@ async def upsert_api_key(
             detail="Key value must not be empty.",
         )
     db_key = PROVIDER_KEYS[provider]
-    await set_secret(session, db_key, key_value)
+    await set_secret_scoped(session, db_key, key_value, organization_id=None)
     await record_audit(
         session,
         event_type="settings.api_key.save",
@@ -136,7 +137,7 @@ async def delete_api_key(
             detail=f"Unknown provider '{provider}'. Valid: {sorted(PROVIDER_KEYS)}",
         )
     db_key = PROVIDER_KEYS[provider]
-    await delete_secret(session, db_key)
+    await delete_secret_scoped(session, db_key, organization_id=None)
     await record_audit(
         session,
         event_type="settings.api_key.delete",
@@ -220,7 +221,7 @@ async def upsert_github_field(
             detail="Value must not be empty.",
         )
     db_key = GITHUB_KEYS[field]
-    await set_secret(session, db_key, value)
+    await set_secret_scoped(session, db_key, value, organization_id=None)
     preview = mask_key(value) if field == "github_pat" else value
     await record_audit(
         session,
@@ -255,7 +256,7 @@ async def delete_github_field(
             detail=f"Unknown field '{field}'. Valid: {sorted(GITHUB_KEYS)}",
         )
     db_key = GITHUB_KEYS[field]
-    await delete_secret(session, db_key)
+    await delete_secret_scoped(session, db_key, organization_id=None)
     await record_audit(
         session,
         event_type="settings.github.delete",

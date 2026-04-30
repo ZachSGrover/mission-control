@@ -13,7 +13,9 @@ import { DashboardShell } from "@/components/templates/DashboardShell";
 import { useAuthFetch } from "@/hooks/use-auth-fetch";
 import {
   securityApi,
+  type ApprovalCreateInput,
   type ApprovalSummary,
+  type ConsentCreateInput,
   type ConsentSummary,
   type SecurityStatus,
 } from "@/lib/security/api";
@@ -129,6 +131,32 @@ function SecurityAdmin() {
       await refresh();
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const onCreateApproval = async (input: ApprovalCreateInput) => {
+    setBusy(true);
+    try {
+      await securityApi.createApproval(fetchWithAuth, input);
+      await refresh();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+      throw e;
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const onCreateConsent = async (input: ConsentCreateInput) => {
+    setBusy(true);
+    try {
+      await securityApi.createConsent(fetchWithAuth, input);
+      await refresh();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+      throw e;
     } finally {
       setBusy(false);
     }
@@ -274,6 +302,11 @@ function SecurityAdmin() {
           </Card>
         )}
 
+        {/* Create approval */}
+        <Card title="Create connector approval" hint="owner records the approval the gate will check at runtime">
+          <ApprovalForm onSubmit={onCreateApproval} disabled={busy} />
+        </Card>
+
         {/* Connector approvals */}
         <Card title="Connector approvals" hint={`${approvals.length} recent`}>
           {approvals.length === 0 ? (
@@ -335,6 +368,11 @@ function SecurityAdmin() {
               ))}
             </ul>
           )}
+        </Card>
+
+        {/* Create consent */}
+        <Card title="Record client consent" hint="record the fact of an out-of-band signed consent">
+          <ConsentForm onSubmit={onCreateConsent} disabled={busy} />
         </Card>
 
         {/* Consents */}
@@ -444,6 +482,387 @@ function SecurityAdmin() {
         )}
       </div>
     </main>
+  );
+}
+
+// ── Forms ────────────────────────────────────────────────────────────────────
+
+const APPROVAL_CONNECTOR_TYPES = ["onlymonster", "onlyfans_direct", "other"] as const;
+const APPROVAL_RISK_LEVELS = ["low", "medium", "high", "critical"] as const;
+
+function ApprovalForm({
+  onSubmit,
+  disabled,
+}: {
+  onSubmit: (input: ApprovalCreateInput) => Promise<void>;
+  disabled: boolean;
+}) {
+  const [open, setOpen] = useState(false);
+  const [connectorType, setConnectorType] = useState<string>("onlymonster");
+  const [requestedAction, setRequestedAction] = useState<string>("creator_sync");
+  const [creatorId, setCreatorId] = useState<string>("");
+  const [organizationId, setOrganizationId] = useState<string>("");
+  const [riskLevel, setRiskLevel] = useState<string>("medium");
+  const [expiresAtIso, setExpiresAtIso] = useState<string>("");
+  const [reason, setReason] = useState<string>("");
+  const [submitting, setSubmitting] = useState(false);
+  const [localError, setLocalError] = useState<string | null>(null);
+
+  const reset = () => {
+    setRequestedAction("creator_sync");
+    setCreatorId("");
+    setOrganizationId("");
+    setRiskLevel("medium");
+    setExpiresAtIso("");
+    setReason("");
+    setLocalError(null);
+  };
+
+  const submit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setLocalError(null);
+    if (!connectorType.trim() || !requestedAction.trim()) {
+      setLocalError("connector_type and requested_action are required");
+      return;
+    }
+    setSubmitting(true);
+    try {
+      await onSubmit({
+        connector_type: connectorType.trim(),
+        requested_action: requestedAction.trim(),
+        creator_id: creatorId.trim() || null,
+        organization_id: organizationId.trim() || null,
+        risk_level: riskLevel,
+        expires_at_iso: expiresAtIso.trim() || null,
+        reason: reason.trim() || null,
+      });
+      reset();
+      setOpen(false);
+    } catch (err) {
+      setLocalError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  if (!open) {
+    return (
+      <button
+        type="button"
+        onClick={() => setOpen(true)}
+        disabled={disabled}
+        className="rounded-md border px-3 py-1.5 text-sm disabled:opacity-50"
+        style={{ borderColor: "var(--border)", color: "var(--text)" }}
+      >
+        New approval…
+      </button>
+    );
+  }
+
+  return (
+    <form onSubmit={submit} className="space-y-3">
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+        <FormField label="Connector type">
+          <select
+            value={connectorType}
+            onChange={(e) => setConnectorType(e.target.value)}
+            className="w-full rounded-md border px-2 py-1.5 text-sm"
+            style={{ borderColor: "var(--border)", background: "var(--surface)", color: "var(--text)" }}
+          >
+            {APPROVAL_CONNECTOR_TYPES.map((c) => (
+              <option key={c} value={c}>
+                {c}
+              </option>
+            ))}
+          </select>
+        </FormField>
+        <FormField label="Requested action">
+          <input
+            type="text"
+            value={requestedAction}
+            onChange={(e) => setRequestedAction(e.target.value)}
+            placeholder="e.g. creator_sync"
+            className="w-full rounded-md border px-2 py-1.5 text-sm"
+            style={{ borderColor: "var(--border)", background: "var(--surface)", color: "var(--text)" }}
+          />
+        </FormField>
+        <FormField label="Creator ID (optional)">
+          <input
+            type="text"
+            value={creatorId}
+            onChange={(e) => setCreatorId(e.target.value)}
+            className="w-full rounded-md border px-2 py-1.5 text-sm"
+            style={{ borderColor: "var(--border)", background: "var(--surface)", color: "var(--text)" }}
+          />
+        </FormField>
+        <FormField label="Organization ID (UUID, optional)">
+          <input
+            type="text"
+            value={organizationId}
+            onChange={(e) => setOrganizationId(e.target.value)}
+            className="w-full rounded-md border px-2 py-1.5 text-sm"
+            style={{ borderColor: "var(--border)", background: "var(--surface)", color: "var(--text)" }}
+          />
+        </FormField>
+        <FormField label="Risk level">
+          <select
+            value={riskLevel}
+            onChange={(e) => setRiskLevel(e.target.value)}
+            className="w-full rounded-md border px-2 py-1.5 text-sm"
+            style={{ borderColor: "var(--border)", background: "var(--surface)", color: "var(--text)" }}
+          >
+            {APPROVAL_RISK_LEVELS.map((r) => (
+              <option key={r} value={r}>
+                {r}
+              </option>
+            ))}
+          </select>
+        </FormField>
+        <FormField label="Expires at (ISO 8601, optional)">
+          <input
+            type="text"
+            value={expiresAtIso}
+            onChange={(e) => setExpiresAtIso(e.target.value)}
+            placeholder="2026-12-31T23:59:00Z"
+            className="w-full rounded-md border px-2 py-1.5 text-sm"
+            style={{ borderColor: "var(--border)", background: "var(--surface)", color: "var(--text)" }}
+          />
+        </FormField>
+      </div>
+      <FormField label="Reason (audited)">
+        <textarea
+          value={reason}
+          onChange={(e) => setReason(e.target.value)}
+          rows={2}
+          className="w-full rounded-md border px-2 py-1.5 text-sm"
+          style={{ borderColor: "var(--border)", background: "var(--surface)", color: "var(--text)" }}
+        />
+      </FormField>
+      {localError && (
+        <p className="text-xs" style={{ color: "rgb(190,18,60)" }}>
+          {localError}
+        </p>
+      )}
+      <p className="text-xs" style={{ color: "var(--text-quiet)" }}>
+        Creates a <em>pending</em> approval. The gate refuses connector actions until you also click <strong>Approve</strong> below.
+      </p>
+      <div className="flex gap-2">
+        <button
+          type="submit"
+          disabled={disabled || submitting}
+          className="rounded-md px-3 py-1.5 text-sm font-medium disabled:opacity-50"
+          style={{ background: "var(--accent-strong)", color: "white" }}
+        >
+          {submitting ? "Creating…" : "Create approval"}
+        </button>
+        <button
+          type="button"
+          onClick={() => {
+            reset();
+            setOpen(false);
+          }}
+          disabled={submitting}
+          className="rounded-md border px-3 py-1.5 text-sm"
+          style={{ borderColor: "var(--border)", color: "var(--text-muted)" }}
+        >
+          Cancel
+        </button>
+      </div>
+    </form>
+  );
+}
+
+const CONSENT_TYPES = [
+  "onlymonster_read",
+  "onlyfans_direct_read",
+  "data_processing",
+  "other",
+] as const;
+
+function ConsentForm({
+  onSubmit,
+  disabled,
+}: {
+  onSubmit: (input: ConsentCreateInput) => Promise<void>;
+  disabled: boolean;
+}) {
+  const [open, setOpen] = useState(false);
+  const [consentType, setConsentType] = useState<string>("onlymonster_read");
+  const [creatorId, setCreatorId] = useState<string>("");
+  const [organizationId, setOrganizationId] = useState<string>("");
+  const [source, setSource] = useState<string>("");
+  const [documentReference, setDocumentReference] = useState<string>("");
+  const [expiresAtIso, setExpiresAtIso] = useState<string>("");
+  const [notes, setNotes] = useState<string>("");
+  const [submitting, setSubmitting] = useState(false);
+  const [localError, setLocalError] = useState<string | null>(null);
+
+  const reset = () => {
+    setCreatorId("");
+    setOrganizationId("");
+    setSource("");
+    setDocumentReference("");
+    setExpiresAtIso("");
+    setNotes("");
+    setLocalError(null);
+  };
+
+  const submit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setLocalError(null);
+    if (!consentType.trim()) {
+      setLocalError("consent_type is required");
+      return;
+    }
+    setSubmitting(true);
+    try {
+      await onSubmit({
+        consent_type: consentType.trim(),
+        creator_id: creatorId.trim() || null,
+        organization_id: organizationId.trim() || null,
+        source: source.trim() || null,
+        document_reference: documentReference.trim() || null,
+        expires_at_iso: expiresAtIso.trim() || null,
+        notes: notes.trim() || null,
+      });
+      reset();
+      setOpen(false);
+    } catch (err) {
+      setLocalError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  if (!open) {
+    return (
+      <button
+        type="button"
+        onClick={() => setOpen(true)}
+        disabled={disabled}
+        className="rounded-md border px-3 py-1.5 text-sm disabled:opacity-50"
+        style={{ borderColor: "var(--border)", color: "var(--text)" }}
+      >
+        Record consent…
+      </button>
+    );
+  }
+
+  return (
+    <form onSubmit={submit} className="space-y-3">
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+        <FormField label="Consent type">
+          <select
+            value={consentType}
+            onChange={(e) => setConsentType(e.target.value)}
+            className="w-full rounded-md border px-2 py-1.5 text-sm"
+            style={{ borderColor: "var(--border)", background: "var(--surface)", color: "var(--text)" }}
+          >
+            {CONSENT_TYPES.map((c) => (
+              <option key={c} value={c}>
+                {c}
+              </option>
+            ))}
+          </select>
+        </FormField>
+        <FormField label="Creator ID (optional)">
+          <input
+            type="text"
+            value={creatorId}
+            onChange={(e) => setCreatorId(e.target.value)}
+            className="w-full rounded-md border px-2 py-1.5 text-sm"
+            style={{ borderColor: "var(--border)", background: "var(--surface)", color: "var(--text)" }}
+          />
+        </FormField>
+        <FormField label="Organization ID (UUID, optional)">
+          <input
+            type="text"
+            value={organizationId}
+            onChange={(e) => setOrganizationId(e.target.value)}
+            className="w-full rounded-md border px-2 py-1.5 text-sm"
+            style={{ borderColor: "var(--border)", background: "var(--surface)", color: "var(--text)" }}
+          />
+        </FormField>
+        <FormField label="Source (e.g. signed PDF, DocuSign)">
+          <input
+            type="text"
+            value={source}
+            onChange={(e) => setSource(e.target.value)}
+            className="w-full rounded-md border px-2 py-1.5 text-sm"
+            style={{ borderColor: "var(--border)", background: "var(--surface)", color: "var(--text)" }}
+          />
+        </FormField>
+        <FormField label="Document reference (URL or hash)">
+          <input
+            type="text"
+            value={documentReference}
+            onChange={(e) => setDocumentReference(e.target.value)}
+            className="w-full rounded-md border px-2 py-1.5 text-sm"
+            style={{ borderColor: "var(--border)", background: "var(--surface)", color: "var(--text)" }}
+          />
+        </FormField>
+        <FormField label="Expires at (ISO 8601, optional)">
+          <input
+            type="text"
+            value={expiresAtIso}
+            onChange={(e) => setExpiresAtIso(e.target.value)}
+            placeholder="2027-04-28T00:00:00Z"
+            className="w-full rounded-md border px-2 py-1.5 text-sm"
+            style={{ borderColor: "var(--border)", background: "var(--surface)", color: "var(--text)" }}
+          />
+        </FormField>
+      </div>
+      <FormField label="Notes (audited)">
+        <textarea
+          value={notes}
+          onChange={(e) => setNotes(e.target.value)}
+          rows={2}
+          className="w-full rounded-md border px-2 py-1.5 text-sm"
+          style={{ borderColor: "var(--border)", background: "var(--surface)", color: "var(--text)" }}
+        />
+      </FormField>
+      {localError && (
+        <p className="text-xs" style={{ color: "rgb(190,18,60)" }}>
+          {localError}
+        </p>
+      )}
+      <p className="text-xs" style={{ color: "var(--text-quiet)" }}>
+        Records the fact of an out-of-band signed consent. Do <strong>not</strong> paste the signed text body — only its reference. Revoke from the list below; in-flight syncs depending on it fail closed.
+      </p>
+      <div className="flex gap-2">
+        <button
+          type="submit"
+          disabled={disabled || submitting}
+          className="rounded-md px-3 py-1.5 text-sm font-medium disabled:opacity-50"
+          style={{ background: "var(--accent-strong)", color: "white" }}
+        >
+          {submitting ? "Recording…" : "Record consent"}
+        </button>
+        <button
+          type="button"
+          onClick={() => {
+            reset();
+            setOpen(false);
+          }}
+          disabled={submitting}
+          className="rounded-md border px-3 py-1.5 text-sm"
+          style={{ borderColor: "var(--border)", color: "var(--text-muted)" }}
+        >
+          Cancel
+        </button>
+      </div>
+    </form>
+  );
+}
+
+function FormField({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <label className="block text-xs">
+      <span className="block mb-1 font-medium uppercase tracking-wider" style={{ color: "var(--text-quiet)" }}>
+        {label}
+      </span>
+      {children}
+    </label>
   );
 }
 

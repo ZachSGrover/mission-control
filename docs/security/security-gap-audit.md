@@ -185,6 +185,62 @@ Each step ends with a documented review checkpoint. **Do not skip**.
 
 ---
 
+## 6.6 Sprint 6 progress (2026-04-28)
+
+Security Sprint 6 on `feat/security-readiness-sprint-6` turns Sprints
+1–5's enforced foundation into operational readiness:
+
+- **OnlyMonster integration seam — done as adapter.** New
+  `app/services/onlymonster_integration.py` with
+  `fetch_creator_snapshot` and the typed `CreatorSnapshot`. Built on
+  Sprint 5's gated wrapper; refuses to run unless env flag + gate
+  both pass; returns `None` on block; audits `connector.run.finish`
+  with safe metadata only on allow; `rows_written = 0` is invariant.
+  Real client wiring is post-OFI-merge (replace `_FAKE_CLIENT_PATH`).
+  Closes G3 for the OnlyMonster path; direct OnlyFans hot-path
+  wiring remains future work, gated by the readiness checklist.
+- **App settings + integrations org-scope cutover — done.**
+  `backend/app/api/app_settings.py` and `integrations.py` migrated to
+  `set_secret_scoped` / `delete_secret_scoped` / `get_secret_scoped`
+  with `organization_id=None` for legacy parity. When
+  `MC_APP_SETTINGS_ORG_SCOPED=1` flag flips on, derived storage keys
+  isolate per-org without touching the API surface again. Closes G1.
+- **Gateway runtime-status server-side — done.** New
+  `GET /api/v1/gateways/{gateway_id}/runtime-status` returns
+  `token_configured`, `token_source` (`encrypted` /
+  `legacy_plaintext` / `none`), `url_set`, `allow_insecure_tls`,
+  `disable_device_pairing`. No token, no preview, no length. Lets
+  the frontend render gateway state without raw-token transit.
+  Closes G2.
+- **Approval + consent creation UI — done.** Frontend `ApprovalForm`
+  and `ConsentForm` in `frontend/src/app/security/page.tsx` call the
+  Sprint 5 `POST /security/{approvals,consents}` endpoints. Owner-
+  gated by the existing `RoleGuard`. Closes G5.
+- **Denial-audit explicit detail — done.** New
+  `attach_denial_detail()` helper attaches typed dependency /
+  reason / required-role / required-permission to an
+  `HTTPException` via a private attribute; `_reason_category` reads
+  it before falling through to keyword inference. Existing call
+  sites still work. Closes G6.
+- **Token-leak incident drill — done.**
+  [`incident-drill-token-leak.md`](./incident-drill-token-leak.md)
+  is a 60-minute clock with explicit pre-drill setup, milestones,
+  audit checklist, failure modes, and cadence table. Closes G9.
+- **Direct OnlyFans readiness checklist — done.**
+  [`direct-onlyfans-readiness-checklist.md`](./direct-onlyfans-readiness-checklist.md)
+  documents what is currently blocked (Section A), the foundation
+  prerequisites (Section B), the gates for OnlyMonster sandbox
+  (Section C) and first real creator (Section D), and the explicit
+  pre-state for direct OnlyFans (Section E — every line is `❌`
+  because the connector module does not exist).
+
+Items still open: G4 (`svix` in `pyproject.toml` — documented as
+operator-install choice), G7 (per-creator key partitioning), G8
+(unlabelled person-name redaction), wiring `attach_denial_detail`
+into individual dependencies (incremental, no audit-hook re-touch
+needed), wiring real OnlyMonster client into the seam (post-OFI
+merge), and direct OnlyFans connector itself.
+
 ## 6.5 Sprint 5 progress (2026-04-30)
 
 Security Sprint 5 on `feat/security-enforcement-sprint-5` enforces the

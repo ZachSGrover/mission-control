@@ -323,3 +323,62 @@ async def delete_gateway(
     await session.delete(gateway)
     await session.commit()
     return OkResponse()
+
+
+# ── Sprint 6: server-side runtime status ─────────────────────────────────────
+#
+# Returns only safe status fields. The frontend never sees the
+# decrypted token — token resolution happens here and only the
+# observable status flows back. Sprint 5's `?include_token=1` opt-in
+# stays for legitimate edit-form disclosure paths but the runtime
+# status check no longer requires it.
+
+
+from pydantic import BaseModel as _BaseModel  # noqa: E402
+
+
+class GatewayRuntimeStatusResponse(_BaseModel):
+    """Safe runtime-status payload — no token, no preview, no plaintext."""
+
+    gateway_id: str
+    token_configured: bool
+    token_source: str  # "encrypted" | "legacy_plaintext" | "none"
+    url_set: bool
+    allow_insecure_tls: bool
+    disable_device_pairing: bool
+
+
+@router.get("/{gateway_id}/runtime-status", response_model=GatewayRuntimeStatusResponse)
+async def gateway_runtime_status(
+    gateway_id: UUID,
+    session: AsyncSession = SESSION_DEP,
+    ctx: OrganizationContext = ORG_ADMIN_DEP,
+) -> GatewayRuntimeStatusResponse:
+    """Read-only runtime-status snapshot for one gateway.
+
+    Sprint 6: replaces the legacy frontend pattern of fetching the raw
+    token to compute "is this configured." Returns only boolean and
+    enum status fields. ``token_source`` distinguishes the three
+    states an operator might care about (encrypted column populated,
+    legacy plaintext still on disk, or no token at all) without
+    revealing the value.
+    """
+    service = GatewayAdminLifecycleService(session)
+    gateway = await service.require_gateway(
+        gateway_id=gateway_id,
+        organization_id=ctx.organization.id,
+    )
+    if gateway.encrypted_token:
+        token_source = "encrypted"
+    elif gateway.token:
+        token_source = "legacy_plaintext"
+    else:
+        token_source = "none"
+    return GatewayRuntimeStatusResponse(
+        gateway_id=str(gateway.id),
+        token_configured=token_source != "none",
+        token_source=token_source,
+        url_set=bool(gateway.url),
+        allow_insecure_tls=bool(gateway.allow_insecure_tls),
+        disable_device_pairing=bool(gateway.disable_device_pairing),
+    )

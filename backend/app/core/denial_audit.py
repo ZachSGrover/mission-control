@@ -83,7 +83,18 @@ def _reason_category(status_code: int, exc: HTTPException) -> str:
     via the message body. Detail strings can carry input we don't want
     to round-trip, so we infer a category from the status + a short fixed
     keyword scan.
+
+    Sprint 6 enrichment: dependency code (e.g. ``require_owner``) can
+    attach a typed denial-detail dict to the exception via
+    :func:`attach_denial_detail` to bypass the keyword inference.
     """
+    # Sprint 6: prefer explicit detail attached by the dependency.
+    explicit = getattr(exc, "_mc_denial_detail", None)
+    if isinstance(explicit, dict):
+        category = explicit.get("reason_category")
+        if isinstance(category, str):
+            return category
+
     detail = ""
     raw_detail = getattr(exc, "detail", None)
     if isinstance(raw_detail, str):
@@ -102,6 +113,42 @@ def _reason_category(status_code: int, exc: HTTPException) -> str:
             return "user_disabled"
         return "forbidden"
     return "denied"
+
+
+def attach_denial_detail(
+    exc: HTTPException,
+    *,
+    dependency: str,
+    reason_category: str,
+    required_role: str | None = None,
+    required_permission: str | None = None,
+) -> HTTPException:
+    """Attach typed denial-detail to an ``HTTPException`` for audit.
+
+    Sprint 6 helper. Dependencies (``require_owner``, ``require_org_admin``,
+    permission-checks) call this just before raising so the
+    denial-audit handler can record the *exact* reason instead of
+    inferring from the message body.
+
+    The dict is stashed on a private ``_mc_denial_detail`` attribute
+    so it never leaks into the HTTP response body. The handler reads
+    it explicitly via :func:`getattr`.
+
+    Never include: tokens, cookies, request body, fan data, creator
+    private data. The caller is responsible for passing only the
+    safe-to-audit fields.
+    """
+    setattr(
+        exc,
+        "_mc_denial_detail",
+        {
+            "dependency": dependency,
+            "reason_category": reason_category,
+            "required_role": required_role,
+            "required_permission": required_permission,
+        },
+    )
+    return exc
 
 
 def _safe_actor(request: Request) -> tuple[str | None, str | None]:

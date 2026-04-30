@@ -39,13 +39,32 @@ REDACTED_MARKER: Final[str] = "[REDACTED]"
 _PATTERNS: Final[list[tuple[str, re.Pattern[str]]]] = [
     # Bearer / Basic auth headers (with at least 16 chars of token).
     ("auth_header", re.compile(r"\b(?:Bearer|Basic)\s+[A-Za-z0-9_\-\./+=]{16,}", re.I)),
-    # OpenAI sk-..., GitHub ghp_, AWS AKIA, Slack xoxb-, Stripe sk_live_/pk_live_.
+    # OpenAI sk-..., GitHub ghp_/gho_/ghr_/ghs_, AWS AKIA, Slack xoxb-/xoxp-/xoxa-,
+    # Stripe sk_live_/pk_live_/sk_test_/pk_test_, Anthropic sk-ant-..., Google AIza,
+    # Twilio AC..., SendGrid SG..., Mailchimp md-XXXXXXXX (server-prefix tokens),
+    # generic 'X-API-Key:' and 'token=' patterns.
     (
         "vendor_key",
         re.compile(
-            r"\b(?:sk-[A-Za-z0-9]{20,}|sk_live_[A-Za-z0-9]{20,}|pk_live_[A-Za-z0-9]{20,}"
-            r"|ghp_[A-Za-z0-9]{30,}|AKIA[0-9A-Z]{16}|xoxb-[A-Za-z0-9-]{10,}"
-            r"|AIza[0-9A-Za-z_\-]{35})"
+            r"\b(?:"
+            r"sk-ant-[A-Za-z0-9_\-]{20,}|"  # Anthropic
+            r"sk-[A-Za-z0-9]{20,}|"  # OpenAI
+            r"sk_live_[A-Za-z0-9]{20,}|sk_test_[A-Za-z0-9]{20,}|"  # Stripe secret
+            r"pk_live_[A-Za-z0-9]{20,}|pk_test_[A-Za-z0-9]{20,}|"  # Stripe public
+            r"gh[psour]_[A-Za-z0-9]{30,}|"  # GitHub PATs / install / oauth / refresh / server
+            r"AKIA[0-9A-Z]{16}|"  # AWS access key id
+            r"xox[bpaors]-[A-Za-z0-9-]{10,}|"  # Slack
+            r"AIza[0-9A-Za-z_\-]{35}|"  # Google
+            r"AC[a-f0-9]{32}|"  # Twilio Account SID
+            r"SG\.[A-Za-z0-9_\-]{20,}\.[A-Za-z0-9_\-]{20,}"  # SendGrid
+            r")\b"
+        ),
+    ),
+    # X-API-Key / Authorization-style header pairs (catches "X-API-Key: abc...").
+    (
+        "header_pair",
+        re.compile(
+            r"(?i)\b(?:x[-_]api[-_]?key|api[-_]?key|authorization)\s*[:=]\s*[A-Za-z0-9_\-\./+=]{12,}"
         ),
     ),
     # JWT-shaped triple-segment tokens.

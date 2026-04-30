@@ -216,3 +216,408 @@ async def _scalar_count(session: AsyncSession, stmt: Any) -> int:
     if isinstance(value, tuple):
         value = value[0]
     return int(value)
+
+
+# ── Sprint 4: management endpoints ────────────────────────────────────────────
+#
+# Owner-gated, narrow-scope endpoints that let the future admin UI drive
+# the prevention controls Sprint 2 / 3 added. Every state-changing call
+# threads through the same audited service helpers used by tests, so a
+# UI cannot escape the audit trail.
+
+from uuid import UUID  # noqa: E402
+
+from fastapi import HTTPException, status as _http_status  # noqa: E402
+
+from app.core.connector_gate import (  # noqa: E402
+    GateVerdict,
+    is_connector_action_allowed,
+)
+from app.services import connector_approvals as _approvals_svc  # noqa: E402
+from app.services import consent as _consent_svc  # noqa: E402
+from app.services import kill_switch as _kill_switch_svc  # noqa: E402
+from app.services.audit_log import record_audit  # noqa: E402
+from app.services.gateway_tokens import migrate_legacy_tokens  # noqa: E402
+
+# ── Kill switches ────────────────────────────────────────────────────────────
+
+
+class KillSwitchToggleRequest(BaseModel):
+    scope: str  # "global" | "connector" | "organization" | "creator"
+    scope_id: str | None = None  # required for non-global
+    reason: str | None = None
+
+
+@router.post("/kill-switches/enable", response_model=KillSwitchSummary)
+async def enable_kill_switch(
+    body: KillSwitchToggleRequest,
+    auth: AuthContext = AUTH_DEP,
+    role: str = OWNER_DEP,
+    session: AsyncSession = SESSION_DEP,
+) -> KillSwitchSummary:
+    """Enable a kill switch at the requested scope. Owner only."""
+    del role
+    try:
+        row = await _kill_switch_svc.enable(
+            session,
+            scope=body.scope,  # type: ignore[arg-type]
+            scope_id=body.scope_id,
+            actor_user_id=auth.user.id if auth.user else None,
+            actor_email=auth.user.email if auth.user else None,
+            reason=body.reason,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=_http_status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    await session.commit()
+    return KillSwitchSummary(scope=row.scope, scope_id=row.scope_id, enabled=row.enabled)
+
+
+@router.post("/kill-switches/disable", response_model=KillSwitchSummary)
+async def disable_kill_switch(
+    body: KillSwitchToggleRequest,
+    auth: AuthContext = AUTH_DEP,
+    role: str = OWNER_DEP,
+    session: AsyncSession = SESSION_DEP,
+) -> KillSwitchSummary:
+    """Disable a kill switch. Owner only."""
+    del role
+    try:
+        row = await _kill_switch_svc.disable(
+            session,
+            scope=body.scope,  # type: ignore[arg-type]
+            scope_id=body.scope_id,
+            actor_user_id=auth.user.id if auth.user else None,
+            actor_email=auth.user.email if auth.user else None,
+            reason=body.reason,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=_http_status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    await session.commit()
+    return KillSwitchSummary(scope=row.scope, scope_id=row.scope_id, enabled=row.enabled)
+
+
+# ── Connector approvals ──────────────────────────────────────────────────────
+
+
+class ApprovalSummary(BaseModel):
+    id: str
+    connector_type: str
+    requested_action: str
+    status: str
+    risk_level: str
+    organization_id: str | None
+    creator_id: str | None
+    requested_by_email: str | None
+    approved_by_email: str | None
+    expires_at: str | None
+    created_at: str
+    approved_at: str | None
+    rejected_at: str | None
+    revoked_at: str | None
+
+
+def _approval_to_summary(row: ConnectorApproval) -> ApprovalSummary:
+    return ApprovalSummary(
+        id=str(row.id),
+        connector_type=row.connector_type,
+        requested_action=row.requested_action,
+        status=row.status,
+        risk_level=row.risk_level,
+        organization_id=str(row.organization_id) if row.organization_id else None,
+        creator_id=row.creator_id,
+        requested_by_email=row.requested_by_email,
+        approved_by_email=row.approved_by_email,
+        expires_at=row.expires_at.isoformat() if row.expires_at else None,
+        created_at=row.created_at.isoformat(),
+        approved_at=row.approved_at.isoformat() if row.approved_at else None,
+        rejected_at=row.rejected_at.isoformat() if row.rejected_at else None,
+        revoked_at=row.revoked_at.isoformat() if row.revoked_at else None,
+    )
+
+
+@router.get("/approvals", response_model=list[ApprovalSummary])
+async def list_approvals(
+    _: AuthContext = AUTH_DEP,
+    role: str = OWNER_DEP,
+    session: AsyncSession = SESSION_DEP,
+    only_pending: bool = False,
+    limit: int = 100,
+) -> list[ApprovalSummary]:
+    """List recent connector approvals. Owner only."""
+    del role
+    stmt = select(ConnectorApproval).order_by(
+        ConnectorApproval.created_at.desc()  # type: ignore[attr-defined]
+    )
+    if only_pending:
+        stmt = stmt.where(ConnectorApproval.status == "pending")
+    stmt = stmt.limit(limit)
+    rows = (await session.exec(stmt)).all()
+    return [_approval_to_summary(r) for r in rows]
+
+
+class ApprovalDecisionRequest(BaseModel):
+    reason: str | None = None
+
+
+@router.post("/approvals/{approval_id}/approve", response_model=ApprovalSummary)
+async def approve_approval(
+    approval_id: UUID,
+    body: ApprovalDecisionRequest,
+    auth: AuthContext = AUTH_DEP,
+    role: str = OWNER_DEP,
+    session: AsyncSession = SESSION_DEP,
+) -> ApprovalSummary:
+    del role
+    row = await _approvals_svc.approve(
+        session,
+        approval_id,
+        approver_user_id=auth.user.id if auth.user else None,
+        approver_email=auth.user.email if auth.user else None,
+        reason=body.reason,
+    )
+    if row is None:
+        raise HTTPException(
+            status_code=_http_status.HTTP_404_NOT_FOUND, detail="approval not found"
+        )
+    await session.commit()
+    return _approval_to_summary(row)
+
+
+@router.post("/approvals/{approval_id}/reject", response_model=ApprovalSummary)
+async def reject_approval(
+    approval_id: UUID,
+    body: ApprovalDecisionRequest,
+    auth: AuthContext = AUTH_DEP,
+    role: str = OWNER_DEP,
+    session: AsyncSession = SESSION_DEP,
+) -> ApprovalSummary:
+    del role
+    row = await _approvals_svc.reject(
+        session,
+        approval_id,
+        rejecter_user_id=auth.user.id if auth.user else None,
+        rejecter_email=auth.user.email if auth.user else None,
+        reason=body.reason,
+    )
+    if row is None:
+        raise HTTPException(
+            status_code=_http_status.HTTP_404_NOT_FOUND, detail="approval not found"
+        )
+    await session.commit()
+    return _approval_to_summary(row)
+
+
+@router.post("/approvals/{approval_id}/revoke", response_model=ApprovalSummary)
+async def revoke_approval(
+    approval_id: UUID,
+    body: ApprovalDecisionRequest,
+    auth: AuthContext = AUTH_DEP,
+    role: str = OWNER_DEP,
+    session: AsyncSession = SESSION_DEP,
+) -> ApprovalSummary:
+    del role
+    row = await _approvals_svc.revoke(
+        session,
+        approval_id,
+        revoker_user_id=auth.user.id if auth.user else None,
+        revoker_email=auth.user.email if auth.user else None,
+        reason=body.reason,
+    )
+    if row is None:
+        raise HTTPException(
+            status_code=_http_status.HTTP_404_NOT_FOUND, detail="approval not found"
+        )
+    await session.commit()
+    return _approval_to_summary(row)
+
+
+# ── Consents ─────────────────────────────────────────────────────────────────
+
+
+class ConsentSummary(BaseModel):
+    id: str
+    consent_type: str
+    status: str
+    organization_id: str | None
+    creator_id: str | None
+    granted_by_email: str | None
+    granted_at: str | None
+    revoked_at: str | None
+    expires_at: str | None
+    source: str | None
+
+
+def _consent_to_summary(row: ClientConsent) -> ConsentSummary:
+    return ConsentSummary(
+        id=str(row.id),
+        consent_type=row.consent_type,
+        status=row.status,
+        organization_id=str(row.organization_id) if row.organization_id else None,
+        creator_id=row.creator_id,
+        granted_by_email=row.granted_by_email,
+        granted_at=row.granted_at.isoformat() if row.granted_at else None,
+        revoked_at=row.revoked_at.isoformat() if row.revoked_at else None,
+        expires_at=row.expires_at.isoformat() if row.expires_at else None,
+        source=row.source,
+    )
+
+
+@router.get("/consents", response_model=list[ConsentSummary])
+async def list_consents(
+    _: AuthContext = AUTH_DEP,
+    role: str = OWNER_DEP,
+    session: AsyncSession = SESSION_DEP,
+    only_live: bool = False,
+    limit: int = 100,
+) -> list[ConsentSummary]:
+    """List recent consent records. Owner only."""
+    del role
+    stmt = select(ClientConsent).order_by(
+        ClientConsent.created_at.desc()  # type: ignore[attr-defined]
+    )
+    if only_live:
+        stmt = stmt.where(ClientConsent.status == "granted")
+        stmt = stmt.where(ClientConsent.revoked_at.is_(None))  # type: ignore[union-attr]
+    stmt = stmt.limit(limit)
+    rows = (await session.exec(stmt)).all()
+    return [_consent_to_summary(r) for r in rows]
+
+
+class ConsentRevokeRequest(BaseModel):
+    reason: str | None = None
+
+
+@router.post("/consents/{consent_id}/revoke", response_model=ConsentSummary)
+async def revoke_consent(
+    consent_id: UUID,
+    body: ConsentRevokeRequest,
+    auth: AuthContext = AUTH_DEP,
+    role: str = OWNER_DEP,
+    session: AsyncSession = SESSION_DEP,
+) -> ConsentSummary:
+    del role
+    row = await _consent_svc.revoke(
+        session,
+        consent_id=consent_id,
+        revoked_by_user_id=auth.user.id if auth.user else None,
+        revoked_by_email=auth.user.email if auth.user else None,
+        reason=body.reason,
+    )
+    if row is None:
+        raise HTTPException(status_code=_http_status.HTTP_404_NOT_FOUND, detail="consent not found")
+    await session.commit()
+    return _consent_to_summary(row)
+
+
+# ── Gateway token migration ──────────────────────────────────────────────────
+
+
+class GatewayTokenMigrationResponse(BaseModel):
+    scanned: int
+    migrated: int
+    dry_run: bool
+
+
+@router.post("/gateway-tokens/migrate", response_model=GatewayTokenMigrationResponse)
+async def migrate_gateway_tokens(
+    auth: AuthContext = AUTH_DEP,
+    role: str = OWNER_DEP,
+    session: AsyncSession = SESSION_DEP,
+    dry_run: bool = True,
+) -> GatewayTokenMigrationResponse:
+    """Migrate legacy plaintext gateway tokens into encrypted_token. Defaults to dry-run.
+
+    Owner-only. Refused unless ``SETTINGS_ENCRYPTION_KEY`` is set so the
+    migrator can never write rows under the rotation-prone fallback seed.
+    """
+    del role
+    try:
+        scanned, migrated = await migrate_legacy_tokens(
+            session,
+            actor_email=auth.user.email if auth.user else None,
+            dry_run=dry_run,
+        )
+    except RuntimeError as exc:
+        # Refusal because dedicated key isn't set — surface to UI cleanly.
+        raise HTTPException(status_code=_http_status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+
+    # The migrator only audits *successful* migrations per row. Audit the
+    # invocation itself so an operator dry-run is also visible in the trail.
+    await record_audit(
+        session,
+        event_type="gateway.token.migrate.invoke",
+        category="credential",
+        action="migrate",
+        result="success",
+        severity="info" if dry_run else "high",
+        actor_user_id=auth.user.id if auth.user else None,
+        actor_email=auth.user.email if auth.user else None,
+        resource_type="gateway",
+        metadata={"dry_run": dry_run, "scanned": scanned, "would_migrate_or_migrated": migrated},
+    )
+    await session.commit()
+    return GatewayTokenMigrationResponse(scanned=scanned, migrated=migrated, dry_run=dry_run)
+
+
+# ── Connector gate preview ───────────────────────────────────────────────────
+#
+# Sprint 4's "first wiring" of the connector gate. Lets the operator
+# (and a future connector) ask the gate whether a given action would be
+# allowed, without actually running it. Demonstrates the gate end-to-end
+# via a real route, without touching any production hot path.
+
+
+class GatePreviewRequest(BaseModel):
+    connector_type: str
+    requested_action: str
+    organization_id: UUID | None = None
+    creator_id: str | None = None
+
+
+class GatePreviewResponse(BaseModel):
+    allowed: bool
+    reason: str
+    detail: str | None
+
+
+@router.post("/connector-gate/preview", response_model=GatePreviewResponse)
+async def preview_connector_gate(
+    body: GatePreviewRequest,
+    auth: AuthContext = AUTH_DEP,
+    role: str = OWNER_DEP,
+    session: AsyncSession = SESSION_DEP,
+) -> GatePreviewResponse:
+    """Run the connector gate without executing anything. Useful for ops drills."""
+    del role
+    verdict: GateVerdict = await is_connector_action_allowed(
+        session,
+        connector_type=body.connector_type,
+        requested_action=body.requested_action,
+        organization_id=body.organization_id,
+        creator_id=body.creator_id,
+    )
+    # Audit the preview attempt so we have a record of who asked.
+    await record_audit(
+        session,
+        event_type="connector.gate.preview",
+        category="connector",
+        action="preview",
+        result="success" if verdict.allowed else "blocked",
+        severity="info",
+        actor_user_id=auth.user.id if auth.user else None,
+        actor_email=auth.user.email if auth.user else None,
+        organization_id=body.organization_id,
+        creator_id=body.creator_id,
+        resource_type="connector_gate",
+        resource_id=f"{body.connector_type}:{body.requested_action}",
+        metadata={
+            "connector_type": body.connector_type,
+            "requested_action": body.requested_action,
+            "verdict_reason": verdict.reason,
+            "verdict_detail": verdict.detail,
+        },
+    )
+    await session.commit()
+    return GatePreviewResponse(
+        allowed=verdict.allowed, reason=verdict.reason, detail=verdict.detail
+    )

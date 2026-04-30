@@ -5,7 +5,9 @@ from __future__ import annotations
 from datetime import datetime
 from uuid import UUID
 
-from pydantic import field_validator
+from typing import Self
+
+from pydantic import field_validator, model_validator
 from sqlmodel import Field, SQLModel
 
 RUNTIME_ANNOTATION_TYPES = (datetime, UUID)
@@ -61,13 +63,35 @@ class GatewayUpdate(SQLModel):
 
 
 class GatewayRead(GatewayBase):
-    """Gateway payload returned from read endpoints."""
+    """Gateway payload returned from read endpoints.
+
+    Sprint 4 hardening notes:
+    - ``token`` is the legacy plaintext column. Sprint 3 introduced
+      :func:`app.services.gateway_tokens.set_token` which clears this
+      column on every new write — so post-Sprint-3 gateways always
+      return ``token=None`` here. Legacy rows still leak via this
+      field until an operator runs ``migrate_legacy_tokens``; that's
+      tracked operationally.
+    - ``token_configured`` is the safe boolean replacement. Sprint 4
+      callers should rely on this field; future sprints will
+      ``token`` from the response entirely.
+    """
 
     id: UUID
     organization_id: UUID
     token: str | None = None
+    # Sprint 4: never serialised to clients. Used only by the validator
+    # below to derive ``token_configured`` from a Gateway ORM row.
+    encrypted_token: str | None = Field(default=None, exclude=True)
+    token_configured: bool = False
     created_at: datetime
     updated_at: datetime
+
+    @model_validator(mode="after")
+    def _derive_token_configured(self) -> Self:
+        if not self.token_configured:
+            self.token_configured = bool(self.token) or bool(self.encrypted_token)
+        return self
 
 
 class GatewayTemplatesSyncError(SQLModel):

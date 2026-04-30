@@ -65,21 +65,108 @@ def _safe_user_agent(request: Request) -> str:
     return raw[:200] if raw else "unknown"
 
 
+def _route_pattern(request: Request) -> str:
+    """Return the parameterised route pattern (e.g. ``/items/{id}``) when
+    available, falling back to the raw path. Lets denial-audit metadata
+    aggregate by route shape rather than blowing up the cardinality with
+    every concrete id.
+    """
+    route = request.scope.get("route")
+    pattern = getattr(route, "path", None) if route is not None else None
+    return pattern or (request.url.path or "unknown")
+
+
+def _reason_category(status_code: int, exc: HTTPException) -> str:
+    """Bucket a denial into a coarse, dashboard-friendly reason.
+
+    Pure-text only — no user-supplied data flows into the audit metadata
+    via the message body. Detail strings can carry input we don't want
+    to round-trip, so we infer a category from the status + a short fixed
+    keyword scan.
+    """
+    detail = ""
+    raw_detail = getattr(exc, "detail", None)
+    if isinstance(raw_detail, str):
+        detail = raw_detail.lower()
+
+    if status_code == 401:
+        return "unauthenticated"
+    if status_code == 403:
+        if "owner" in detail:
+            return "role_required_owner"
+        if "admin" in detail:
+            return "role_required_admin"
+        if "allowlist" in detail:
+            return "allowlist"
+        if "disabled" in detail:
+            return "user_disabled"
+        return "forbidden"
+    return "denied"
+
+
+def _safe_actor(request: Request) -> tuple[str | None, str | None]:
+    """Best-effort extraction of (actor_id, actor_email) from request state.
+
+    Many FastAPI deps stash the resolved auth context on ``request.state``
+    via the dependency's side-effect. We read that here without re-running
+    auth (which would itself raise on a 401 path). If nothing is on state,
+    the fields stay ``None`` and the audit row reflects "unknown actor".
+    """
+    state = getattr(request, "state", None)
+    user = None
+    if state is not None:
+        for attr in ("auth", "auth_context", "current_user"):
+            obj = getattr(state, attr, None)
+            user = getattr(obj, "user", obj) if obj is not None else None
+            if user is not None:
+                break
+    actor_id = None
+    actor_email = None
+    if user is not None:
+        uid = getattr(user, "id", None)
+        if uid is not None:
+            actor_id = str(uid)
+        email = getattr(user, "email", None)
+        if isinstance(email, str):
+            actor_email = email
+    return actor_id, actor_email
+
+
 async def _denial_audit_handler(request: Request, exc: HTTPException) -> JSONResponse:
     """FastAPI handler that audits 401 / 403 responses, then re-raises shape.
 
     Wraps the default ``HTTPException`` response — preserves the body,
     status, and headers — and adds a side-effect audit row when the
     response is 401 or 403.
+
+    Sprint 4 enrichment:
+    - Adds parameterised ``route_pattern`` so dashboards can aggregate
+      cleanly without exploding cardinality.
+    - Adds a coarse ``reason_category`` bucketed from the denial type.
+    - Best-effort populates the actor id/email from ``request.state``
+      when a dependency happened to resolve it before raising.
+    - Never logs the ``detail`` body, the request body, cookies, or any
+      header value.
     """
     status_code = exc.status_code
     if status_code in (401, 403):
         ip = _safe_ip(request)
         path = request.url.path or "unknown"
-        key = (ip, path, status_code)
+        route_pattern = _route_pattern(request)
+        reason_category = _reason_category(status_code, exc)
+        actor_id, actor_email = _safe_actor(request)
+        key = (ip, route_pattern, status_code)
         if _should_audit(key, time.time()):
             try:
                 async with async_session_maker() as session:
+                    from uuid import UUID
+
+                    actor_uuid: UUID | None = None
+                    try:
+                        actor_uuid = UUID(actor_id) if actor_id else None
+                    except (ValueError, TypeError):
+                        actor_uuid = None
+
                     await record_audit(
                         session,
                         event_type=(
@@ -91,14 +178,18 @@ async def _denial_audit_handler(request: Request, exc: HTTPException) -> JSONRes
                         action="denied",
                         result="denied",
                         severity="warning",
+                        actor_user_id=actor_uuid,
+                        actor_email=actor_email,
                         ip_address=ip,
                         user_agent=_safe_user_agent(request),
                         resource_type="http_route",
-                        resource_id=f"{request.method} {path}",
+                        resource_id=f"{request.method} {route_pattern}",
                         metadata={
                             "status": status_code,
                             "method": request.method,
                             "path": path,
+                            "route_pattern": route_pattern,
+                            "reason_category": reason_category,
                             # Detail message is *not* logged: it sometimes
                             # contains user-supplied input that callers
                             # might not want round-tripped into audit.

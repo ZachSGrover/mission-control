@@ -185,6 +185,47 @@ Each step ends with a documented review checkpoint. **Do not skip**.
 
 ---
 
+## 6.4 Sprint 4 progress (2026-04-29)
+
+Security Sprint 4 on `feat/security-operations-sprint-4` makes the
+foundation operational:
+
+- **Connector gate wiring (preview surface) — done.** New owner-only
+  `POST /api/v1/security/connector-gate/preview` exercises the gate
+  end-to-end without running anything. Records
+  `connector.gate.preview` audits. Wiring into a real hot path is
+  Sprint 5 (OnlyMonster sync first).
+- **Gateway token migration UI — done.** Owner-only
+  `POST /api/v1/security/gateway-tokens/migrate?dry_run=...` and a
+  `/security` admin button. `GatewayRead.token_configured` boolean
+  added (legacy `token` field deprecation deferred to Sprint 5).
+- **Frontend security admin page — done.** Owner-gated `/security`
+  shows kill switches, approvals, consents, retention preview, legacy
+  token count, missing prerequisites. Read + write for the controls
+  listed in the brief, with confirmation modals on every destructive
+  action.
+- **Login-success audit — webhook stub done.** `POST
+  /api/v1/webhooks/clerk/`, disabled until `CLERK_WEBHOOK_SECRET` is
+  set, writes `auth.login.success` on `session.created`. Uses
+  shared-secret HMAC; Svix verification is Sprint 5.
+- **Denial-audit enrichment — done.** Adds `route_pattern`,
+  `reason_category`, best-effort actor; never logs the detail body.
+- **Audit retention scheduler — opt-in foundation done.** Refuses to
+  start without `MC_AUDIT_RETENTION_ENABLED=1`; defaults to dry-run.
+  Not yet registered in the lifespan (Sprint 5).
+- **Frontend production guard — strengthened.**
+  `NEXT_PUBLIC_LOCAL_AUTH_TOKEN` fallback now also requires
+  `AUTH_MODE=local` and a loopback/LAN hostname; loud console warning
+  otherwise.
+- **PII redactor — additive improvements.** Anthropic `sk-ant-`,
+  GitHub `gh[psour]_`, Stripe test keys, Twilio AC, SendGrid SG, plus
+  `X-API-Key:`/`Authorization:` header pairs. No regressions on
+  business-string preservation.
+
+Items still open from prior sprints + new G3/G4/G6/G8: see
+[`security-sprint-4-implementation.md`](./security-sprint-4-implementation.md)
+§11–§12.
+
 ## 6.3 Sprint 3 progress (2026-04-29)
 
 The following items from §2 / §3 are addressed by Security Sprint 3 on

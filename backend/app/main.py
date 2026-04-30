@@ -16,6 +16,7 @@ from app.api.agents import router as agents_router
 from app.api.app_settings import router as app_settings_router
 from app.api.approvals import router as approvals_router
 from app.api.auth import router as auth_router
+from app.api.clerk_webhooks import router as clerk_webhooks_router
 from app.api.security_admin import router as security_admin_router
 from app.api.board_group_memory import router as board_group_memory_router
 from app.api.board_groups import router as board_groups_router
@@ -664,6 +665,7 @@ api_v1.include_router(synthesize_router)
 api_v1.include_router(operator_router)
 api_v1.include_router(app_settings_router)
 api_v1.include_router(security_admin_router)
+api_v1.include_router(clerk_webhooks_router)
 api_v1.include_router(integrations_router)
 api_v1.include_router(git_save_router)
 api_v1.include_router(mc_roles_router)

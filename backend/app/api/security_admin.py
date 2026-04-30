@@ -781,6 +781,9 @@ class OnlyFansDirectStatusResponse(BaseModel):
     sandbox_available: bool  # env flag set AND not production
     real_client_skeleton_present: bool  # always True post-Sprint-8C
     sandbox_missing_prerequisites: list[str]  # human-readable list
+    # Sprint 8D additions
+    sandbox_read_methods_implemented: list[str]  # has a body via fake transport
+    sandbox_read_methods_blocked: list[str]  # still raises RealClientNotEnabledError
 
 
 # ── Sprint 8A: OnlyMonster gated proof status + preview ─────────────────────
@@ -999,6 +1002,15 @@ async def onlyfans_direct_status(
         # Notify is not strictly required to *attempt* a sandbox run,
         # but the operator should know it isn't wired.
         missing_sandbox.append("challenge notify channel not configured (informational)")
+    # Sprint 8D: which sandbox read methods have real bodies vs.
+    # still raise RealClientNotEnabledError. The lists are static
+    # per-sprint; UI renders them so the operator can see exactly
+    # which reads are wired.
+    sandbox_implemented = sorted(
+        ["account_profile_read", "account_stats_read", "revenue_summary_read"]
+    )
+    sandbox_blocked_methods = sorted(set(READ_ACTIONS) - set(sandbox_implemented))
+
     return OnlyFansDirectStatusResponse(
         connector_type=snapshot.connector_type,
         mode=snapshot.mode,
@@ -1022,4 +1034,6 @@ async def onlyfans_direct_status(
         sandbox_available=sandbox_available,
         real_client_skeleton_present=True,
         sandbox_missing_prerequisites=missing_sandbox,
+        sandbox_read_methods_implemented=sandbox_implemented,
+        sandbox_read_methods_blocked=sandbox_blocked_methods,
     )

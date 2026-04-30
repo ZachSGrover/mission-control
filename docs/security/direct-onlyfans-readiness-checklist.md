@@ -49,6 +49,10 @@ These are the controls that **fail closed** today. They are why this checklist c
 | A.26 | `mode="sandbox"` on `OnlyFansDirectConnector` | `app/services/onlyfans_direct_connector.py` | 9-step prereq gate (env flag, prod check, policy, approval, consent, kill switch, vault, credential active, owner sign-off); audits each block; refuses to call real client because skeleton raises. |
 | A.27 | Owner sign-off audit event | `app/services/onlyfans_direct_owner_signoff.py` | `connector.golive.sandbox` event at severity `high`; `record_owner_signoff` + `has_owner_signoff` helpers. |
 | A.28 | `ChallengeNotifier` Protocol + `NoOpChallengeNotifier` | `app/services/onlyfans_direct_session_health.py` | Runtime-checkable Protocol; `DEFAULT_NOTIFIER` is the no-op default; Sprint 8D wires Slack/Telegram by replacing `DEFAULT_NOTIFIER`. |
+| A.29 | Safe transport abstraction + fake transport | `app/services/onlyfans_direct_transport.py` | `Transport` Protocol; `FakeTransport` for tests; `RealHTTPTransport` placeholder refuses unless both env flags set AND non-production; `TransportResponse` carries no raw body / cookies / headers. |
+| A.30 | Strict response schemas + allowlist parsers | `app/core/onlyfans_direct_schemas.py` | `AccountProfileSummary`, `AccountStatsSummary`, `RevenueSummary` dataclasses; parsers drop unknown keys; `safe_field_counts` returns scalars only. |
+| A.31 | Three account-level read methods implemented | `app/services/onlyfans_direct_real_client.py` | `read_account_profile`, `read_account_stats`, `read_revenue_summary` use the configured transport, parse through allowlists, return typed safe dicts. The other 7 reads still raise `RealClientNotEnabledError`. |
+| A.32 | Sandbox connector handles success / challenge / unexpected | `app/services/onlyfans_direct_connector.py:dry_run_sandbox` | Audits `connector.sandbox.success` (safe field counts), `connector.session.challenged` (Sprint 8B vocabulary, calls `DEFAULT_NOTIFIER`), or `connector.sandbox.failed` (status code only). |
 
 If you flipped any of these off intentionally for a development run, **flip them back before continuing this checklist.**
 
@@ -145,13 +149,16 @@ This section is pre-state. After Sprint 7, the **policy boundary** and **disable
 | E.15 | `mode="dry_run"` calls the fake through the gate | ✅ Sprint 8B | `OnlyFansDirectConnector(mode="dry_run", client=...)` |
 | E.16 | `connector.session.challenged` audit category | ✅ Sprint 8B | `record_session_challenged()` writes to audit pipeline |
 | E.17 | Challenge notify stub | ⚠ stub only (Sprint 8B) | Returns `not_configured`; real channel is Sprint 8C work |
-| E.18 | Real OnlyFans read-only client | ⚠ skeleton present (Sprint 8C) | `RealOnlyFansReadOnlyClient` subclasses abstract base; every method raises `RealClientNotEnabledError`; no method bodies until Sprint 8D. |
-| E.19 | `mode="sandbox"` for real test account | ⚠ structurally ready (Sprint 8C) | Constructor + `dry_run_sandbox()` 9-step gate present; refuses unless `MC_OF_DIRECT_SANDBOX_ALLOWED=1` and non-production; real client skeleton refuses every read until 8D. |
+| E.18 | Real OnlyFans read-only client | ⚠ partial (Sprint 8D) | 3 of 10 read methods implemented (`read_account_profile`, `read_account_stats`, `read_revenue_summary`); other 7 still raise `RealClientNotEnabledError`. |
+| E.19 | `mode="sandbox"` for real test account | ⚠ structurally ready, fake transport only (Sprint 8D) | Sandbox gate runs all 9 prereqs; on pass, calls real client through fake transport; success / challenge / unexpected each audit. |
 | E.20 | Typed credential vault reference (value-free) | ✅ Sprint 8C | `CredentialReference`; `check_credential_status` returns metadata-only report. |
 | E.21 | Owner sign-off audit event | ✅ Sprint 8C | `connector.golive.sandbox`; required by sandbox gate. |
 | E.22 | Challenge notifier Protocol | ✅ Sprint 8C | `ChallengeNotifier`; default `NoOpChallengeNotifier`. |
-| E.23 | Real challenge notifier wired (Slack/Telegram) | ❌ Sprint 8D | Replace `DEFAULT_NOTIFIER`; audit row remains source of truth. |
-| E.24 | Real OnlyFans read method bodies (per-method) | ❌ Sprint 8D | One method at a time; allowlist filter; per-method audit schema. |
+| E.23 | Real challenge notifier wired (Slack/Telegram) | ❌ Sprint 8E | Replace `DEFAULT_NOTIFIER`; audit row remains source of truth. |
+| E.24 | Real OnlyFans read method bodies (per-method) | ⚠ partial (Sprint 8D) | Account-level reads done; chat / fan / vault / post / story / mass-message reads remain blocked. |
+| E.25 | Real `RealHTTPTransport.fetch()` body | ❌ Sprint 8E | Currently raises `TransportNotEnabledError`. |
+| E.26 | Test-only OnlyFans credential paired in vault | ❌ Sprint 8E (operator) | Operator action; not in code. |
+| E.27 | Sandbox dry-run with real transport against test account | ❌ Sprint 8E | Requires E.25 + E.26. |
 
 The honest summary: **direct OnlyFans is still not unblocked.** Sprint 7 lands the policy boundary, the disabled shell, the dry-run path, the credential contract, and the rate-limit/session-health scaffolding. The remaining red gates (E.5, E.6, E.7, E.11, E.12) are explicit; lighting any of them green requires the work named in `security-sprint-7-direct-of-prep.md` §10–§11.
 

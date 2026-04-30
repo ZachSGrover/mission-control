@@ -185,6 +185,66 @@ Each step ends with a documented review checkpoint. **Do not skip**.
 
 ---
 
+## 6.11 Sprint 8D progress (2026-04-30)
+
+Security Sprint 8D on `feat/of-direct-sandbox-reads-sprint-8d`
+adds the **first real read method bodies** to the direct OnlyFans
+sandbox client. Scope is intentionally narrow: three account-level
+reads. The fake transport is the only working transport; no real
+network call is possible from this branch.
+
+- **Safe transport abstraction — done.**
+  `app.services.onlyfans_direct_transport` exposes `Transport`
+  Protocol (one method: `fetch(*, path, params=None) → TransportResponse`),
+  `FakeTransport` (deterministic synthetic responses), and
+  `RealHTTPTransport` (placeholder that refuses unless both
+  `MC_OF_DIRECT_SANDBOX_ALLOWED=1` and `MC_OF_DIRECT_REAL_CLIENT_ALLOWED=1`
+  AND non-production; `fetch` always raises). `TransportResponse`
+  carries no raw body / cookies / headers.
+- **Strict response schemas — done.**
+  `app.core.onlyfans_direct_schemas` defines `AccountProfileSummary`,
+  `AccountStatsSummary`, `RevenueSummary` frozen dataclasses with
+  allowlist parsers. Unknown keys are dropped; values are
+  bounded / clamped. `safe_field_counts()` returns scalar-only
+  audit metadata.
+- **Three read methods implemented — done.**
+  `RealOnlyFansReadOnlyClient.read_account_profile`,
+  `read_account_stats`, `read_revenue_summary` use the configured
+  transport, parse through allowlists, return typed safe dicts.
+  HTTP 401 → `ChallengeDetectedError("login_required")`; any other
+  non-200 → `UnexpectedStatusError`; parse failure →
+  `UnexpectedStatusError(200)`. The other 7 read methods still
+  raise `RealClientNotEnabledError`.
+- **Sandbox connector handles three outcomes — done.**
+  `dry_run_sandbox` now distinguishes:
+  - Success → audits `connector.sandbox.success` with
+    `field_counts: dict[str, int]` and `rows_written: 0`.
+  - Challenge → records `connector.session.challenged` (Sprint 8B
+    vocabulary), calls `DEFAULT_NOTIFIER.notify(...)`, returns
+    `blocked_reason="challenge_detected"`.
+  - Unexpected → audits `connector.sandbox.failed` with
+    `status_code` only.
+  - Other 7 reads → still `real_client_not_enabled`.
+- **Status surface extended.** `OnlyFansDirectStatusResponse` now
+  carries `sandbox_read_methods_implemented: list[str]` and
+  `sandbox_read_methods_blocked: list[str]`. Frontend card
+  renders both lists.
+- **Tests — 26 cases.** Fake transport satisfies Protocol; no
+  network imports anywhere; real HTTP transport refuses without
+  flags / in production / with `fetch()`; schemas drop unknown
+  keys / clamp values / refuse non-dict; safe field counts
+  return scalars; reads raise without transport; reads via fake
+  return typed dicts; 401 → challenge / 503 → unexpected; other 7
+  reads still raise; sandbox blocks without env flag / owner
+  sign-off / for unimplemented methods; sandbox succeeds for all
+  three implemented methods; challenge audit has no raw body /
+  cookies / sessions; unexpected status audited; only-three-methods
+  inspection check.
+
+Items still open: real `RealHTTPTransport.fetch()` body
+(Sprint 8E), real notifier wiring (Sprint 8E), other 7 reads
+(future per-method sprints), all G7/G8 from earlier sprints.
+
 ## 6.10 Sprint 8C progress (2026-04-30)
 
 Security Sprint 8C on `feat/of-direct-sandbox-readonly-sprint-8c`

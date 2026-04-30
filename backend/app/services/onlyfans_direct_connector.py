@@ -188,8 +188,34 @@ SandboxBlockedReason = Literal[
     "vault_unavailable",
     "no_owner_signoff",
     "real_client_not_enabled",  # all checks pass but the skeleton refuses
+    "challenge_detected",  # Sprint 8D: platform served challenge / login redirect
+    "unexpected_status",  # Sprint 8D: non-200, non-challenge response
     "unknown_error",
 ]
+
+
+# Sprint 8D: bridge ChallengeDetectedError.reason_category strings to
+# the Sprint 8B ChallengeReason vocabulary on session_health. The
+# transport may use slightly different names; normalize to the fixed
+# Sprint 8B set so the audit row's reason_category is meaningful.
+_VALID_CHALLENGE_REASONS = frozenset(
+    {
+        "captcha",
+        "login_required",
+        "rate_limit_response",
+        "unexpected_status",
+        "unexpected_html",
+        "session_expired",
+        "session_revoked",
+        "platform_block",
+        "other",
+    }
+)
+
+
+def _normalize_challenge_reason(raw: str) -> str:
+    """Return ``raw`` if it's in the fixed vocabulary, else ``"other"``."""
+    return raw if raw in _VALID_CHALLENGE_REASONS else "other"
 
 
 @dataclass(frozen=True)
@@ -859,11 +885,21 @@ class OnlyFansDirectConnector:
             )
 
         # All prerequisites pass. Invoke the configured client's
-        # read method. Sprint 8C's RealOnlyFansReadOnlyClient skeleton
-        # raises RealClientNotEnabledError on every method; we capture
-        # that and audit. There is no fall-through to a network call.
+        # read method. Sprint 8D wires three real reads (profile,
+        # stats, revenue) through the configured transport; the
+        # other 7 still raise RealClientNotEnabledError. The
+        # connector wrapper handles success / challenge / unexpected
+        # status without ever surfacing a raw payload.
         from app.services.onlyfans_direct_real_client import (
             RealClientNotEnabledError,
+        )
+        from app.services.onlyfans_direct_session_health import (
+            DEFAULT_NOTIFIER,
+            record_session_challenged,
+        )
+        from app.services.onlyfans_direct_transport import (
+            ChallengeDetectedError,
+            UnexpectedStatusError,
         )
 
         if self._client is None:
@@ -879,22 +915,167 @@ class OnlyFansDirectConnector:
             )
         method = getattr(self._client, method_name)
         try:
-            await method(creator_id=creator_id)
+            summary = await method(creator_id=creator_id)
         except RealClientNotEnabledError:
             return await _audit_blocked(
                 "real_client_not_enabled",
                 (
-                    "All sandbox prerequisites pass; the real client "
-                    "skeleton refuses to perform any read until Sprint 8D."
+                    "All sandbox prerequisites pass; this read method is "
+                    "not implemented in Sprint 8D. Allowed methods: "
+                    "read_account_profile, read_account_stats, "
+                    "read_revenue_summary."
                 ),
             )
-        # If a future Sprint 8D returns successfully here, we still
-        # do not record the payload. The future method body must be
-        # responsible for its own audit; this gate's job is the
-        # prerequisite chain.
-        return await _audit_blocked(
-            "real_client_not_enabled",
-            "Sprint 8C skeleton; Sprint 8D will wire the real read.",
+        except ChallengeDetectedError as exc:
+            # Audit the challenge with safe metadata, call the
+            # notifier (no-op in 8D), and return blocked. The
+            # reason_category is narrowed via cast — runtime check
+            # in _normalize_challenge_reason ensures it's in the
+            # fixed Sprint 8B vocabulary before this point.
+            from typing import cast
+
+            from app.services.onlyfans_direct_session_health import ChallengeReason
+
+            normalized = cast(ChallengeReason, _normalize_challenge_reason(exc.reason_category))
+            await record_session_challenged(
+                session,
+                reason_category=normalized,
+                creator_id=creator_id,
+                organization_id=organization_id,
+                actor_user_id=actor_user_id,
+                actor_email=actor_email,
+                extra_metadata={
+                    "status_code": exc.status_code if exc.status_code else 0,
+                    "requested_action": action,
+                },
+            )
+            DEFAULT_NOTIFIER.notify(
+                reason_category=normalized,
+                creator_id=creator_id,
+            )
+            return await _audit_blocked(
+                "challenge_detected",
+                f"Challenge detected during sandbox read: {exc.reason_category}",
+            )
+        except UnexpectedStatusError as exc:
+            audit_row = await record_audit(
+                session,
+                event_type="connector.sandbox.failed",
+                category="connector",
+                action="dry_run_sandbox",
+                result="failed",
+                severity="warning",
+                actor_user_id=actor_user_id,
+                actor_email=actor_email,
+                organization_id=organization_id,
+                creator_id=creator_id,
+                resource_type="connector_run",
+                resource_id=f"{CONNECTOR_TYPE}:sandbox:{action}",
+                metadata={
+                    "connector_type": CONNECTOR_TYPE,
+                    "requested_action": action,
+                    "mode": "sandbox",
+                    "status_code": exc.status_code,
+                    "blocked_reason": "unexpected_status",
+                },
+            )
+            await session.commit()
+            return SandboxResult(
+                allowed=False,
+                blocked_reason="unexpected_status",
+                connector_type=CONNECTOR_TYPE,
+                requested_action=action,
+                creator_id=creator_id,
+                organization_id=str(organization_id) if organization_id else None,
+                audit_event_id=str(audit_row.id) if audit_row is not None else None,
+                notes=f"Unexpected platform status {exc.status_code}.",
+                env_flag_set=env_flag_set,
+                is_production=in_prod,
+                credential_status=cred_status_str,
+                approval_present=approval_present,
+                consent_present=consent_present,
+                kill_switch_blocking=kill_blocking[0] if kill_blocking else None,
+                vault_available=vault_available,
+                owner_signoff_present=owner_signoff_present,
+                notify_channel_status=notify_status,
+            )
+
+        # Success path. ``summary`` is a small typed dataclass-as-dict
+        # already filtered through the allowlist parser. We never
+        # persist or return the raw response; we audit only the safe
+        # field counts.
+        from app.core.onlyfans_direct_schemas import safe_field_counts
+
+        # The summary dict came from summary_to_safe_dict; reconstruct
+        # the dataclass for safe_field_counts to use isinstance checks.
+        # We do this inline rather than threading dataclass instances
+        # through the API because the wrapper here only needs counts.
+        field_counts: dict[str, int] = {}
+        if action == "account_profile_read":
+            from app.core.onlyfans_direct_schemas import (
+                AccountProfileSummary,
+                parse_account_profile,
+            )
+
+            field_counts = safe_field_counts(parse_account_profile(summary))
+            del AccountProfileSummary
+        elif action == "account_stats_read":
+            from app.core.onlyfans_direct_schemas import (
+                AccountStatsSummary,
+                parse_account_stats,
+            )
+
+            field_counts = safe_field_counts(parse_account_stats(summary))
+            del AccountStatsSummary
+        elif action == "revenue_summary_read":
+            from app.core.onlyfans_direct_schemas import (
+                RevenueSummary,
+                parse_revenue_summary,
+            )
+
+            field_counts = safe_field_counts(parse_revenue_summary(summary))
+            del RevenueSummary
+
+        success_row = await record_audit(
+            session,
+            event_type="connector.sandbox.success",
+            category="connector",
+            action="dry_run_sandbox",
+            result="success",
+            severity="info",
+            actor_user_id=actor_user_id,
+            actor_email=actor_email,
+            organization_id=organization_id,
+            creator_id=creator_id,
+            resource_type="connector_run",
+            resource_id=f"{CONNECTOR_TYPE}:sandbox:{action}",
+            metadata={
+                "connector_type": CONNECTOR_TYPE,
+                "requested_action": action,
+                "mode": "sandbox",
+                "field_counts": field_counts,
+                "rows_written": 0,
+            },
+        )
+        await session.commit()
+        return SandboxResult(
+            allowed=True,
+            blocked_reason=None,
+            connector_type=CONNECTOR_TYPE,
+            requested_action=action,
+            creator_id=creator_id,
+            organization_id=str(organization_id) if organization_id else None,
+            audit_event_id=str(success_row.id) if success_row is not None else None,
+            notes="Sandbox read passed all prerequisites and returned a typed summary.",
+            env_flag_set=env_flag_set,
+            is_production=in_prod,
+            credential_status=cred_status_str,
+            approval_present=approval_present,
+            consent_present=consent_present,
+            kill_switch_blocking=kill_blocking[0] if kill_blocking else None,
+            vault_available=vault_available,
+            owner_signoff_present=owner_signoff_present,
+            notify_channel_status=notify_status,
         )
 
     # ── refusal of any "real" mode call ─────────────────────────────────────

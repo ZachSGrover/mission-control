@@ -481,6 +481,16 @@ function SecurityAdmin() {
                   </ul>
                 </div>
               )}
+              <div className="text-xs space-y-1" style={{ color: "var(--text-muted)" }}>
+                <p>
+                  <strong style={{ color: "rgb(5,150,105)" }}>Sandbox reads implemented ({ofDirect.sandbox_read_methods_implemented.length}):</strong>{" "}
+                  {ofDirect.sandbox_read_methods_implemented.join(", ") || "—"}
+                </p>
+                <p>
+                  <strong style={{ color: "rgb(190,18,60)" }}>Sandbox reads still blocked ({ofDirect.sandbox_read_methods_blocked.length}):</strong>{" "}
+                  {ofDirect.sandbox_read_methods_blocked.join(", ") || "—"}
+                </p>
+              </div>
               <p className="text-xs" style={{ color: "var(--text-quiet)" }}>
                 {ofDirect.notes}
               </p>

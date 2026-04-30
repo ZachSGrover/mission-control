@@ -38,23 +38,46 @@ When Sprint 8D wires real reads, the changes happen here:
 from __future__ import annotations
 
 import logging
-from typing import Any
+from typing import Any, Final
 
 from app.core.onlyfans_direct_client import AbstractOnlyFansReadOnlyClient
 from app.core.onlyfans_direct_credential_ref import CredentialReference
 from app.core.onlyfans_direct_credentials import (
     assert_no_forbidden_credential_keys,
 )
+from app.core.onlyfans_direct_schemas import (
+    SchemaParseError,
+    parse_account_profile,
+    parse_account_stats,
+    parse_revenue_summary,
+    summary_to_safe_dict,
+)
+from app.services.onlyfans_direct_transport import (
+    ChallengeDetectedError,
+    Transport,
+    TransportResponse,
+    UnexpectedStatusError,
+)
 
 logger = logging.getLogger(__name__)
 
 
-class RealClientNotEnabledError(RuntimeError):
-    """Raised by every read method on the Sprint 8C skeleton.
+# Sprint 8D paths used by the three implemented reads. Kept here
+# (not in the schemas module) because they are transport-layer
+# concerns; the schemas module never sees a path.
+_PATH_ACCOUNT_PROFILE: Final[str] = "/sandbox/account/profile"
+_PATH_ACCOUNT_STATS: Final[str] = "/sandbox/account/stats"
+_PATH_REVENUE_SUMMARY: Final[str] = "/sandbox/account/revenue-summary"
 
-    A future Sprint 8D will replace each method body with a real
-    read-only call. Until then, instantiating the real client is
-    fine — actually calling a read method is not.
+
+class RealClientNotEnabledError(RuntimeError):
+    """Raised by every read method on the Sprint 8C skeleton, and by
+    Sprint 8D unimplemented methods.
+
+    Sprint 8D enables only the three account-level reads (profile,
+    stats, revenue) — and only when a transport is configured. Any
+    other method, or any call without a configured transport,
+    raises this.
     """
 
 
@@ -85,6 +108,7 @@ class RealOnlyFansReadOnlyClient(AbstractOnlyFansReadOnlyClient):
         self,
         *,
         credential_ref: CredentialReference,
+        transport: Transport | None = None,
         **kwargs: Any,
     ) -> None:
         # The reference shape itself rules out cookies/sessions —
@@ -98,6 +122,7 @@ class RealOnlyFansReadOnlyClient(AbstractOnlyFansReadOnlyClient):
                 f"provider='onlyfans_direct'; got {credential_ref.provider!r}."
             )
         self._credential_ref = credential_ref
+        self._transport: Transport | None = transport
 
     @property
     def credential_ref(self) -> CredentialReference:
@@ -109,16 +134,102 @@ class RealOnlyFansReadOnlyClient(AbstractOnlyFansReadOnlyClient):
         """
         return self._credential_ref
 
-    # ── real client methods are all unimplemented in 8C ─────────────────────
+    @property
+    def transport(self) -> Transport | None:
+        return self._transport
+
+    # ── helper: handle a transport response or raise typed errors ──────────
+
+    def _process_response(self, response: TransportResponse) -> Any:
+        """Validate a :class:`TransportResponse` and return its
+        ``json_body``.
+
+        Raises :class:`ChallengeDetectedError` on platform-side
+        challenge signals (the transport may also raise this
+        directly; we double-check the status code here).
+
+        Raises :class:`UnexpectedStatusError` on any other non-200
+        response. The raw body is never returned.
+        """
+        # 200 is the only acceptable status. A 401 means session
+        # invalid — treat as a challenge so the sandbox gate audits
+        # session.challenged. 403 / 429 / 5xx all surface as
+        # unexpected status.
+        if response.status_code == 200:
+            return response.json_body
+        if response.status_code == 401:
+            raise ChallengeDetectedError(
+                reason_category="login_required",
+                status_code=response.status_code,
+            )
+        # The transport itself may have raised ChallengeDetectedError
+        # before we get here; if we see a non-200 code at this layer,
+        # surface it as unexpected.
+        raise UnexpectedStatusError(status_code=response.status_code)
+
+    def _require_transport(self) -> Transport:
+        if self._transport is None:
+            raise RealClientNotEnabledError(
+                "Sprint 8D real read requires a transport. Construct "
+                "RealOnlyFansReadOnlyClient(credential_ref=..., transport=...)."
+            )
+        return self._transport
+
+    # ── Sprint 8D: three account-level read methods ─────────────────────────
 
     async def read_account_profile(self, *, creator_id: str) -> dict[str, Any]:
-        raise RealClientNotEnabledError("read_account_profile")
+        """Sandbox-only read of public-style profile metadata.
+
+        Goes through the configured transport. On 401, raises
+        :class:`ChallengeDetectedError` (login expired). On any
+        other non-200, raises :class:`UnexpectedStatusError`. The
+        raw response body never escapes this method; the parser
+        builds a typed :class:`AccountProfileSummary` from
+        allowlisted keys only and the dataclass is returned as a
+        flat dict.
+        """
+        del creator_id  # transport is per-creator via credential_ref binding
+        transport = self._require_transport()
+        response = await transport.fetch(path=_PATH_ACCOUNT_PROFILE)
+        body = self._process_response(response)
+        try:
+            summary = parse_account_profile(body)
+        except SchemaParseError as exc:
+            logger.warning("read_account_profile parse_failed: %s", type(exc).__name__)
+            raise UnexpectedStatusError(status_code=200) from exc
+        return summary_to_safe_dict(summary)
 
     async def read_account_stats(self, *, creator_id: str) -> dict[str, Any]:
-        raise RealClientNotEnabledError("read_account_stats")
+        """Sandbox-only read of subscriber count, renewal rate, and
+        active-chat count.
+        """
+        del creator_id
+        transport = self._require_transport()
+        response = await transport.fetch(path=_PATH_ACCOUNT_STATS)
+        body = self._process_response(response)
+        try:
+            summary = parse_account_stats(body)
+        except SchemaParseError as exc:
+            logger.warning("read_account_stats parse_failed: %s", type(exc).__name__)
+            raise UnexpectedStatusError(status_code=200) from exc
+        return summary_to_safe_dict(summary)
 
     async def read_revenue_summary(self, *, creator_id: str) -> dict[str, Any]:
-        raise RealClientNotEnabledError("read_revenue_summary")
+        """Sandbox-only read of aggregate revenue subtotals.
+
+        No transaction-level breakdown, no per-fan numbers, no
+        timestamps beyond the month buckets the platform returns.
+        """
+        del creator_id
+        transport = self._require_transport()
+        response = await transport.fetch(path=_PATH_REVENUE_SUMMARY)
+        body = self._process_response(response)
+        try:
+            summary = parse_revenue_summary(body)
+        except SchemaParseError as exc:
+            logger.warning("read_revenue_summary parse_failed: %s", type(exc).__name__)
+            raise UnexpectedStatusError(status_code=200) from exc
+        return summary_to_safe_dict(summary)
 
     async def read_fan_list_metadata(self, *, creator_id: str) -> dict[str, Any]:
         raise RealClientNotEnabledError("read_fan_list_metadata")

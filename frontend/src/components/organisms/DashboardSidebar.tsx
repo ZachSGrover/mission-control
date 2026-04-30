@@ -4,20 +4,26 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
   Activity,
+  Bell,
   BookOpen,
   Bot,
   Brain,
+  Boxes,
+  Calendar,
   CalendarDays,
   Check,
   CloudUpload,
   FolderOpen,
+  Gauge,
   GitBranch,
+  Layers,
   Layout,
   Loader2,
   MessageSquare,
   Network,
   Plug,
   Settings,
+  Sliders,
   TriangleAlert,
   Users,
   Wrench,
@@ -157,6 +163,16 @@ export function DashboardSidebar() {
           <NavLink href="/workflows" label="Workflows" Icon={GitBranch} />
           <NavLink href="/skills"    label="Skills"    Icon={Wrench} />
           <NavLink href="/activity"  label="Logs"      Icon={Activity} />
+        </NavSection>
+
+        {/* Usage — AI/API spend tracking */}
+        <NavSection label="Usage">
+          <NavLink href="/usage"          label="Overview"  Icon={Gauge} exact />
+          <NavLink href="/usage/providers" label="Providers" Icon={Boxes} />
+          <NavLink href="/usage/daily"     label="Daily"     Icon={Calendar} />
+          <NavLink href="/usage/projects"  label="Projects"  Icon={Layers} />
+          <NavLink href="/usage/alerts"    label="Alerts"    Icon={Bell} />
+          <NavLink href="/usage/settings"  label="Settings"  Icon={Sliders} />
         </NavSection>
 
         {/* System */}

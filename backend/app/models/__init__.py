@@ -29,6 +29,7 @@ from app.models.task_custom_fields import (
 from app.models.task_dependencies import TaskDependency
 from app.models.task_fingerprints import TaskFingerprint
 from app.models.tasks import Task
+from app.models.usage import UsageAlertConfig, UsageEvent, UsageSnapshot
 from app.models.users import User
 
 __all__ = [
@@ -61,5 +62,8 @@ __all__ = [
     "TaskFingerprint",
     "Tag",
     "TagAssignment",
+    "UsageAlertConfig",
+    "UsageEvent",
+    "UsageSnapshot",
     "User",
 ]

@@ -76,6 +76,23 @@ class Settings(BaseSettings):
     anthropic_api_key: str = ""
     anthropic_synthesis_model: str = "claude-sonnet-4-5"
 
+    # ── Usage Tracker admin credentials (optional, READ-ONLY billing APIs) ──
+    # These are *separate* from the inference keys above.  They are required
+    # only to fetch organization-wide usage/cost snapshots and never make
+    # billable inference calls.  All four can also be stored encrypted in the
+    # DB via the AppSetting table; values here act as env-var fallbacks.
+    #
+    # OpenAI: create an admin key (sk-admin-...) at
+    #   https://platform.openai.com/settings/organization/admin-keys
+    # The org id is the value shown as "Organization ID" on that page.
+    openai_admin_key: str = ""
+    openai_org_id: str = ""
+
+    # Anthropic: admin keys (sk-ant-admin01-...) are issued under
+    #   Console → Settings → Admin keys.  Org id is in the same panel.
+    anthropic_admin_key: str = ""
+    anthropic_org_id: str = ""
+
     # Security response headers (set to blank to disable a specific header)
     security_header_x_content_type_options: str = "nosniff"
     security_header_x_frame_options: str = "DENY"

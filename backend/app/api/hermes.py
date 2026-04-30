@@ -15,7 +15,7 @@ import json
 import os
 import re
 from pathlib import Path
-from typing import Iterable
+from typing import Sequence
 
 from fastapi import APIRouter, Depends, HTTPException
 
@@ -75,8 +75,8 @@ def _load_one(path: Path) -> tuple[HermesIncident | None, bool]:
             HermesIncident(
                 alert_id=str(alert.get("alert_id") or path.stem),
                 system=str(alert.get("system") or "Unknown system"),
-                status=str(alert.get("status") or "unknown"),  # type: ignore[arg-type]
-                severity=str(alert.get("severity") or "MEDIUM"),  # type: ignore[arg-type]
+                status=str(alert.get("status") or "unknown"),
+                severity=str(alert.get("severity") or "MEDIUM"),
                 exact_issue=str(alert.get("exact_issue") or ""),
                 evidence=list(alert.get("evidence") or []),
                 likely_cause=str(alert.get("likely_cause") or ""),
@@ -267,7 +267,7 @@ async def get_status(_ctx: OrganizationContext = ORG_ADMIN_DEP) -> HermesStatus:
     )
 
     return HermesStatus(
-        overall=overall,  # type: ignore[arg-type]
+        overall=overall,
         summary=_summarize(
             active=active,
             overall=overall,
@@ -456,7 +456,7 @@ async def get_safety_rules(
 
 
 # Helpers exposed to test code.
-__all__: Iterable[str] = (
+__all__: Sequence[str] = (
     "router",
     "_alerts_dir",
     "_load_all",

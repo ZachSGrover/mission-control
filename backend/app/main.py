@@ -505,12 +505,23 @@ async def lifespan(_: FastAPI) -> AsyncIterator[None]:
 
     from app.core import network_monitor as _netmon
     from app.core import telegram_polling as _tgpoll
+    from app.services import audit_retention_scheduler as _retention
 
     _bg_stop = _asyncio.Event()
     _bg_tasks: list[_asyncio.Task] = [
         _asyncio.create_task(_netmon.run_forever(_bg_stop), name="network_monitor"),
         _asyncio.create_task(_tgpoll.run_supervisor(_bg_stop), name="telegram_polling_supervisor"),
     ]
+    # Sprint 5: register the audit-retention supervisor. The supervisor
+    # itself refuses to do anything unless ``MC_AUDIT_RETENTION_ENABLED=1``
+    # is set; we still spawn the task so the operator opting in via env
+    # var doesn't need a redeploy.
+    _bg_tasks.append(
+        _asyncio.create_task(
+            _retention.run_retention_supervisor(_bg_stop),
+            name="audit_retention_supervisor",
+        )
+    )
     logger.info("app.lifecycle.background_tasks_started count=%d", len(_bg_tasks))
 
     logger.info("app.lifecycle.started")

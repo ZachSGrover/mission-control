@@ -72,6 +72,32 @@ _PATTERNS: Final[list[tuple[str, re.Pattern[str]]]] = [
         "jwt",
         re.compile(r"\beyJ[A-Za-z0-9_\-]{15,}\.[A-Za-z0-9_\-]{10,}\.[A-Za-z0-9_\-]{10,}\b"),
     ),
+    # Sprint 5: structured ``name:`` / ``Name:`` labels followed by a
+    # plausible person-name. Conservative — requires the explicit label
+    # so business strings like "creator:Aria" survive untouched.
+    # Same-line only: name parts are joined by ``[ \t]+`` (not ``\s+``)
+    # so a newline ends the match and a label on a separate line from
+    # its value is treated as two distinct concerns.
+    (
+        "labelled_name",
+        re.compile(
+            r"(?im)\b(?:full[ \t_-]?name|first[ \t_-]?name|last[ \t_-]?name|name)"
+            r"[ \t]*[:=][ \t]*[A-Z][a-z]+(?:[ \t]+[A-Z][a-z]+){1,3}"
+        ),
+    ),
+    # Sprint 5: street addresses — number + street + suffix. Keeps the
+    # match conservative: must start with a 1-5 digit number, then a
+    # capitalised street name, then a known suffix (St / Street / Rd /
+    # Road / Ave / Avenue / Blvd / Boulevard / Ln / Lane / Dr / Drive /
+    # Ct / Court / Way / Pl / Place).
+    (
+        "street_address",
+        re.compile(
+            r"\b\d{1,5}\s+[A-Z][A-Za-z0-9.'\- ]{1,40}?\s+"
+            r"(?:St(?:reet)?|Rd|Road|Ave(?:nue)?|Blvd|Boulevard|Ln|Lane|Dr(?:ive)?|"
+            r"Ct|Court|Way|Pl|Place)\b\.?",
+        ),
+    ),
     # Email addresses.
     ("email", re.compile(r"\b[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}\b")),
     # Phone numbers — conservative: at least 10 digits, optional +/spaces/-/parens.

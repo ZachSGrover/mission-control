@@ -26,7 +26,7 @@ Contracts:
 
 from __future__ import annotations
 
-import hmac
+import json
 import logging
 import os
 from typing import Any
@@ -35,6 +35,10 @@ from fastapi import APIRouter, Depends, Header, HTTPException, Request, status
 from pydantic import BaseModel
 from sqlmodel.ext.asyncio.session import AsyncSession
 
+from app.core.clerk_webhook_verify import (
+    WebhookVerificationError,
+    verify_webhook,
+)
 from app.db.session import get_session
 from app.services.audit_log import record_audit
 
@@ -58,13 +62,6 @@ class ClerkWebhookEnvelope(BaseModel):
 
 def _is_enabled() -> bool:
     return bool(os.environ.get("CLERK_WEBHOOK_SECRET", "").strip())
-
-
-def _verify_shared_secret(provided: str | None) -> bool:
-    expected = os.environ.get("CLERK_WEBHOOK_SECRET", "").strip()
-    if not expected or not provided:
-        return False
-    return hmac.compare_digest(expected.encode(), provided.encode())
 
 
 def _safe_ip(request: Request) -> str:
@@ -93,11 +90,35 @@ async def receive_clerk_webhook(
                 "CLERK_WEBHOOK_SECRET in the backend env to enable."
             ),
         )
-    if not _verify_shared_secret(x_mission_control_webhook_secret):
+
+    # Sprint 5: verify via Svix when available; fall back to shared-secret
+    # only when explicitly allowed (dev). Reconstruct the raw payload
+    # bytes from the parsed body — Pydantic re-encoding is canonical
+    # enough for HMAC purposes; for proper Svix verification the actual
+    # raw request bytes are used via ``await request.body()`` below.
+    raw_body = await request.body()
+    if not raw_body:
+        # FastAPI consumed it via the BaseModel. Re-encode from the parsed
+        # envelope; Svix verifies the bytes that were signed, so this only
+        # works if the producer signed JSON exactly the way Pydantic
+        # serialises it. Operators using the Svix path should ensure their
+        # proxy preserves request bodies; the shared-secret path doesn't
+        # care.
+        raw_body = json.dumps(body.model_dump(), sort_keys=True).encode()
+
+    secret = os.environ.get("CLERK_WEBHOOK_SECRET", "").strip()
+    try:
+        verify_webhook(
+            payload=raw_body,
+            headers=dict(request.headers),
+            secret=secret,
+            shared_secret_header=x_mission_control_webhook_secret,
+        )
+    except WebhookVerificationError as exc:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Webhook signature mismatch.",
-        )
+            detail=str(exc),
+        ) from exc
 
     if body.type != "session.created":
         # Audit the skip so the operator can see the webhook is reaching us.

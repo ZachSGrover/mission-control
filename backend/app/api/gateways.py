@@ -73,19 +73,44 @@ def _template_sync_query(
 SYNC_QUERY_DEP = Depends(_template_sync_query)
 
 
+def _mask_gateway_token(gateway: Gateway) -> Gateway:
+    """Return a defensive copy of ``gateway`` with the legacy ``token``
+    field nulled. Used by every read path that doesn't explicitly opt
+    into raw-token disclosure.
+    """
+    from copy import copy as _copy
+
+    masked = _copy(gateway)
+    masked.token = None
+    return masked
+
+
 @router.get("", response_model=DefaultLimitOffsetPage[GatewayRead])
 async def list_gateways(
     session: AsyncSession = SESSION_DEP,
     ctx: OrganizationContext = ORG_ADMIN_DEP,
 ) -> LimitOffsetPage[GatewayRead]:
-    """List gateways for the caller's organization."""
+    """List gateways for the caller's organization.
+
+    Sprint 5 cutover: every row's legacy ``token`` field is masked.
+    Use ``GET /{gateway_id}?include_token=1`` for the legitimate
+    edit-page disclosure path.
+    """
     statement = (
         Gateway.objects.filter_by(organization_id=ctx.organization.id)
         .order_by(col(Gateway.created_at).desc())
         .statement
     )
 
-    return await paginate(session, statement)
+    page: LimitOffsetPage[GatewayRead] = await paginate(session, statement)
+    # Mask each row's legacy plaintext token. ``token_configured`` on
+    # GatewayRead is derived in the schema validator and is unaffected.
+    masked_items: list[GatewayRead] = []
+    for g in page.items:
+        gr = g.model_copy(update={"token": None})
+        masked_items.append(gr)
+    page.items = masked_items
+    return page
 
 
 @router.post("", response_model=GatewayRead)
@@ -124,7 +149,7 @@ async def create_gateway(
         )
         await session.commit()
     await service.ensure_main_agent(gateway, auth, action="provision")
-    return gateway
+    return _mask_gateway_token(gateway)
 
 
 @router.get("/{gateway_id}", response_model=GatewayRead)
@@ -132,13 +157,52 @@ async def get_gateway(
     gateway_id: UUID,
     session: AsyncSession = SESSION_DEP,
     ctx: OrganizationContext = ORG_ADMIN_DEP,
+    auth: AuthContext = AUTH_DEP,
+    include_token: bool = False,
 ) -> Gateway:
-    """Return one gateway by id for the caller's organization."""
+    """Return one gateway by id for the caller's organization.
+
+    Sprint 5 cutover: by default the response masks the legacy ``token``
+    field to ``None`` even when a legacy plaintext value still exists on
+    disk. Pass ``?include_token=1`` to receive it (e.g. for the gateway
+    edit page); this path audits ``gateway.token.exposed`` so every
+    plaintext disclosure is visible in the trail. ``token_configured``
+    on the response is always populated truthfully.
+    """
     service = GatewayAdminLifecycleService(session)
     gateway = await service.require_gateway(
         gateway_id=gateway_id,
         organization_id=ctx.organization.id,
     )
+    if not include_token:
+        # Don't mutate the ORM row; build a defensive read-only copy
+        # for serialisation. ``token_configured`` is derived in the
+        # schema's model_validator.
+        from copy import copy as _copy
+
+        masked = _copy(gateway)
+        masked.token = None
+        return masked
+
+    # Owner-or-admin already gated by ORG_ADMIN_DEP. Audit the explicit
+    # opt-in so any plaintext disclosure is on the record.
+    from app.services.audit_log import record_audit
+
+    await record_audit(
+        session,
+        event_type="gateway.token.exposed",
+        category="credential",
+        action="read",
+        result="success",
+        severity="warning",
+        actor_user_id=auth.user.id if auth.user else None,
+        actor_email=auth.user.email if auth.user else None,
+        organization_id=gateway.organization_id,
+        resource_type="gateway",
+        resource_id=str(gateway.id),
+        metadata={"reason": "include_token=1"},
+    )
+    await session.commit()
     return gateway
 
 
@@ -200,7 +264,7 @@ async def update_gateway(
         )
         await session.commit()
     await service.ensure_main_agent(gateway, auth, action="update")
-    return gateway
+    return _mask_gateway_token(gateway)
 
 
 @router.post("/{gateway_id}/templates/sync", response_model=GatewayTemplatesSyncResult)

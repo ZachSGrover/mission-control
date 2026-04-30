@@ -381,6 +381,9 @@ async def test_clerk_webhook_refuses_without_secret_set() -> None:
                 headers: dict[str, str] = {}
                 client = type("_C", (), {"host": "1.2.3.4"})()
 
+                async def body(self) -> bytes:
+                    return b"{}"
+
             with pytest.raises(HTTPException) as excinfo:
                 await receive_clerk_webhook(
                     request=_Req(),  # type: ignore[arg-type]
@@ -411,6 +414,9 @@ async def test_clerk_webhook_rejects_bad_signature() -> None:
                 headers: dict[str, str] = {}
                 client = type("_C", (), {"host": "1.2.3.4"})()
 
+                async def body(self) -> bytes:
+                    return b"{}"
+
             with pytest.raises(HTTPException) as excinfo:
                 await receive_clerk_webhook(
                     request=_Req(),  # type: ignore[arg-type]
@@ -439,6 +445,9 @@ async def test_clerk_webhook_records_login_audit_on_session_created() -> None:
             class _Req:
                 headers: dict[str, str] = {"user-agent": "test-runner"}
                 client = type("_C", (), {"host": "1.2.3.4"})()
+
+                async def body(self) -> bytes:
+                    return b"{}"
 
             await receive_clerk_webhook(
                 request=_Req(),  # type: ignore[arg-type]

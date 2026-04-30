@@ -621,3 +621,121 @@ async def preview_connector_gate(
     return GatePreviewResponse(
         allowed=verdict.allowed, reason=verdict.reason, detail=verdict.detail
     )
+
+
+# ── Sprint 5: approval and consent creation ──────────────────────────────────
+#
+# Sprint 4 added read + state-transition endpoints. Sprint 5 adds the
+# missing creation endpoints so an owner can drive the full lifecycle
+# from the security admin UI without touching the database directly.
+
+
+class ApprovalCreateRequest(BaseModel):
+    connector_type: str
+    requested_action: str
+    organization_id: UUID | None = None
+    creator_id: str | None = None
+    risk_level: str = "medium"
+    expires_at_iso: str | None = None
+    reason: str | None = None
+
+
+@router.post("/approvals", response_model=ApprovalSummary, status_code=201)
+async def create_approval(
+    body: ApprovalCreateRequest,
+    auth: AuthContext = AUTH_DEP,
+    role: str = OWNER_DEP,
+    session: AsyncSession = SESSION_DEP,
+) -> ApprovalSummary:
+    """Create a pending connector approval. Owner only.
+
+    The approval starts in ``status="pending"``. Use ``POST
+    /approvals/{id}/approve`` to move it to approved, ``/reject`` to
+    decline, or ``/revoke`` to invalidate after approval.
+    """
+    del role
+    from datetime import datetime as _dt
+
+    expires_at: _dt | None = None
+    if body.expires_at_iso:
+        try:
+            expires_at = _dt.fromisoformat(body.expires_at_iso)
+        except ValueError as exc:
+            raise HTTPException(
+                status_code=_http_status.HTTP_400_BAD_REQUEST,
+                detail=f"invalid expires_at_iso: {exc}",
+            ) from exc
+
+    try:
+        row = await _approvals_svc.request_approval(
+            session,
+            connector_type=body.connector_type,
+            requested_action=body.requested_action,
+            organization_id=body.organization_id,
+            creator_id=body.creator_id,
+            requested_by_user_id=auth.user.id if auth.user else None,
+            requested_by_email=auth.user.email if auth.user else None,
+            risk_level=body.risk_level,
+            expires_at=expires_at,
+            reason=body.reason,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=_http_status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    await session.commit()
+    return _approval_to_summary(row)
+
+
+class ConsentGrantRequest(BaseModel):
+    consent_type: str
+    organization_id: UUID | None = None
+    creator_id: str | None = None
+    source: str | None = None
+    document_reference: str | None = None
+    expires_at_iso: str | None = None
+    notes: str | None = None
+
+
+@router.post("/consents", response_model=ConsentSummary, status_code=201)
+async def create_consent(
+    body: ConsentGrantRequest,
+    auth: AuthContext = AUTH_DEP,
+    role: str = OWNER_DEP,
+    session: AsyncSession = SESSION_DEP,
+) -> ConsentSummary:
+    """Grant a client consent. Owner only.
+
+    Consent capture is **out-of-band** in v1 — the operator records the
+    fact of consent here after the creator has signed (DocuSign,
+    PDF, email thread). Sprint 5 only adds the recording surface; a
+    self-serve creator portal is post-MVP.
+    """
+    del role
+    from datetime import datetime as _dt
+
+    expires_at: _dt | None = None
+    if body.expires_at_iso:
+        try:
+            expires_at = _dt.fromisoformat(body.expires_at_iso)
+        except ValueError as exc:
+            raise HTTPException(
+                status_code=_http_status.HTTP_400_BAD_REQUEST,
+                detail=f"invalid expires_at_iso: {exc}",
+            ) from exc
+
+    try:
+        row = await _consent_svc.grant(
+            session,
+            consent_type=body.consent_type,
+            organization_id=body.organization_id,
+            creator_id=body.creator_id,
+            granted_by_user_id=auth.user.id if auth.user else None,
+            granted_by_email=auth.user.email if auth.user else None,
+            source=body.source,
+            document_reference=body.document_reference,
+            expires_at=expires_at,
+            notes=body.notes,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=_http_status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    await session.commit()
+    return _consent_to_summary(row)

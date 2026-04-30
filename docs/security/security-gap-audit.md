@@ -185,6 +185,49 @@ Each step ends with a documented review checkpoint. **Do not skip**.
 
 ---
 
+## 6.5 Sprint 5 progress (2026-04-30)
+
+Security Sprint 5 on `feat/security-enforcement-sprint-5` enforces the
+foundation on real defaults:
+
+- **Gated OnlyMonster scaffold — done.** `gated_onlymonster_creator_sync`
+  is the documented seam every OnlyMonster `creator_sync` call must
+  use; refuses to invoke any callable until both `MC_ONLYMONSTER_GATED_SYNC_ENABLED=1`
+  and the gate verdict allow it. Tested. Real-client wiring is
+  Sprint 6 (OFI merge).
+- **Gateway token cutover — done with audited opt-in.** All read paths
+  mask the legacy `token` field by default; `?include_token=1` audits
+  every disclosure. Frontend gateway pages migrated to
+  `token_configured`. Edit form no longer clobbers tokens on
+  unrelated patches.
+- **Settings scope — feature-flag wrapper ready; call-site cutover
+  Sprint 6.** `settings_scope.{get,set,delete}_secret_scoped` honour
+  `MC_APP_SETTINGS_ORG_SCOPED=1` + `organization_id`. Default off.
+- **Clerk webhook verification — Svix-or-fallback verifier.** Uses
+  Svix when installed; falls back to shared-secret only when
+  explicitly allowed (refused in production without
+  `CLERK_WEBHOOK_ALLOW_SHARED_SECRET=1`).
+- **Audit retention scheduling — registered in lifespan.** Supervisor
+  spawned with the existing background-task lifecycle; refuses unless
+  `MC_AUDIT_RETENTION_ENABLED=1`. Default dry-run.
+- **Public-secret guardrail — pytest, in CI by default.** Scans
+  `frontend/src` for `NEXT_PUBLIC_*(SECRET|TOKEN|PASSWORD|KEY)` not on
+  the explicit allowlist; fails CI if a new footgun appears.
+- **Approval + consent creation — owner-only `POST /security/{approvals,consents}`.**
+  Round-trips the creation lifecycle; backend complete, frontend
+  forms Sprint 6.
+- **PII redactor — labelled-name + street-address patterns added.**
+  Conservative — unlabelled "Aria Veil" still survives, but
+  `Full Name: Alice Smith` and `1234 Elm Street` get redacted.
+
+Items still open: G1 (settings call-site cutover), G2 (gateway
+runtime-status server-side), G3 (gate wiring into real hot path), G4
+(svix package), G5 (frontend creation forms), G6 (per-dep denial
+detail), G7 (per-creator key partitioning), G8 (unlabelled person-name
+redaction), G9 (incident drill). See
+[`security-sprint-5-implementation.md`](./security-sprint-5-implementation.md)
+§11–§12.
+
 ## 6.4 Sprint 4 progress (2026-04-29)
 
 Security Sprint 4 on `feat/security-operations-sprint-4` makes the

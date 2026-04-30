@@ -739,3 +739,66 @@ async def create_consent(
         raise HTTPException(status_code=_http_status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
     await session.commit()
     return _consent_to_summary(row)
+
+
+# ── Sprint 7: direct OnlyFans connector status (read-only) ───────────────────
+#
+# Surfaces the disabled-shell status to the security admin UI. Returns
+# safe enums and booleans only — no token, no preview, no fixture
+# data. The disabled state is the *whole point* of this surface in
+# Sprint 7; the UI uses it to make the disabled status unambiguous.
+
+
+class OnlyFansDirectStatusResponse(BaseModel):
+    """Sprint 7 read-only status for the direct OnlyFans connector.
+
+    Every field is a boolean, an enum, or a small int. There is no
+    place in this shape for a credential preview, a token, or any
+    fixture payload.
+    """
+
+    connector_type: str
+    mode: str  # "disabled" | "dry_run"
+    enabled: bool
+    real_client_wired: bool
+    rate_max_per_minute: int
+    rate_max_per_hour: int
+    backoff_initial_seconds: float
+    backoff_max_seconds: float
+    session_health: str
+    notes: str
+    read_actions_count: int
+    write_actions_count: int
+
+
+@router.get("/onlyfans-direct/status", response_model=OnlyFansDirectStatusResponse)
+async def onlyfans_direct_status(
+    _: AuthContext = AUTH_DEP,
+    role: str = OWNER_DEP,
+) -> OnlyFansDirectStatusResponse:
+    """Read-only status for the disabled direct OnlyFans connector.
+
+    Sprint 7 surface. Always reports ``mode="disabled"`` and
+    ``enabled=False`` until a future sprint flips the shell. Used by
+    the security admin UI to render the "Direct OnlyFans connector:
+    disabled" card.
+    """
+    del role
+    from app.core.onlyfans_direct_policy import READ_ACTIONS, WRITE_ACTIONS
+    from app.services.onlyfans_direct_connector import OnlyFansDirectConnector
+
+    snapshot = OnlyFansDirectConnector().status()
+    return OnlyFansDirectStatusResponse(
+        connector_type=snapshot.connector_type,
+        mode=snapshot.mode,
+        enabled=snapshot.enabled,
+        real_client_wired=snapshot.real_client_wired,
+        rate_max_per_minute=snapshot.rate_max_per_minute,
+        rate_max_per_hour=snapshot.rate_max_per_hour,
+        backoff_initial_seconds=snapshot.backoff_initial_seconds,
+        backoff_max_seconds=snapshot.backoff_max_seconds,
+        session_health=snapshot.session_health,
+        notes=snapshot.notes,
+        read_actions_count=len(READ_ACTIONS),
+        write_actions_count=len(WRITE_ACTIONS),
+    )

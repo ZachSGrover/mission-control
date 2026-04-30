@@ -32,6 +32,11 @@ These are the controls that **fail closed** today. They are why this checklist c
 | A.9 | Clerk webhook verifier (Svix-or-isolated) | `app/core/clerk_webhook_verify.py` | Production refuses shared-secret HMAC unless `CLERK_WEBHOOK_ALLOW_SHARED_SECRET=1` is explicitly set |
 | A.10 | Audit retention scheduler | `app/services/audit_retention_scheduler.py` (`MC_AUDIT_RETENTION_ENABLED=1` flag) | Default dry-run; never deletes by accident |
 | A.11 | Gateway runtime status server-side | `app/api/gateways.py:get_runtime_status` | Frontend reads `token_configured` / `token_source`, never the raw token; `?include_token=1` opt-in audited |
+| A.12 | Direct OnlyFans policy module | `app/core/onlyfans_direct_policy.py` | `READ_ACTIONS` / `WRITE_ACTIONS` frozensets, fail-closed for unknown actions; raises on any write request via `require_read_action`. |
+| A.13 | Direct OnlyFans disabled connector shell | `app/services/onlyfans_direct_connector.py` | `mode="disabled"`, no network, refuses cookie/session kwargs at construction, no write methods, `fetch()` always raises. |
+| A.14 | Direct OnlyFans dry-run + fixture mode | `app/services/onlyfans_direct_fixtures.py`, `OnlyFansDirectConnector.dry_run` | Synthetic fixtures only; payload is computed and discarded; full policy + gate + audit chain on every call. |
+| A.15 | Direct OnlyFans credential safety contract | `app/core/onlyfans_direct_credentials.py` | Vault-only; raw cookies forbidden; frontend session storage forbidden (CI scan); revocation/rotation runbooks. |
+| A.16 | Direct OnlyFans rate-limit and session-health policy | `app/core/onlyfans_direct_rate_policy.py` | Conservative defaults (10/min, 200/hr, 2s→300s backoff); `SessionHealth` enum; `CHALLENGE_REACTION` (stop+audit+notify+manual review). |
 
 If you flipped any of these off intentionally for a development run, **flip them back before continuing this checklist.**
 
@@ -104,20 +109,24 @@ If any item D.1 → D.11 is ❌, do not graduate from sandbox to live. The cost 
 
 ## Section E — Prerequisites for direct OnlyFans (NOT YET ATTEMPTED)
 
-This section is pre-state. Several items are explicitly **❌ on this branch** because the direct connector does not exist. Surfacing them here keeps the gap visible.
+This section is pre-state. After Sprint 7, the **policy boundary** and **disabled connector shell** exist; the real read-only client and any live network call still do not. Surfacing each line keeps the remaining gaps visible.
 
 | # | Requirement | Status on this branch | Reasoning |
 |---|---|---|---|
-| E.1 | A direct OnlyFans connector module exists | ❌ deliberately not present | Until this checklist is fully green for OnlyMonster, no direct connector is justified |
-| E.2 | Connector is read-only by construction: zero write/destructive endpoints (`like`, `subscribe`, `message`, `tip`, `mass_message`, `delete`, `pay_out`, `refund`) | ❌ N/A | If/when E.1 changes, this becomes the first review check |
-| E.3 | All requirements in `direct-connector-safety-checklist.md` Sections 0–5 are ✅ | partial; foundation done, specific connector not present | See that file for line-by-line status |
-| E.4 | Per-account rate limits configured below platform thresholds, documented in code | ❌ N/A | E.1 must land first |
-| E.5 | `creator_credentials` rotation runbook drilled for the OnlyFans variant specifically | ❌ N/A | Drill the OnlyMonster variant first; structure is identical |
+| E.1 | A direct OnlyFans connector module exists | ⚠ disabled shell present (Sprint 7) | `app.services.onlyfans_direct_connector.OnlyFansDirectConnector` exists with `mode="disabled"`, no network, no write methods. Real read-only client still absent. |
+| E.2 | Connector is read-only by construction: zero write/destructive endpoints | ✅ structurally enforced (Sprint 7) | `WRITE_ACTIONS` enumerated at `app.core.onlyfans_direct_policy`; shell exposes no write methods; tests assert no write-shaped public callable. |
+| E.3 | All requirements in `direct-connector-safety-checklist.md` Sections 0–5 are ✅ | partial; foundation done, real client not present | See that file for line-by-line status |
+| E.4 | Per-account rate limits configured below platform thresholds, documented in code | ✅ Sprint 7 scaffolding | `app.core.onlyfans_direct_rate_policy` defines `DEFAULT_MAX_REQUESTS_PER_MINUTE=10`, `_PER_HOUR=200`, `DEFAULT_BACKOFF`. Live counting is Sprint 8+. |
+| E.5 | `creator_credentials` rotation runbook drilled for the OnlyFans variant specifically | ❌ deferred | `revocation_runbook()` and `rotation_runbook()` strings exist in `app.core.onlyfans_direct_credentials`; drill them after a real test account exists. |
 | E.6 | OnlyFans creator-account-compromise scenario walked with the creator's call script | ❌ deferred | Done before first creator goes live, not before code lands |
-| E.7 | `breach-response-plan.md` §4.2 explicitly references this connector by name and current ToS posture | partial | Will need an addendum when E.1 lands |
-| E.8 | A second owner approval is required to flip `mode='read_write'` (no single-operator privilege escalation) | ❌ N/A | Belongs in the connector module when it lands; design it in, not bolt-on |
+| E.7 | `breach-response-plan.md` §4.2 explicitly references this connector by name and current ToS posture | partial | Will need an addendum when E.1 graduates beyond disabled |
+| E.8 | A second owner approval is required to flip `mode='read_write'` (no single-operator privilege escalation) | ⚠ partially structural | `mode="read_write"` is not implementable today; `WRITE_ACTIONS` are policy-blocked; the second-approval gate must still be designed before any write graduation. |
+| E.9 | Credential safety contract enforced: no raw cookies, no frontend session storage | ✅ Sprint 7 | `app.core.onlyfans_direct_credentials` enforces refusal at construction; CI test scans `frontend/src` for forbidden patterns. |
+| E.10 | Dry-run path with synthetic fixtures proves the gating chain end-to-end | ✅ Sprint 7 | `OnlyFansDirectConnector.dry_run(...)` audits policy + gate + (would-fetch); fixture payload is computed and discarded. |
+| E.11 | Real `OnlyFansReadOnlyClient` is implemented and wired into the shell | ❌ does not exist | Sprint 8B work; required before any non-fixture path. |
+| E.12 | A real OnlyFans test-only account is paired through the shell | ❌ blocked by E.11 | Section §10 of `security-sprint-7-direct-of-prep.md` lists the full prerequisite chain. |
 
-The honest summary: **direct OnlyFans is not unblocked by this checklist.** The checklist exists to prevent surprise blockers later — when a future operator looks at this file, they should be able to tell at a glance which gates are still red.
+The honest summary: **direct OnlyFans is still not unblocked.** Sprint 7 lands the policy boundary, the disabled shell, the dry-run path, the credential contract, and the rate-limit/session-health scaffolding. The remaining red gates (E.5, E.6, E.7, E.11, E.12) are explicit; lighting any of them green requires the work named in `security-sprint-7-direct-of-prep.md` §10–§11.
 
 ---
 

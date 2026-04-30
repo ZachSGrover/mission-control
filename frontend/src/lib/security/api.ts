@@ -90,6 +90,21 @@ export type ConsentCreateInput = {
   notes?: string | null;
 };
 
+export type OnlyFansDirectStatus = {
+  connector_type: string;
+  mode: string; // "disabled" | "dry_run"
+  enabled: boolean;
+  real_client_wired: boolean;
+  rate_max_per_minute: number;
+  rate_max_per_hour: number;
+  backoff_initial_seconds: number;
+  backoff_max_seconds: number;
+  session_health: string;
+  notes: string;
+  read_actions_count: number;
+  write_actions_count: number;
+};
+
 export type GatePreviewResult = {
   allowed: boolean;
   reason: string;
@@ -208,4 +223,6 @@ export const securityApi = {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body),
     }),
+  onlyfansDirectStatus: (f: FetchFn) =>
+    jsonRequest<OnlyFansDirectStatus>(f, "/onlyfans-direct/status"),
 };

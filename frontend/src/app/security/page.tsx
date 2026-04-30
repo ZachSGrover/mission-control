@@ -17,6 +17,7 @@ import {
   type ApprovalSummary,
   type ConsentCreateInput,
   type ConsentSummary,
+  type OnlyFansDirectStatus,
   type SecurityStatus,
 } from "@/lib/security/api";
 
@@ -76,20 +77,23 @@ function SecurityAdmin() {
   const [status, setStatus] = useState<SecurityStatus | null>(null);
   const [approvals, setApprovals] = useState<ApprovalSummary[]>([]);
   const [consents, setConsents] = useState<ConsentSummary[]>([]);
+  const [ofDirect, setOfDirect] = useState<OnlyFansDirectStatus | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
 
   const refresh = useCallback(async () => {
     try {
-      const [s, a, c] = await Promise.all([
+      const [s, a, c, od] = await Promise.all([
         securityApi.status(fetchWithAuth),
         securityApi.approvals(fetchWithAuth, { limit: 25 }),
         securityApi.consents(fetchWithAuth, { limit: 25 }),
+        securityApi.onlyfansDirectStatus(fetchWithAuth),
       ]);
       setStatus(s);
       setApprovals(a);
       setConsents(c);
+      setOfDirect(od);
       setError(null);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
@@ -280,6 +284,44 @@ function SecurityAdmin() {
             <p className="text-xs mt-2" style={{ color: "var(--text-quiet)" }}>
               Toggling the global kill switch is the highest-stakes action in the system. Every toggle is audited at severity <em>critical</em>.
             </p>
+          </Card>
+        )}
+
+        {/* Direct OnlyFans connector status (Sprint 7 — disabled by design) */}
+        {ofDirect && (
+          <Card
+            title="Direct OnlyFans connector"
+            hint={ofDirect.enabled ? "active" : "disabled"}
+          >
+            <div className="space-y-2 text-sm">
+              <div className="flex items-center gap-2">
+                <ShieldAlert className="h-4 w-4" style={{ color: "rgb(190,18,60)" }} />
+                <p style={{ color: "var(--text)" }}>
+                  Connector: <strong>disabled</strong> · mode <strong>{ofDirect.mode}</strong> · session{" "}
+                  <strong>{ofDirect.session_health}</strong>
+                </p>
+              </div>
+              <ul className="text-xs space-y-1" style={{ color: "var(--text-muted)" }}>
+                <li>Real account connection: <strong style={{ color: "rgb(190,18,60)" }}>blocked</strong></li>
+                <li>Write actions: <strong style={{ color: "rgb(190,18,60)" }}>blocked ({ofDirect.write_actions_count} hard-blocked)</strong></li>
+                <li>Read-only preparation: <strong>in progress</strong> ({ofDirect.read_actions_count} read categories defined)</li>
+                <li>
+                  Rate-limit policy: max <strong>{ofDirect.rate_max_per_minute}</strong>/min,{" "}
+                  <strong>{ofDirect.rate_max_per_hour}</strong>/hr; backoff{" "}
+                  {ofDirect.backoff_initial_seconds}s → {ofDirect.backoff_max_seconds}s
+                </li>
+                <li>Real client wired: <strong>{ofDirect.real_client_wired ? "yes" : "no"}</strong></li>
+              </ul>
+              <p className="text-xs" style={{ color: "var(--text-quiet)" }}>
+                {ofDirect.notes}
+              </p>
+              <p className="text-xs" style={{ color: "var(--text-quiet)" }}>
+                There is no &ldquo;Connect&rdquo; button. Activation requires the
+                readiness checklist at{" "}
+                <code>docs/security/direct-onlyfans-readiness-checklist.md</code> to
+                pass and an explicit connector approval + creator consent.
+              </p>
+            </div>
           </Card>
         )}
 

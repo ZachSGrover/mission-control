@@ -185,6 +185,53 @@ Each step ends with a documented review checkpoint. **Do not skip**.
 
 ---
 
+## 6.7 Sprint 7 progress (2026-04-30)
+
+Security Sprint 7 on `feat/of-direct-readonly-prep-sprint-7` builds
+the direct-OnlyFans **read-only preparation layer**. No real account
+is touched, no network call exists, no write action is buildable.
+
+- **Policy module — done.** `app.core.onlyfans_direct_policy` defines
+  `READ_ACTIONS` (10 entries) and `WRITE_ACTIONS` (20 entries) as
+  disjoint frozensets. `classify_action()` fails closed for unknowns;
+  `require_read_action()` raises `BlockedActionError` on writes.
+- **Disabled connector shell — done.**
+  `app.services.onlyfans_direct_connector.OnlyFansDirectConnector`
+  has `mode="disabled"` permanently. Constructor refuses cookie /
+  session / password kwargs. No write methods exist. `fetch()`
+  raises `ConnectorNotEnabledError`. `dry_run()` is the only
+  execution surface.
+- **Dry-run + fixtures — done.** Synthetic fixtures with `synthetic:
+  true` markers and `test-creator-NNN` / `test-fan-NNN` placeholder
+  prefixes. Dry-run computes-and-discards the fixture; only safe
+  metadata is audited (`connector.dry_run.pass` /
+  `connector.run.blocked`).
+- **Rate-limit and session-health policy — done as scaffolding.**
+  `app.core.onlyfans_direct_rate_policy` defines conservative
+  defaults (10/min, 200/hr, 2s→300s backoff with jitter) and a
+  narrow `SessionHealth` enum. `CHALLENGE_REACTION` codifies the
+  stop+audit+notify+manual-review procedure on bot-detection
+  signals. Live counting is Sprint 8+.
+- **Credential safety contract — done.**
+  `app.core.onlyfans_direct_credentials` enumerates forbidden
+  credential keys, forbidden frontend storage patterns, and
+  revocation/rotation runbooks. A test scans `frontend/src` for
+  the forbidden patterns and fails CI on a hit.
+- **UI status — done.** Owner-only `GET /security/onlyfans-direct/status`
+  returns booleans + enums + scalar counts. The security admin page
+  renders a "Direct OnlyFans connector: disabled" card with no
+  Connect button.
+- **Tests — 23 cases.** Disjointness, every read allowed, every
+  named write blocked, unknown fail-closed, shell exposes no write
+  method, fetch refuses, dry-run policy/gate/fixture invariants,
+  rate-limit defaults, session-health classification, credential
+  contract refusals, frontend pattern scan.
+
+Items still open: G7 (per-creator key partitioning), G8
+(unlabelled person-name redaction), wiring `attach_denial_detail`
+into individual dependencies, real OnlyMonster client wiring
+(post-OFI merge), and direct OnlyFans real client (Sprint 8B+).
+
 ## 6.6 Sprint 6 progress (2026-04-28)
 
 Security Sprint 6 on `feat/security-readiness-sprint-6` turns Sprints

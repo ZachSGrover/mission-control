@@ -44,4 +44,7 @@ class OfQcDiscordStatus(SQLModel, table=True):
     # additional env-var assertion at render time before any extra detail
     # is included; see ``services/of_intelligence/qc/privacy_modes.py``.
     privacy_mode: str = Field(default="safe_summary", max_length=32)
+    # Per-channel toggle for the Telegram daily-summary publisher.  Default
+    # off; flipping requires an existing Telegram bot token + chat id.
+    telegram_enabled: bool = Field(default=False)
     updated_at: datetime = Field(default_factory=utcnow)

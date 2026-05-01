@@ -84,6 +84,10 @@ _CODE_ROUTING: dict[str, tuple[Severity, str]] = {
         Severity.HIGH,
         "Open conversation in dashboard; check for recovery / counter-offer.",
     ),
+    "account_revenue_drop": (
+        Severity.HIGH,
+        "Compare today vs the last 7 days in the Daily QC Dashboard.",
+    ),
 }
 
 # Sync-failure codes use a ``sync_failure:{entity}`` shape.  Routing matches
@@ -124,6 +128,15 @@ def _facts_for(code: str, context: dict[str, Any] | None) -> tuple[tuple[str, st
         return (("Hours since sync", str(hours)),) if hours is not None else ()
     if code == "api_disconnected":
         return (("Window", "last 24h"),)
+    if code == "account_revenue_drop":
+        rev24 = ctx.get("revenue_24h_cents")
+        avg7 = ctx.get("revenue_7d_avg_cents")
+        facts: list[tuple[str, str]] = []
+        if rev24 is not None:
+            facts.append(("24h", f"${int(rev24) / 100:,.2f}"))
+        if avg7 is not None:
+            facts.append(("7d daily avg", f"${int(avg7) / 100:,.2f}"))
+        return tuple(facts)
     if code.startswith(_SYNC_FAILURE_PREFIX):
         entity = ctx.get("entity") or code.split(":", 1)[1]
         return (("Entity", str(entity)),)

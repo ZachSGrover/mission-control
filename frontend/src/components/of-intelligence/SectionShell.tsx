@@ -27,6 +27,7 @@ const SUB_NAV: ReadonlyArray<{ href: string; label: string }> = [
   { href: "/of-intelligence/revenue",            label: "Revenue" },
   { href: "/of-intelligence/mass-messages",      label: "Mass Messages" },
   { href: "/of-intelligence/posting-insights",   label: "Posting Insights" },
+  { href: "/of-intelligence/daily-qc",           label: "Daily QC" },
   { href: "/of-intelligence/qc-reports",         label: "QC Reports" },
   { href: "/of-intelligence/alerts",             label: "Alerts" },
   { href: "/of-intelligence/memory-bank",        label: "Memory Bank" },

@@ -53,6 +53,10 @@ from app.services.of_intelligence.qc.chatter_findings import (
 )
 from app.services.of_intelligence.qc.detectors import scan_critical_qc
 from app.services.of_intelligence.qc.dispatch import ship_account_or_sync_alert
+from app.services.of_intelligence.qc.revenue import (
+    ACCOUNT_REVENUE_DROP_CODE,
+    detect_revenue_drops,
+)
 from app.services.of_intelligence.qc.rollups import RollupResult, fire_rollup_if_due
 
 logger = get_logger(__name__)
@@ -105,6 +109,7 @@ async def evaluate_alerts(
     candidates.extend(await _rule_account_disconnected(session))
     candidates.extend(await _rule_api_disconnected(session))
     candidates.extend(await _rule_critical_qc_risks(session))
+    candidates.extend(await _rule_revenue_drop(session))
 
     # Track (candidate, alert) pairs for post-commit Discord shipping.
     pending: list[tuple[AlertCandidate, OfIntelligenceAlert]] = []
@@ -170,7 +175,7 @@ async def evaluate_alerts(
 
     summary = AlertEvaluationSummary(
         evaluated_at=utcnow(),
-        rules_run=7,
+        rules_run=8,
         alerts_created=len(pending),
         alerts_skipped_existing=skipped,
         candidates=candidates,
@@ -313,6 +318,35 @@ async def _rule_account_disconnected(session: AsyncSession) -> list[AlertCandida
             context={"access_status": "lost"},
         )
         for row in rows
+    ]
+
+
+async def _rule_revenue_drop(session: AsyncSession) -> list[AlertCandidate]:
+    """Per-account 24h-vs-7d revenue drop → AlertCandidate(code=account_revenue_drop).
+
+    Dedup gate is the existing ``code + account_source_id`` check — once an
+    account is flagged, we don't fire again until the operator
+    acknowledges or resolves.
+    """
+    warnings = await detect_revenue_drops(session)
+    return [
+        AlertCandidate(
+            code=ACCOUNT_REVENUE_DROP_CODE,
+            severity=w.severity,
+            title=(
+                f"{w.username or w.account_source_id} revenue drop"
+                if w.username else "Account revenue drop"
+            ),
+            message=w.reason,
+            account_source_id=w.account_source_id,
+            account_username=w.username,
+            context={
+                "revenue_24h_cents": w.revenue_24h_cents,
+                "revenue_7d_avg_cents": w.revenue_7d_avg_cents,
+                "reason": w.reason,
+            },
+        )
+        for w in warnings
     ]
 
 

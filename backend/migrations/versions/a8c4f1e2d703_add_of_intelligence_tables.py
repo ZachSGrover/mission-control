@@ -15,7 +15,7 @@ Idempotency baked in from day one:
     the UI can show exactly what each run did.
 
 Revision ID: a8c4f1e2d703
-Revises: f5a7c3e8d1b2
+Revises: d7a3b9c2e5f1
 Create Date: 2026-04-27 12:00:00.000000
 
 """
@@ -27,7 +27,7 @@ from alembic import op
 from sqlalchemy.dialects import postgresql
 
 revision = "a8c4f1e2d703"
-down_revision = "f5a7c3e8d1b2"
+down_revision = "d7a3b9c2e5f1"
 branch_labels = None
 depends_on = None
 

@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import logging
-
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel
 from sqlmodel import select
@@ -12,12 +10,13 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 from app.core.auth import AuthContext, get_auth_context
 from app.core.auth_mode import AuthMode
 from app.core.config import settings
+from app.core.logging import get_logger
 from app.core.time import utcnow
 from app.db.session import get_session
 from app.models.mc_role import VALID_ROLES, MCUserRole
 
 router = APIRouter(prefix="/roles", tags=["roles"])
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 AUTH_DEP = Depends(get_auth_context)
 SESSION_DEP = Depends(get_session)

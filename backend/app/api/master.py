@@ -20,7 +20,6 @@ from __future__ import annotations
 
 import asyncio
 import json
-import logging
 import os
 from datetime import datetime, timezone
 from typing import Any
@@ -37,9 +36,10 @@ from app.api.workflows import (
     run_health_check,
 )
 from app.core.auth import get_auth_context
+from app.core.logging import get_logger
 
 router = APIRouter(tags=["master"])
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 AUTH_DEP = Depends(get_auth_context)
 OWNER_DEP = Depends(require_owner)
 

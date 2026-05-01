@@ -12,7 +12,6 @@ Endpoints (prefix /api/v1/control/agents):
 
 from __future__ import annotations
 
-import logging
 import time
 import uuid
 from typing import Any
@@ -26,10 +25,11 @@ from app.core import agent_executions, agent_state, agents_registry, message_met
 from app.core.agents_registry import Agent
 from app.core.ai_backend import ask_ai_detailed
 from app.core.auth import AuthContext, get_auth_context
+from app.core.logging import get_logger
 from app.db.session import get_session
 
 router = APIRouter(prefix="/control/agents", tags=["control-agents"])
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 AUTH_DEP = Depends(get_auth_context)
 OWNER_DEP = Depends(require_owner)

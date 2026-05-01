@@ -13,6 +13,7 @@ import {
   FolderOpen,
   Gauge,
   GitBranch,
+  Heart,
   Layout,
   Loader2,
   MessageSquare,
@@ -162,15 +163,10 @@ export function DashboardSidebar() {
           <NavLink href="/activity"  label="Logs"      Icon={Activity} />
         </NavSection>
 
-        {/* Business / Intelligence — analytics + spend products.
-         *
-         * NOTE: "OnlyFans Intelligence" lives on `feat/ofi-daily-qc-scheduler`
-         * and is intentionally not in this section yet — its routes
-         * (/of-intelligence/*) don't exist on main.  When that branch merges
-         * into main, add `<NavLink href="/of-intelligence" label="OnlyFans
-         * Intelligence" Icon={Heart} />` above Usage Tracker. */}
+        {/* Business / Intelligence — analytics + spend products. */}
         <NavSection label="Business / Intelligence">
-          <NavLink href="/usage" label="Usage Tracker" Icon={Gauge} />
+          <NavLink href="/of-intelligence" label="OnlyFans Intelligence" Icon={Heart} />
+          <NavLink href="/usage"           label="Usage Tracker"         Icon={Gauge} />
         </NavSection>
 
         {/* System */}

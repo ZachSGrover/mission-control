@@ -23,6 +23,8 @@ export default function ChatGptPage() {
     try {
       const stored = localStorage.getItem(STORAGE_KEY);
       if (stored && OPENAI_MODELS.some((m) => m.value === stored)) {
+        // Restore persisted selection on mount; cannot run during SSR render.
+        // eslint-disable-next-line react-hooks/set-state-in-effect
         setModelState(stored);
       }
     } catch { /* ignore */ }

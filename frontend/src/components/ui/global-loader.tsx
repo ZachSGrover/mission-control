@@ -5,6 +5,8 @@ import { useIsFetching, useIsMutating } from "@tanstack/react-query";
 
 export function GlobalLoader() {
   const [mounted, setMounted] = useState(false);
+  // Hydration flag: must run after mount to avoid SSR/client mismatch.
+  // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(() => { setMounted(true); }, []);
 
   const fetchingCount = useIsFetching({

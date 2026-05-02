@@ -294,6 +294,8 @@ function IntegrationsBody() {
   }, [fetchWithAuth]);
 
   useEffect(() => {
+    // Initial fetch — flips loading state then resolves into setIntegrations.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setLoading(true);
     fetchIntegrations(fetchWithAuth)
       .then(setIntegrations)

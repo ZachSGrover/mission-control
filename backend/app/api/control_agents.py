@@ -64,7 +64,14 @@ class AgentOut(BaseModel):
         )
 
 
-class AgentCreate(BaseModel):
+class AgentCreateRequest(BaseModel):
+    """Request body for creating a control-plane agent.
+
+    Renamed from `AgentCreate` to avoid an OpenAPI schema-name collision with
+    `app.schemas.agents.AgentCreate` (the canonical agent-fleet schema). The
+    wire shape is unchanged.
+    """
+
     name: str = Field(..., min_length=1, max_length=80)
     purpose: str = Field(..., max_length=400)
     system_prompt: str = Field(..., max_length=4000)
@@ -143,7 +150,7 @@ async def list_all(_: AuthContext = AUTH_DEP) -> list[AgentOut]:
 
 @router.post("", response_model=AgentOut, status_code=status.HTTP_201_CREATED)
 async def create(
-    body: AgentCreate,
+    body: AgentCreateRequest,
     _: AuthContext = AUTH_DEP,
     _role: str = OWNER_DEP,
 ) -> AgentOut:

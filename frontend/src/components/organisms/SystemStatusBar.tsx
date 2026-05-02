@@ -209,6 +209,8 @@ export function SystemStatusBar() {
   }, [fetchWithAuth, update]);
 
   useEffect(() => {
+    // Initial poll + 30s interval; check() updates state from network result.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     void check();
     const id = window.setInterval(() => void check(), 30_000);
     return () => window.clearInterval(id);

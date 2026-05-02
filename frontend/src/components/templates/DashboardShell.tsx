@@ -26,6 +26,8 @@ function useIsMacElectron(): boolean {
   const [isMacElectron, setIsMacElectron] = useState<boolean>(false);
   useEffect(() => {
     const w = window as unknown as { electron?: { platform?: string } };
+    // Detect Electron host post-mount; cannot run during SSR render.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setIsMacElectron(w.electron?.platform === "darwin");
   }, []);
   return isMacElectron;

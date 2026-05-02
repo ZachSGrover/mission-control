@@ -242,6 +242,8 @@ export function useMasterChat(): MasterChatState {
     try {
       const stored = loadOrchestratorHistory();
       console.log("[Orchestrator] Loaded history:", stored.length, "turns");
+      // Hydrate persisted history; cannot run during SSR render.
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       if (stored.length > 0) setTurns(stored);
     } catch (err) {
       console.error("[Orchestrator] Failed to load history:", err);

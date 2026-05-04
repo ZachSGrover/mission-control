@@ -241,6 +241,8 @@ function CalendarContent() {
   const [mounted, setMounted] = useState(false);
 
   useEffect(() => {
+    // Hydration + load from localStorage on mount — the documented pattern.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setMounted(true);
     try { setMemEntries(loadMemory()); } catch { /* ignore */ }
     try { setSessions(loadOperatorSessions()); } catch { /* ignore */ }

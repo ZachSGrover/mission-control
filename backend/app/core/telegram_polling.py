@@ -23,7 +23,6 @@ No restart required if polling isn't needed — the supervisor stays idle.
 from __future__ import annotations
 
 import asyncio
-import logging
 import os
 import time
 from dataclasses import dataclass
@@ -34,6 +33,7 @@ from typing import Any
 import httpx
 
 from app.core import message_dedup, network_monitor
+from app.core.logging import get_logger
 
 __all__ = [
     "record_webhook_hit",
@@ -42,7 +42,7 @@ __all__ = [
     "TelegramModeSnapshot",
 ]
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 _DATA_DIR = Path(os.getenv("MC_DATA_DIR", str(Path.home() / ".mission-control")))
 _OFFSET_PATH = _DATA_DIR / "telegram_last_update_id"

@@ -448,6 +448,8 @@ function ProjectFormDialog({
 
   // Reset when dialog opens with new values
   useEffect(() => {
+    // Sync form to incoming props each time the dialog re-opens.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     if (open) setForm(initialValues ?? EMPTY_FORM);
   }, [open, initialValues]);
 
@@ -625,6 +627,8 @@ function ProjectsContent() {
   const [deletingProject, setDeletingProject] = useState<ProjectDef | null>(null);
 
   useEffect(() => {
+    // Hydrate from localStorage on mount; cannot run during SSR render.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setMounted(true);
     try { setMemEntries(loadMemory()); } catch { /* ignore */ }
     try { setSessions(loadOperatorSessions()); } catch { /* ignore */ }

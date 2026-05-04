@@ -17,16 +17,17 @@ API is boolean: `seen(key, namespace)` atomically records + tests.  True →
 
 from __future__ import annotations
 
-import logging
 import os
 import time
 from collections import OrderedDict
 from threading import RLock
 from typing import Any
 
+from app.core.logging import get_logger
+
 __all__ = ["seen", "namespace_size"]
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 _TTL_S = 24 * 3600  # 24-hour replay window — generous but bounded
 _MAX_MEMORY = 10_000  # fallback LRU size per namespace

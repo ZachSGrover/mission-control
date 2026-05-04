@@ -245,6 +245,8 @@ function TurnCard({ turn }: { turn: OrchestratorTurn }) {
   const scores = turn.bestAnswer?.scores;
 
   useEffect(() => {
+    // Sync external "isActive" signal to local expand state.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     if (isActive) setExpanded(true);
   }, [isActive]);
 
@@ -303,6 +305,8 @@ function StepRow({ step, index }: { step: OperatorStep; index: number }) {
   const hasContent = Boolean(step.result ?? step.error);
 
   useEffect(() => {
+    // Auto-expand once the step transitions to done with a result.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     if (step.status === "done" && step.result) setExpanded(true);
   }, [step.status, step.result]);
 
@@ -691,6 +695,8 @@ function MasterContent() {
   const { mode: execMode, setMode: setExecMode } = useExecutionMode();
   const [mounted, setMounted] = useState(false);
 
+  // Hydration flag: must run after mount to avoid SSR/client mismatch.
+  // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(() => { setMounted(true); }, []);
 
   return (

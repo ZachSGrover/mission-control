@@ -64,13 +64,10 @@ describe("UserMenu", () => {
 
     render(<UserMenu />);
 
-    await user.click(screen.getByRole("button", { name: /open user menu/i }));
+    await user.click(screen.getByRole("button", { name: /account menu/i }));
 
     expect(
-      screen.getByRole("link", { name: /open boards/i }),
-    ).toBeInTheDocument();
-    expect(
-      screen.getByRole("link", { name: /create board/i }),
+      screen.getByRole("link", { name: /settings/i }),
     ).toBeInTheDocument();
     expect(
       screen.getByRole("button", { name: /sign out/i }),
@@ -89,7 +86,7 @@ describe("UserMenu", () => {
 
     render(<UserMenu />);
 
-    await user.click(screen.getByRole("button", { name: /open user menu/i }));
+    await user.click(screen.getByRole("button", { name: /account menu/i }));
     await user.click(screen.getByRole("button", { name: /sign out/i }));
 
     expect(clearLocalAuthTokenMock).toHaveBeenCalledTimes(1);

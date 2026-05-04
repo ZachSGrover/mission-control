@@ -67,8 +67,16 @@ async def test_get_auth_context_uses_request_state_payload_claims(
     async def _fake_ensure_member_for_user(_session: Any, _user: User) -> None:
         return None
 
+    async def _fake_check_allowlist(
+        _session: Any,
+        _clerk_user_id: str,
+        email: str | None = None,
+    ) -> None:
+        return None
+
     monkeypatch.setattr(auth, "_authenticate_clerk_request", _fake_authenticate)
     monkeypatch.setattr(auth, "_get_or_sync_user", _fake_get_or_sync_user)
+    monkeypatch.setattr(auth, "_check_allowlist", _fake_check_allowlist)
 
     import app.services.organizations as orgs
 

@@ -41,7 +41,7 @@ COPY --from=builder --chown=appuser:appgroup /app/.next ./.next
 # Avoid failing the build when the directory is absent.
 COPY --from=builder --chown=appuser:appgroup /app/package.json ./package.json
 COPY --from=builder --chown=appuser:appgroup /app/node_modules ./node_modules
-COPY --from=builder --chown=appuser:appgroup /app/next.config.ts ./next.config.ts
+COPY --from=builder --chown=appuser:appgroup /app/next.config.js ./next.config.js
 
 USER appuser
 

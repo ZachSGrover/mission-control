@@ -1,5 +1,8 @@
 'use strict'
 
+// Electron preload script runs as Node CommonJS — require() is required here.
+/* eslint-disable @typescript-eslint/no-require-imports */
+
 // Preload script — runs in the renderer process (the web page)
 // with access to both the DOM and a limited set of Node.js APIs.
 //

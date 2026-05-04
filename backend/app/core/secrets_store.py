@@ -18,13 +18,14 @@ from __future__ import annotations
 
 import base64
 import hashlib
-import logging
 
 from cryptography.fernet import Fernet, InvalidToken
 from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
-logger = logging.getLogger(__name__)
+from app.core.logging import get_logger
+
+logger = get_logger(__name__)
 
 # ── Supported providers ──────────────────────────────────────────────────────
 

@@ -10,7 +10,6 @@ Reading from the events log is always safe: it's a local DB query.
 
 from __future__ import annotations
 
-import logging
 from datetime import timedelta
 from typing import TYPE_CHECKING
 from uuid import UUID
@@ -18,6 +17,7 @@ from uuid import UUID
 from sqlalchemy import func
 from sqlmodel import col, select
 
+from app.core.logging import get_logger
 from app.core.time import utcnow
 from app.models.usage import UsageEvent
 from app.services.usage.base import CollectorResult
@@ -25,7 +25,7 @@ from app.services.usage.base import CollectorResult
 if TYPE_CHECKING:
     from sqlmodel.ext.asyncio.session import AsyncSession
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 PROVIDER = "internal"

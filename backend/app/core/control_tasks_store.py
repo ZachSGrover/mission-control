@@ -35,7 +35,6 @@ ownership of a task via the Redis atomics (RPOPLPUSH-style with inflight ZSET).
 from __future__ import annotations
 
 import json
-import logging
 import os
 import time
 import uuid
@@ -43,6 +42,8 @@ from collections import deque
 from dataclasses import asdict, dataclass, field
 from threading import RLock
 from typing import Any, Literal
+
+from app.core.logging import get_logger
 
 __all__ = [
     "Task",
@@ -57,7 +58,7 @@ __all__ = [
     "sweep_inflight",
 ]
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 TaskStatus = Literal["queued", "running", "done", "failed", "cancelled"]
 

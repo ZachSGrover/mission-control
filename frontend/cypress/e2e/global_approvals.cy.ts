@@ -56,16 +56,7 @@ describe("Global approvals", () => {
     cy.visit("/approvals");
     cy.waitForAppLoaded();
 
-    cy.wait(
-      [
-        "@usersMe",
-        "@organizationsList",
-        "@orgMeMember",
-        "@boardsList",
-        "@approvalsList",
-      ],
-      { timeout: 20_000 },
-    );
+    cy.wait(["@boardsList", "@approvalsList"], { timeout: 20_000 });
 
     // Pending approval should be visible in the list.
     cy.contains(/unapproved tasks/i).should("be.visible");

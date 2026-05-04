@@ -9,8 +9,6 @@ On first sign-in of an email-only row, `clerk_user_id` is backfilled.
 
 from __future__ import annotations
 
-import logging
-
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, model_validator
 from sqlalchemy import or_
@@ -19,13 +17,14 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.api.mc_roles import _clerk_id, require_owner
 from app.core.auth import AuthContext, get_auth_context
+from app.core.logging import get_logger
 from app.core.time import utcnow
 from app.db.session import get_session
 from app.models.mc_allowed_user import MCAllowedUser
 from app.models.mc_role import MCUserRole
 
 router = APIRouter(prefix="/allowed-users", tags=["allowed-users"])
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 AUTH_DEP = Depends(get_auth_context)
 SESSION_DEP = Depends(get_session)

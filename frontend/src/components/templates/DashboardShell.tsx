@@ -100,6 +100,7 @@ export function DashboardShell({ children }: { children: ReactNode }) {
           className="fixed inset-0 z-40 bg-black/50 md:hidden"
           onClick={toggleSidebar}
           aria-hidden="true"
+          data-cy="sidebar-backdrop"
         />
       )}
 

@@ -224,8 +224,6 @@ describe("/boards/:id task board", () => {
       "@snapshot",
       "@groupSnapshot",
       "@membership",
-      "@me",
-      "@organizations",
       "@tags",
       "@customFields",
     ]);

@@ -34,7 +34,6 @@ Surface:
 from __future__ import annotations
 
 import asyncio
-import logging
 from datetime import datetime
 from typing import Any
 from uuid import UUID
@@ -46,6 +45,7 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.api.mc_roles import require_owner
 from app.core.auth import AuthContext, get_auth_context
+from app.core.logging import get_logger
 from app.core.secrets_store import (
     delete_secret,
     mask_key,
@@ -91,7 +91,7 @@ from app.services.onlymonster.sync import (
 )
 
 router = APIRouter(prefix="/of-intelligence", tags=["of-intelligence"])
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 AUTH_DEP = Depends(get_auth_context)
 OWNER_DEP = Depends(require_owner)

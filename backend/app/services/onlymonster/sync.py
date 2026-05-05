@@ -30,7 +30,6 @@ Flow:
 
 from __future__ import annotations
 
-import logging
 from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any
@@ -39,6 +38,7 @@ from uuid import UUID, uuid4
 from sqlmodel import col, select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
+from app.core.logging import get_logger
 from app.core.time import utcnow
 from app.db.session import async_session_maker
 from app.integrations.onlymonster.client import (
@@ -58,7 +58,7 @@ from app.models.of_intelligence import (
     OfIntelligenceTrackingLink,
 )
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 # ── Result containers ────────────────────────────────────────────────────────

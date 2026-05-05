@@ -18,7 +18,6 @@ Responsibilities:
 from __future__ import annotations
 
 import asyncio
-import logging
 import time
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
@@ -28,11 +27,12 @@ import httpx
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.core.config import settings
+from app.core.logging import get_logger
 from app.core.secrets_store import get_secret_with_source
 from app.integrations.onlymonster.endpoints import ENDPOINT_CATALOG, EndpointSpec, find
 from app.integrations.onlymonster.rate_limiter import OnlyMonsterRateLimiter
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 ONLYMONSTER_API_KEY_DB_KEY = "onlymonster.api_key"
 ONLYMONSTER_BASE_URL_DB_KEY = "onlymonster.base_url"

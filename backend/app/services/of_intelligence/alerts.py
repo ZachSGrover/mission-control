@@ -14,7 +14,6 @@ Phase 1 rules (extend over time):
 
 from __future__ import annotations
 
-import logging
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from typing import Any
@@ -22,6 +21,7 @@ from typing import Any
 from sqlmodel import col, select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
+from app.core.logging import get_logger
 from app.core.time import utcnow
 from app.models.of_intelligence import (
     OfIntelligenceAccount,
@@ -29,7 +29,7 @@ from app.models.of_intelligence import (
     OfIntelligenceSyncLog,
 )
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 DEFAULT_STALE_SYNC_HOURS = 6
 

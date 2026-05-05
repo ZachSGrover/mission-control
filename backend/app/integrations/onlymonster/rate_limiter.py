@@ -16,11 +16,12 @@ exponentially without overlapping with this proactive limiter.
 from __future__ import annotations
 
 import asyncio
-import logging
 import time
 from collections import deque
 
-logger = logging.getLogger(__name__)
+from app.core.logging import get_logger
+
+logger = get_logger(__name__)
 
 
 class _SlidingWindow:

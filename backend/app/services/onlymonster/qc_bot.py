@@ -10,7 +10,6 @@ Tone: direct and operational — short sentences, action-oriented.
 
 from __future__ import annotations
 
-import logging
 from collections.abc import Sequence
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
@@ -19,6 +18,7 @@ from typing import Any
 from sqlmodel import col, select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
+from app.core.logging import get_logger
 from app.core.time import utcnow
 from app.models.of_intelligence import (
     BusinessMemoryEntry,
@@ -31,7 +31,7 @@ from app.models.of_intelligence import (
     OfIntelligenceSyncLog,
 )
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 @dataclass

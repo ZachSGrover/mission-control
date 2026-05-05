@@ -24,7 +24,6 @@ double-bracket links for cross-references, and YAML-tag-compatible tag lists.
 
 from __future__ import annotations
 
-import logging
 import os
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -34,6 +33,7 @@ from typing import Any
 from sqlmodel import col, select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
+from app.core.logging import get_logger
 from app.core.time import utcnow
 from app.models.of_intelligence import (
     BusinessMemoryEntry,
@@ -43,7 +43,7 @@ from app.models.of_intelligence import (
     OfIntelligenceQcReport,
 )
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 OBSIDIAN_ROOT = "Business Memory/OnlyMonster"
 

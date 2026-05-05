@@ -35,9 +35,7 @@ describe("Skill packs", () => {
     cy.visit("/skills/packs");
     cy.waitForAppLoaded();
 
-    cy.wait(["@usersMe", "@organizationsList", "@orgMeMember", "@packsList"], {
-      timeout: 20_000,
-    });
+    cy.wait(["@packsList"], { timeout: 20_000 });
     cy.contains(/openclaw skills/i).should("be.visible");
 
     cy.contains("button", /^sync$/i).click();

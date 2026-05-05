@@ -23,7 +23,6 @@ pattern; the raw values never appear in logs or responses.
 
 from __future__ import annotations
 
-import logging
 import time
 from datetime import datetime, timedelta
 from typing import TYPE_CHECKING, Any
@@ -34,6 +33,7 @@ from sqlmodel import col, select
 
 from app.api.mc_roles import require_owner
 from app.core.auth import AuthContext, get_auth_context
+from app.core.logging import get_logger
 from app.core.time import utcnow
 from app.db.session import get_session
 from app.models.usage import UsageAlertConfig, UsageEvent, UsageSnapshot
@@ -60,7 +60,7 @@ from app.services.usage import run_collectors
 if TYPE_CHECKING:
     from sqlmodel.ext.asyncio.session import AsyncSession
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 router = APIRouter(prefix="/usage", tags=["usage"])
 AUTH_DEP = Depends(get_auth_context)

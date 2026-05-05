@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import json
-import logging
 import re
 from datetime import datetime
 from typing import Any, Literal, cast
@@ -15,6 +14,7 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.core.auth import AuthContext, get_auth_context
 from app.core.config import settings
+from app.core.logging import get_logger
 from app.core.secrets_store import get_api_key
 from app.core.time import utcnow
 from app.db.session import get_session
@@ -27,7 +27,7 @@ from app.services.usage.logger import (
 router = APIRouter(prefix="/operator", tags=["operator"])
 AUTH_DEP = Depends(get_auth_context)
 SESSION_DEP = Depends(get_session)
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 _TRIGGER = "operator"

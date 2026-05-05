@@ -794,6 +794,8 @@ export default function WorkflowsPage() {
   const [showNewDialog, setShowNewDialog] = useState(false);
 
   useEffect(() => {
+    // Hydrate workflows from localStorage on mount.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setWorkflows(loadWorkflows());
   }, []);
 

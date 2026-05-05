@@ -15,6 +15,8 @@ export function useExecutionMode() {
   const [mounted, setMounted] = useState(false);
 
   useEffect(() => {
+    // Hydrate from localStorage on mount; cannot run during SSR render.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setMounted(true);
     setModeState(loadExecutionMode());
   }, []);

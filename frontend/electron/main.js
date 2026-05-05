@@ -1,5 +1,9 @@
 'use strict'
 
+// Electron main-process script runs as Node CommonJS, where require() is the
+// correct module system. Disable the TS rule for this file only.
+/* eslint-disable @typescript-eslint/no-require-imports */
+
 const { app, BrowserWindow, shell } = require('electron')
 const path = require('path')
 

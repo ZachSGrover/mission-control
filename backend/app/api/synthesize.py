@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import logging
 from datetime import datetime
 
 from anthropic.types import TextBlock
@@ -12,6 +11,7 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.core.auth import AuthContext, get_auth_context
 from app.core.config import settings
+from app.core.logging import get_logger
 from app.core.secrets_store import get_api_key
 from app.core.time import utcnow
 from app.db.session import get_session
@@ -21,7 +21,7 @@ from app.services.usage.logger import (
     record_usage_event,
 )
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 _FEATURE = "synthesize"
 _TRIGGER = "synthesize"

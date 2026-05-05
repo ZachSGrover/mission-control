@@ -12,16 +12,17 @@ return is_online=None until the first probe completes.
 from __future__ import annotations
 
 import asyncio
-import logging
 import os
 import socket
 import time
 from dataclasses import dataclass
 from threading import RLock
 
+from app.core.logging import get_logger
+
 __all__ = ["snapshot", "NetworkSnapshot", "run_forever", "mark_online", "mark_offline"]
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 _PROBE_HOST = os.getenv("MC_PROBE_HOST", "1.1.1.1")
 _PROBE_PORT = int(os.getenv("MC_PROBE_PORT", "53"))

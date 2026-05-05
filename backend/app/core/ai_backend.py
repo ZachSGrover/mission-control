@@ -10,7 +10,6 @@ Only called on the AI path — the fast/greeting path never reaches this module.
 from __future__ import annotations
 
 import asyncio
-import logging
 import os
 from collections.abc import Awaitable, Callable
 from typing import Final
@@ -19,6 +18,7 @@ from anthropic.types import TextBlock
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.core.config import settings
+from app.core.logging import get_logger
 from app.core.secrets_store import get_api_key
 from app.core.time import utcnow
 from app.services.usage.logger import (
@@ -39,7 +39,7 @@ _PROVIDER_ORDER: tuple[str, ...] = tuple(
 
 __all__ = ["ask_ai", "ask_ai_detailed"]
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 # ── Retry policy (exponential backoff) ───────────────────────────────────────
 _MAX_ATTEMPTS: "Final[int]" = 3

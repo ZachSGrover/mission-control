@@ -221,6 +221,8 @@ function MemoryTab() {
   const [filterArea, setFilterArea]       = useState("all");
 
   useEffect(() => {
+    // Hydrate from localStorage on mount; cannot run during SSR render.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setMounted(true);
     setEntries(loadMemory());
   }, []);

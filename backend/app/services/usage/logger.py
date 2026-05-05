@@ -13,12 +13,12 @@ Design intent:
 
 from __future__ import annotations
 
-import logging
 import os
 from datetime import datetime
 from typing import TYPE_CHECKING, Any
 from uuid import UUID
 
+from app.core.logging import get_logger
 from app.core.time import utcnow
 from app.models.usage import UsageEvent
 from app.services.usage.pricing import estimate_cost
@@ -26,7 +26,7 @@ from app.services.usage.pricing import estimate_cost
 if TYPE_CHECKING:
     from sqlmodel.ext.asyncio.session import AsyncSession
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 def current_environment() -> str:

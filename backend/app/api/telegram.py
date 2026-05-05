@@ -16,7 +16,6 @@ Security:
 
 from __future__ import annotations
 
-import logging
 import os
 import time
 from typing import Any, cast
@@ -30,12 +29,13 @@ from app.api.mc_roles import require_owner
 from app.core import message_dedup, message_metrics, telegram_polling
 from app.core.ai_backend import ask_ai
 from app.core.auth import AuthContext, get_auth_context
+from app.core.logging import get_logger
 from app.core.secrets_store import delete_secret, get_secret_with_source, set_secret
 from app.core.speed_layer import classify
 from app.db.session import get_session
 
 router = APIRouter(prefix="/telegram", tags=["telegram"])
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 AUTH_DEP = Depends(get_auth_context)
 OWNER_DEP = Depends(require_owner)

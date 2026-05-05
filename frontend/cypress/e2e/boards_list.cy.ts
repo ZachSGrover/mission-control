@@ -86,7 +86,7 @@ describe("/boards", () => {
     cy.visit("/boards");
     cy.waitForAppLoaded();
 
-    cy.wait(["@membership", "@me", "@organizations", "@boards", "@boardGroups"]);
+    cy.wait(["@boards", "@boardGroups"]);
 
     cy.contains(/boards/i).should("be.visible");
     cy.contains("Demo Board").should("be.visible");

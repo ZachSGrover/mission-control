@@ -13,7 +13,6 @@ All endpoints require owner role.
 from __future__ import annotations
 
 import asyncio
-import logging
 import os
 import time
 from typing import Any
@@ -24,9 +23,10 @@ from pydantic import BaseModel
 
 from app.api.mc_roles import require_owner
 from app.core.auth import get_auth_context
+from app.core.logging import get_logger
 
 router = APIRouter(prefix="/workflows", tags=["workflows"])
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 AUTH_DEP = Depends(get_auth_context)
 OWNER_DEP = Depends(require_owner)

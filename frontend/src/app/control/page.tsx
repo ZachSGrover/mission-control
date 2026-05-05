@@ -100,6 +100,8 @@ function AgentsPanel({ fetchFn }: { fetchFn: FetchFn }) {
       .finally(() => setLoading(false));
   }, [fetchFn]);
 
+  // Initial fetch on mount and whenever auth-bound `load` identity changes.
+  // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(() => { load(); }, [load]);
 
   const toggleActive = useCallback(async (a: Agent) => {
@@ -348,6 +350,8 @@ function DevicesPanel({ fetchFn }: { fetchFn: FetchFn }) {
   }, [fetchFn]);
 
   useEffect(() => {
+    // Initial fetch + 15s polling; load() updates state via fetch result.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     load();
     const id = window.setInterval(load, 15_000);
     return () => window.clearInterval(id);
@@ -409,6 +413,8 @@ function TasksPanel({ fetchFn }: { fetchFn: FetchFn }) {
   }, [fetchFn]);
 
   useEffect(() => {
+    // Initial fetch + 10s polling; load() updates state via fetch result.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     load();
     const id = window.setInterval(load, 10_000);
     return () => window.clearInterval(id);

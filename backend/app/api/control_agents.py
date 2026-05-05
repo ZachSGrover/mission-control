@@ -12,7 +12,6 @@ Endpoints (prefix /api/v1/control/agents):
 
 from __future__ import annotations
 
-import logging
 import time
 import uuid
 from typing import Any
@@ -26,10 +25,11 @@ from app.core import agent_executions, agent_state, agents_registry, message_met
 from app.core.agents_registry import Agent
 from app.core.ai_backend import ask_ai_detailed
 from app.core.auth import AuthContext, get_auth_context
+from app.core.logging import get_logger
 from app.db.session import get_session
 
 router = APIRouter(prefix="/control/agents", tags=["control-agents"])
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 AUTH_DEP = Depends(get_auth_context)
 OWNER_DEP = Depends(require_owner)
@@ -64,7 +64,14 @@ class AgentOut(BaseModel):
         )
 
 
-class AgentCreate(BaseModel):
+class AgentCreateRequest(BaseModel):
+    """Request body for creating a control-plane agent.
+
+    Renamed from `AgentCreate` to avoid an OpenAPI schema-name collision with
+    `app.schemas.agents.AgentCreate` (the canonical agent-fleet schema). The
+    wire shape is unchanged.
+    """
+
     name: str = Field(..., min_length=1, max_length=80)
     purpose: str = Field(..., max_length=400)
     system_prompt: str = Field(..., max_length=4000)
@@ -143,7 +150,7 @@ async def list_all(_: AuthContext = AUTH_DEP) -> list[AgentOut]:
 
 @router.post("", response_model=AgentOut, status_code=status.HTTP_201_CREATED)
 async def create(
-    body: AgentCreate,
+    body: AgentCreateRequest,
     _: AuthContext = AUTH_DEP,
     _role: str = OWNER_DEP,
 ) -> AgentOut:

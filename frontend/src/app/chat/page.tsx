@@ -29,6 +29,8 @@ export default function ClawChatPage() {
     try {
       const stored = window.localStorage.getItem(STORAGE_KEY);
       if (stored && CLAW_MODELS.some((m) => m.value === stored)) {
+        // Restore persisted selection on mount; cannot run during SSR render.
+        // eslint-disable-next-line react-hooks/set-state-in-effect
         setModelState(stored);
       }
     } catch { /* ignore */ }

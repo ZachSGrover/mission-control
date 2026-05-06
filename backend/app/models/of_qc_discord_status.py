@@ -57,4 +57,23 @@ class OfQcDiscordStatus(SQLModel, table=True):
     # button) bypass this gate via ``bypass_kill_switch=True`` so the
     # operator can verify a webhook before flipping live sending on.
     live_send_enabled: bool = Field(default=False)
+    # Daily QC ingestion source mode — controls which source the
+    # scheduler / sandbox runner pulls AccountMetrics from.  Default
+    # ``synthetic`` (deterministic fixture, no DB read).  Other values:
+    # ``local_ofi`` (read existing OFI tables only) and
+    # ``onlymonster_readonly`` (RESERVED, off by default — v1 returns a
+    # ``data_source_disconnected`` skip when this is selected).
+    daily_qc_source_mode: str = Field(default="synthetic", max_length=32)
+    # OnlyMonster read-only ingestion permission.  Independent from the
+    # source mode above — both must be aligned for any OnlyMonster
+    # network call to even be considered.  V1: stays off; the factory
+    # records a clear skip even when this is True.
+    onlymonster_readonly_enabled: bool = Field(default=False)
+    # OnlyFans read-only ingestion permission.  V1: stays off; no code
+    # path reads this yet.  Reserved column so future enabling does not
+    # require another migration.
+    onlyfans_readonly_enabled: bool = Field(default=False)
+    # Platform write permission.  V1: stays off; never read or written
+    # to anywhere in the codebase.  Defensive reservation only.
+    platform_write_enabled: bool = Field(default=False)
     updated_at: datetime = Field(default_factory=utcnow)

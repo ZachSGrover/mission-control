@@ -60,12 +60,19 @@ class SchedulerStatus:
     live_send_enabled: bool
     discord_enabled: bool  # mirrors of_qc_discord_status.enabled
     telegram_enabled: bool
+    daily_qc_source_mode: str
+    onlymonster_readonly_enabled: bool
+    onlyfans_readonly_enabled: bool
+    platform_write_enabled: bool
+    safe_mode: bool
     last_run_at: datetime | None
     last_status: str | None
     last_skipped_reason: str | None
     last_error_summary: str | None
     last_findings_count: int | None
     last_accounts_checked: int | None
+    last_source_mode: str | None
+    last_source_confidence: str | None
     next_run_at: datetime | None
     tick_interval_seconds: int
 
@@ -96,12 +103,24 @@ async def current_status(session: AsyncSession) -> SchedulerStatus:
         live_send_enabled=live_send_enabled,
         discord_enabled=discord_enabled,
         telegram_enabled=telegram_enabled,
+        daily_qc_source_mode=(
+            getattr(row, "daily_qc_source_mode", None) if row is not None else None
+        )
+        or "synthetic",
+        onlymonster_readonly_enabled=bool(
+            row and getattr(row, "onlymonster_readonly_enabled", False)
+        ),
+        onlyfans_readonly_enabled=bool(row and getattr(row, "onlyfans_readonly_enabled", False)),
+        platform_write_enabled=bool(row and getattr(row, "platform_write_enabled", False)),
+        safe_mode=bool(latest.safe_mode) if latest is not None else True,
         last_run_at=latest.started_at if latest else None,
         last_status=latest.status if latest else None,
         last_skipped_reason=latest.skipped_reason if latest else None,
         last_error_summary=latest.error_summary if latest else None,
         last_findings_count=latest.findings_count if latest else None,
         last_accounts_checked=latest.accounts_checked if latest else None,
+        last_source_mode=latest.source_mode if latest else None,
+        last_source_confidence=latest.source_confidence if latest else None,
         next_run_at=next_run_at,
         tick_interval_seconds=TICK_INTERVAL_SECONDS,
     )
@@ -149,25 +168,45 @@ async def run_one_tick(
             )
             return job
 
-        # Lazy import keeps this module cheap to load (and breaks a circular
-        # at import time — alerts.py pulls in detectors/dispatcher chain).
+        # Lazy imports keep this module cheap to load and avoid circulars.
         from app.services.of_intelligence.alerts import evaluate_alerts
+        from app.services.of_intelligence.qc.ingestion import ingest_for_status
+        from app.services.of_intelligence.qc.ingestion_evaluator import (
+            evaluate_ingestion,
+        )
+
+        # Source-aware ingestion: pull AccountMetrics through the read-only
+        # adapter layer, then run the (existing) per-row alert engine.
+        ingestion = await ingest_for_status(session)
+        evaluated = evaluate_ingestion(ingestion)
 
         summary = await evaluate_alerts(session)
-        job.accounts_checked = len(summary.candidates)
-        job.findings_count = summary.alerts_created
-        job.status = "completed"
+        # Combine the ingestion-evaluator's account count with the alert
+        # engine's count of evaluated candidates so the dashboard shows
+        # the broader of the two.  Findings count likewise: prefer the
+        # ingestion findings (privacy-safe) when the source is non-empty.
+        job.accounts_checked = max(evaluated.accounts_checked, len(summary.candidates))
+        job.findings_count = max(len(evaluated.findings), summary.alerts_created)
+        job.source_mode = ingestion.source_mode.value
+        job.source_confidence = ingestion.source_confidence
+        job.safe_mode = bool(ingestion.safe_mode)
+        if ingestion.skipped_reason and not evaluated.findings:
+            job.status = "skipped"
+            job.skipped_reason = ingestion.skipped_reason
+        else:
+            job.status = "completed"
         job.finished_at = utcnow()
         session.add(job)
         await session.commit()
         await session.refresh(job)
         logger.info(
-            "of_qc.scheduler.tick.completed triggered_by=%s rules_run=%s "
-            "alerts_created=%s skipped_existing=%s",
+            "of_qc.scheduler.tick.completed triggered_by=%s source_mode=%s "
+            "rules_run=%s alerts_created=%s findings=%s",
             triggered_by,
+            ingestion.source_mode.value,
             summary.rules_run,
             summary.alerts_created,
-            summary.alerts_skipped_existing,
+            len(evaluated.findings),
         )
         return job
     except Exception as exc:  # noqa: BLE001 — bullet-proof against detector regressions

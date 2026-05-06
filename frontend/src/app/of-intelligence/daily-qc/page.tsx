@@ -349,6 +349,35 @@ function SchedulerCard({
             {enabledPill("Live send", state.live_send_enabled)}
             {enabledPill("Discord", state.discord_enabled)}
             {enabledPill("Telegram", state.telegram_enabled)}
+            <span className="text-xs px-2 py-0.5 rounded-full border bg-slate-50 text-slate-600 border-slate-200">
+              source: {state.daily_qc_source_mode}
+            </span>
+            {state.safe_mode && (
+              <span className="text-xs px-2 py-0.5 rounded-full border bg-emerald-50 text-emerald-700 border-emerald-200">
+                safe mode
+              </span>
+            )}
+          </div>
+          <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 mt-2 text-[11px] text-amber-800">
+            <strong>Real platform access is OFF.</strong> OnlyMonster read-only:{" "}
+            <code>{state.onlymonster_readonly_enabled ? "enabled" : "disabled"}</code>{" "}
+            · OnlyFans read-only:{" "}
+            <code>{state.onlyfans_readonly_enabled ? "enabled" : "disabled"}</code>{" "}
+            · Platform write:{" "}
+            <code>{state.platform_write_enabled ? "enabled" : "disabled"}</code>
+            {!state.onlymonster_readonly_enabled &&
+              !state.onlyfans_readonly_enabled &&
+              !state.platform_write_enabled && (
+                <span className="block mt-1 text-amber-700">
+                  Daily QC is reading{" "}
+                  {state.daily_qc_source_mode === "synthetic"
+                    ? "synthetic fixture data"
+                    : state.daily_qc_source_mode === "local_ofi"
+                      ? "local OFI database rows"
+                      : "no data (selected source is disconnected)"}
+                  . No live OnlyFans / OnlyMonster calls will happen.
+                </span>
+              )}
           </div>
         </div>
         <button
@@ -390,6 +419,10 @@ function SchedulerCard({
           <div className="text-[10px] uppercase tracking-wide text-slate-400">Last counts</div>
           <div className="text-slate-700 mt-0.5">
             accounts: {state.last_accounts_checked ?? "—"} · findings: {state.last_findings_count ?? "—"}
+          </div>
+          <div className="text-[11px] text-slate-500 mt-0.5">
+            last source: {state.last_source_mode ?? "—"}
+            {state.last_source_confidence && ` · confidence: ${state.last_source_confidence}`}
           </div>
         </div>
       </div>

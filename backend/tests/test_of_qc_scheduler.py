@@ -98,8 +98,19 @@ async def test_tick_completes_when_daily_qc_enabled(
         job = await run_one_tick(session, triggered_by="test")
         assert job.status == "completed"
         assert job.skipped_reason is None
+        # Post-ingestion-layer (PR for read-only ingestion v1): the
+        # scheduler now takes the max of (ingestion accounts checked,
+        # alert engine candidates) and (ingestion findings, alerts
+        # created).  The synthetic source returns 2 demo accounts and
+        # the ingestion evaluator emits 4 findings (zero_revenue +
+        # stale_data + missing_data + needs_review on indigo).  The
+        # fake summary contributes 3 candidates / 2 alerts.  Expected:
+        # accounts = max(2, 3) = 3, findings = max(4, 2) = 4.
         assert job.accounts_checked == 3
-        assert job.findings_count == 2
+        assert job.findings_count == 4
+        assert job.source_mode == "synthetic"
+        assert job.source_confidence == "high"
+        assert job.safe_mode is True
 
 
 # ── Failure handling ──────────────────────────────────────────────────────

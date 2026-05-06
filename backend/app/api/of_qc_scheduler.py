@@ -58,6 +58,9 @@ class SchedulerJobRow(BaseModel):
     error_summary: str | None = None
     accounts_checked: int | None = None
     findings_count: int | None = None
+    source_mode: str | None = None
+    source_confidence: str | None = None
+    safe_mode: bool = True
     started_at: datetime
     finished_at: datetime | None = None
 
@@ -67,12 +70,21 @@ class SchedulerStatusResponse(BaseModel):
     live_send_enabled: bool
     discord_enabled: bool
     telegram_enabled: bool
+    # Read-only ingestion mode + per-source flags (added with PR for
+    # the read-only ingestion v1 slice).
+    daily_qc_source_mode: str = "synthetic"
+    onlymonster_readonly_enabled: bool = False
+    onlyfans_readonly_enabled: bool = False
+    platform_write_enabled: bool = False
+    safe_mode: bool = True  # mirrors the latest job's safe_mode
     last_run_at: datetime | None = None
     last_status: str | None = None
     last_skipped_reason: str | None = None
     last_error_summary: str | None = None
     last_findings_count: int | None = None
     last_accounts_checked: int | None = None
+    last_source_mode: str | None = None
+    last_source_confidence: str | None = None
     next_run_at: datetime | None = None
     tick_interval_seconds: int
     recent_jobs: list[SchedulerJobRow] = Field(default_factory=list)
@@ -81,6 +93,7 @@ class SchedulerStatusResponse(BaseModel):
 class SetEnabledRequest(BaseModel):
     daily_qc_enabled: bool | None = None
     live_send_enabled: bool | None = None
+    daily_qc_source_mode: str | None = None  # "synthetic" | "local_ofi"
 
 
 class SandboxRunResponse(BaseModel):
@@ -124,12 +137,19 @@ async def _build_status_response(session: AsyncSession) -> SchedulerStatusRespon
         live_send_enabled=s.live_send_enabled,
         discord_enabled=s.discord_enabled,
         telegram_enabled=s.telegram_enabled,
+        daily_qc_source_mode=s.daily_qc_source_mode,
+        onlymonster_readonly_enabled=s.onlymonster_readonly_enabled,
+        onlyfans_readonly_enabled=s.onlyfans_readonly_enabled,
+        platform_write_enabled=s.platform_write_enabled,
+        safe_mode=s.safe_mode,
         last_run_at=s.last_run_at,
         last_status=s.last_status,
         last_skipped_reason=s.last_skipped_reason,
         last_error_summary=s.last_error_summary,
         last_findings_count=s.last_findings_count,
         last_accounts_checked=s.last_accounts_checked,
+        last_source_mode=s.last_source_mode,
+        last_source_confidence=s.last_source_confidence,
         next_run_at=s.next_run_at,
         tick_interval_seconds=s.tick_interval_seconds,
         recent_jobs=[_to_row(j) for j in recent],
@@ -170,10 +190,14 @@ async def set_scheduler_enabled(
     """Flip ``daily_qc_enabled`` and/or ``live_send_enabled`` on the
     singleton ``of_qc_discord_status`` row.  Both default to off.  No
     other side effects — the supervisor reads these on each tick."""
-    if body.daily_qc_enabled is None and body.live_send_enabled is None:
+    if (
+        body.daily_qc_enabled is None
+        and body.live_send_enabled is None
+        and body.daily_qc_source_mode is None
+    ):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Provide daily_qc_enabled and/or live_send_enabled.",
+            detail="Provide daily_qc_enabled, live_send_enabled, or daily_qc_source_mode.",
         )
     row = await session.get(OfQcDiscordStatus, _STATUS_ROW_ID)
     if row is None:
@@ -184,6 +208,17 @@ async def set_scheduler_enabled(
         row.daily_qc_enabled = bool(body.daily_qc_enabled)
     if body.live_send_enabled is not None:
         row.live_send_enabled = bool(body.live_send_enabled)
+    if body.daily_qc_source_mode is not None:
+        candidate = (body.daily_qc_source_mode or "").strip().lower()
+        if candidate not in {"synthetic", "local_ofi", "onlymonster_readonly"}:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=(
+                    "daily_qc_source_mode must be one of: "
+                    "synthetic, local_ofi, onlymonster_readonly."
+                ),
+            )
+        row.daily_qc_source_mode = candidate
     row.updated_at = utcnow()
     session.add(row)
     await session.commit()
@@ -219,6 +254,9 @@ async def manual_sandbox_run(
         status="completed",
         accounts_checked=sandbox.accounts_checked,
         findings_count=sandbox.findings_simulated,
+        source_mode="synthetic",
+        source_confidence="high",
+        safe_mode=True,
     )
     session.add(job)
     await session.commit()

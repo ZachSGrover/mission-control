@@ -45,3 +45,10 @@ class OfQcSchedulerJob(SQLModel, table=True):
     # Counters surfaced to the dashboard.
     accounts_checked: int | None = Field(default=None)
     findings_count: int | None = Field(default=None)
+    # Source-mode metadata (added by the read-only ingestion layer).
+    # ``synthetic`` | ``local_ofi`` | ``onlymonster_readonly`` | ``unknown``.
+    source_mode: str | None = Field(default=None, max_length=32)
+    # ``high`` | ``medium`` | ``low`` | ``unknown``.
+    source_confidence: str | None = Field(default=None, max_length=16)
+    # Always True in v1 — reserved for future privacy-mode overrides.
+    safe_mode: bool = Field(default=True)

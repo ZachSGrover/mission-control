@@ -32,6 +32,7 @@ async def _make_session(
     chat_id: str | None = "-1001234567890",
     enabled: bool = True,
     telegram_enabled: bool = True,
+    live_send_enabled: bool = True,
     next_status: int = 200,
 ) -> AsyncIterator[tuple[AsyncSession, list[dict[str, Any]]]]:
     engine = create_async_engine("sqlite+aiosqlite:///:memory:")
@@ -70,6 +71,7 @@ async def _make_session(
                     id=1,
                     enabled=enabled,
                     telegram_enabled=telegram_enabled,
+                    live_send_enabled=live_send_enabled,
                 )
             )
             if chat_id:

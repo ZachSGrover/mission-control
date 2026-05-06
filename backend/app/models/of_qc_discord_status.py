@@ -47,4 +47,14 @@ class OfQcDiscordStatus(SQLModel, table=True):
     # Per-channel toggle for the Telegram daily-summary publisher.  Default
     # off; flipping requires an existing Telegram bot token + chat id.
     telegram_enabled: bool = Field(default=False)
+    # Master toggle for the Daily QC scheduler — when False, the scheduler
+    # background loop records ``skipped`` rows and never runs evaluate /
+    # daily-summary jobs.  Independent from per-channel toggles.
+    daily_qc_enabled: bool = Field(default=False)
+    # Live-send permission.  When False, scheduler-context publishes return
+    # ``skipped(reason=live_send_disabled)`` regardless of the per-channel
+    # toggles above.  Operator-initiated test alerts (Send Test Alert
+    # button) bypass this gate via ``bypass_kill_switch=True`` so the
+    # operator can verify a webhook before flipping live sending on.
+    live_send_enabled: bool = Field(default=False)
     updated_at: datetime = Field(default_factory=utcnow)

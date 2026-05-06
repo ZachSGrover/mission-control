@@ -114,6 +114,8 @@ async def ship_daily_summary_telegram(
         return summary, _result(False, None, "disabled", started_ns)
     if row is not None and not getattr(row, "telegram_enabled", False):
         return summary, _result(False, None, "telegram_disabled", started_ns)
+    if not bypass_kill_switch and not (row and getattr(row, "live_send_enabled", False)):
+        return summary, _result(False, None, "live_send_disabled", started_ns)
 
     try:
         token = await _get_bot_token(session)

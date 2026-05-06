@@ -225,6 +225,25 @@ export type ExportResponse = {
 
 const BASE = "/api/v1/of-intelligence";
 
+async function jsonRequestAtPath<T>(
+  fetchFn: FetchFn,
+  fullPath: string,
+  init?: RequestInit,
+): Promise<T> {
+  const res = await fetchFn(`${getApiBaseUrl()}${fullPath}`, init);
+  if (!res.ok) {
+    let detail = `HTTP ${res.status}`;
+    try {
+      const body = (await res.json()) as { detail?: string };
+      if (body?.detail) detail = body.detail;
+    } catch {
+      /* ignore */
+    }
+    throw new Error(detail);
+  }
+  return (await res.json()) as T;
+}
+
 async function jsonRequest<T>(fetchFn: FetchFn, path: string, init?: RequestInit): Promise<T> {
   const res = await fetchFn(`${getApiBaseUrl()}${BASE}${path}`, init);
   if (!res.ok) {
@@ -336,6 +355,22 @@ export const ofiApi = {
 
   qcDashboard:   (f: FetchFn, mock = false) =>
     jsonRequest<QcDashboardPayload>(f, `/qc/dashboard${mock ? "?mock=1" : ""}`),
+  qcSchedulerStatus: (f: FetchFn) =>
+    jsonRequestAtPath<QcSchedulerStatus>(f, `/api/v1/of-qc-scheduler/status`),
+  qcSchedulerSetEnabled: (
+    f: FetchFn,
+    body: { daily_qc_enabled?: boolean; live_send_enabled?: boolean },
+  ) =>
+    jsonRequestAtPath<QcSchedulerStatus>(f, `/api/v1/of-qc-scheduler/enabled`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    }),
+  qcSchedulerRunSandbox: (f: FetchFn) =>
+    jsonRequestAtPath<QcSchedulerSandboxRun>(f, `/api/v1/of-qc-scheduler/run-now`, {
+      method: "POST",
+    }),
+
   shipDailySummary: (f: FetchFn, channel: "discord" | "telegram" = "discord") =>
     jsonRequest<DailySummaryShipResult>(f, `/qc/daily-summary?channel=${channel}`, {
       method: "POST",
@@ -422,6 +457,47 @@ export type DailySummaryShipResult = {
   publish_reason: string;
   publish_status: number | null;
   channel: string;
+};
+
+export type QcSchedulerJob = {
+  id: string;
+  job_kind: string;
+  triggered_by: string;
+  status: string;
+  skipped_reason: string | null;
+  error_summary: string | null;
+  accounts_checked: number | null;
+  findings_count: number | null;
+  started_at: string;
+  finished_at: string | null;
+};
+
+export type QcSchedulerStatus = {
+  daily_qc_enabled: boolean;
+  live_send_enabled: boolean;
+  discord_enabled: boolean;
+  telegram_enabled: boolean;
+  last_run_at: string | null;
+  last_status: string | null;
+  last_skipped_reason: string | null;
+  last_error_summary: string | null;
+  last_findings_count: number | null;
+  last_accounts_checked: number | null;
+  next_run_at: string | null;
+  tick_interval_seconds: number;
+  recent_jobs: QcSchedulerJob[];
+};
+
+export type QcSchedulerSandboxRun = {
+  job_id: string;
+  job_kind: "manual_sandbox";
+  triggered_by: "manual";
+  accounts_checked: number;
+  findings_simulated: number;
+  summary_total_findings: number;
+  summary_critical_alerts: number;
+  summary_actions: string[];
+  note: string;
 };
 
 // ── Display helpers ───────────────────────────────────────────────────────────

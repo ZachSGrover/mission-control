@@ -95,6 +95,11 @@ def _patch_client(
 
 def _enable(monkeypatch: pytest.MonkeyPatch, *, webhook: str | None = WEBHOOK_URL) -> None:
     monkeypatch.setenv("MC_OF_QC_DISCORD_ENABLED", "1")
+    # The publisher also requires ``live_send_enabled`` for non-bypass
+    # publishes — set the env-fallback gate on for every test that wants
+    # the publisher to actually go live (DB resolver is stubbed by the
+    # autouse fixture below to fall through to the env).
+    monkeypatch.setenv("MC_OF_QC_LIVE_SEND_ENABLED", "1")
     if webhook is None:
         monkeypatch.delenv("MC_OF_QC_DISCORD_WEBHOOK_URL", raising=False)
     else:
@@ -123,6 +128,7 @@ def _stub_db_state(monkeypatch: pytest.MonkeyPatch) -> None:
 
     monkeypatch.setattr(publisher, "_read_db_webhook", _empty_webhook)
     monkeypatch.setattr(publisher, "_read_db_enabled", _no_db_toggle)
+    monkeypatch.setattr(publisher, "_read_db_live_send_enabled", _no_db_toggle)
 
 
 # ── Kill switch + config ─────────────────────────────────────────────────────
@@ -465,6 +471,7 @@ async def test_resolver_prefers_db_value_over_env(monkeypatch: pytest.MonkeyPatc
 
     monkeypatch.setattr(publisher, "_read_db_webhook", _from_db)
     monkeypatch.setenv("MC_OF_QC_DISCORD_ENABLED", "1")
+    monkeypatch.setenv("MC_OF_QC_LIVE_SEND_ENABLED", "1")
     monkeypatch.setenv("MC_OF_QC_DISCORD_WEBHOOK_URL", env_url)
 
     fake = _patch_client(monkeypatch, [_FakeResponse(204)])
@@ -486,6 +493,7 @@ async def test_resolver_falls_back_to_env_when_db_empty(monkeypatch: pytest.Monk
 
     monkeypatch.setattr(publisher, "_read_db_webhook", _empty)
     monkeypatch.setenv("MC_OF_QC_DISCORD_ENABLED", "1")
+    monkeypatch.setenv("MC_OF_QC_LIVE_SEND_ENABLED", "1")
     monkeypatch.setenv("MC_OF_QC_DISCORD_WEBHOOK_URL", env_url)
 
     fake = _patch_client(monkeypatch, [_FakeResponse(204)])
@@ -505,6 +513,7 @@ async def test_resolver_returns_no_webhook_when_both_empty(
 
     monkeypatch.setattr(publisher, "_read_db_webhook", _empty)
     monkeypatch.setenv("MC_OF_QC_DISCORD_ENABLED", "1")
+    monkeypatch.setenv("MC_OF_QC_LIVE_SEND_ENABLED", "1")
     monkeypatch.delenv("MC_OF_QC_DISCORD_WEBHOOK_URL", raising=False)
 
     fake = _patch_client(monkeypatch, [_FakeResponse(204)])
@@ -536,6 +545,84 @@ async def test_read_db_webhook_swallows_secrets_store_exceptions(
 
     value = await publisher._read_db_webhook()
     assert value == ""
+
+
+# ── Live-send gate (scheduler-context publishes) ────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_publish_returns_live_send_disabled_when_gate_off(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Even with ``enabled=True``, the live-send gate must be passed for a
+    scheduler-context publish to actually go live.  When the gate is off,
+    the publisher short-circuits to ``live_send_disabled`` without making
+    a network call."""
+    # Master toggle on, live-send gate off (env unset).
+    monkeypatch.setenv("MC_OF_QC_DISCORD_ENABLED", "1")
+    monkeypatch.setenv("MC_OF_QC_DISCORD_WEBHOOK_URL", WEBHOOK_URL)
+    monkeypatch.delenv("MC_OF_QC_LIVE_SEND_ENABLED", raising=False)
+
+    fake = _patch_client(monkeypatch, [_FakeResponse(204)])
+    result = await publish(SAFE_MESSAGE, code="x", severity="critical")
+
+    assert result.ok is False
+    assert result.reason == "live_send_disabled"
+    assert fake.calls == []  # never hit the network
+
+
+@pytest.mark.asyncio
+async def test_publish_bypass_still_works_when_live_send_off(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Operator-initiated test alerts (``bypass_kill_switch=True``) skip
+    both gates so the operator can verify the webhook before flipping
+    live-send on."""
+    monkeypatch.setenv("MC_OF_QC_DISCORD_WEBHOOK_URL", WEBHOOK_URL)
+    monkeypatch.delenv("MC_OF_QC_DISCORD_ENABLED", raising=False)
+    monkeypatch.delenv("MC_OF_QC_LIVE_SEND_ENABLED", raising=False)
+
+    fake = _patch_client(monkeypatch, [_FakeResponse(204)])
+    result = await publish(
+        SAFE_MESSAGE,
+        code="qc_discord_settings_test",
+        severity="info",
+        bypass_kill_switch=True,
+    )
+    assert result.ok is True
+    assert result.reason == "ok"
+    assert len(fake.calls) == 1
+
+
+@pytest.mark.asyncio
+async def test_is_live_send_enabled_db_first(monkeypatch: pytest.MonkeyPatch) -> None:
+    async def _db_off() -> bool | None:
+        return False
+
+    monkeypatch.setattr(publisher, "_read_db_live_send_enabled", _db_off)
+    monkeypatch.setenv("MC_OF_QC_LIVE_SEND_ENABLED", "1")
+    assert await publisher.is_live_send_enabled() is False
+
+    async def _db_on() -> bool | None:
+        return True
+
+    monkeypatch.setattr(publisher, "_read_db_live_send_enabled", _db_on)
+    monkeypatch.delenv("MC_OF_QC_LIVE_SEND_ENABLED", raising=False)
+    assert await publisher.is_live_send_enabled() is True
+
+
+@pytest.mark.asyncio
+async def test_is_live_send_enabled_env_fallback(monkeypatch: pytest.MonkeyPatch) -> None:
+    async def _no_row() -> bool | None:
+        return None
+
+    monkeypatch.setattr(publisher, "_read_db_live_send_enabled", _no_row)
+
+    monkeypatch.delenv("MC_OF_QC_LIVE_SEND_ENABLED", raising=False)
+    assert await publisher.is_live_send_enabled() is False
+
+    monkeypatch.setenv("MC_OF_QC_LIVE_SEND_ENABLED", "1")
+    assert await publisher.is_live_send_enabled() is True
 
 
 # Silence pyright on unused imports — kept for symmetry with existing test files.

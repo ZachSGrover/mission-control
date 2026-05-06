@@ -41,6 +41,7 @@ from app.api.messaging import router as messaging_router
 from app.api.metrics import router as metrics_router
 from app.api.of_intelligence import router as of_intelligence_router
 from app.api.of_qc_discord import router as of_qc_discord_router
+from app.api.of_qc_scheduler import router as of_qc_scheduler_router
 from app.api.openai_chat import router as openai_chat_router
 from app.api.operator import router as operator_router
 from app.api.organizations import router as organizations_router
@@ -508,11 +509,20 @@ async def lifespan(_: FastAPI) -> AsyncIterator[None]:
 
     from app.core import network_monitor as _netmon
     from app.core import telegram_polling as _tgpoll
+    from app.services.of_intelligence.qc import scheduler as _qc_scheduler
 
     _bg_stop = _asyncio.Event()
     _bg_tasks: list[_asyncio.Task[None]] = [
         _asyncio.create_task(_netmon.run_forever(_bg_stop), name="network_monitor"),
         _asyncio.create_task(_tgpoll.run_supervisor(_bg_stop), name="telegram_polling_supervisor"),
+        # OF Daily QC supervisor — disabled by default at the DB layer
+        # (``daily_qc_enabled=False``).  When the toggle is off the loop
+        # records ``skipped`` rows and does NO QC work; no Discord or
+        # Telegram sends happen until the operator flips both
+        # ``daily_qc_enabled`` AND ``live_send_enabled``.  An env-var
+        # hard kill switch (``MC_OF_QC_SCHEDULER_DISABLE=1``) prevents
+        # the supervisor from even starting.
+        _asyncio.create_task(_qc_scheduler.run_supervisor(_bg_stop), name="of_qc_scheduler"),
     ]
     logger.info("app.lifecycle.background_tasks_started count=%d", len(_bg_tasks))
 
@@ -677,6 +687,7 @@ api_v1.include_router(system_node_router)
 api_v1.include_router(usage_router)
 api_v1.include_router(of_intelligence_router)
 api_v1.include_router(of_qc_discord_router)
+api_v1.include_router(of_qc_scheduler_router)
 app.include_router(api_v1)
 
 add_pagination(app)

@@ -62,7 +62,7 @@ async def _load_chat_messages(
     rows = (
         await session.exec(
             select(OfIntelligenceMessage)
-            .where(OfIntelligenceMessage.sent_at >= cutoff)
+            .where(col(OfIntelligenceMessage.sent_at) >= cutoff)
             .where(col(OfIntelligenceMessage.chat_source_id).is_not(None))
         )
     ).all()

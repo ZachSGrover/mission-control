@@ -23,7 +23,7 @@ Deferred to a follow-up (need cross-row queries):
 from __future__ import annotations
 
 import re
-from collections.abc import Iterable
+from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 from datetime import timedelta
 from typing import Any, NamedTuple
@@ -114,7 +114,7 @@ def _matches_low_effort(body: str) -> bool:
 class _ChatterRule(NamedTuple):
     code: str
     severity: str
-    matcher: callable  # type: ignore[type-arg]
+    matcher: Callable[[str], bool]
     detection_phrase: str
 
 
@@ -158,7 +158,7 @@ async def scan_chatter_findings(
     rows = (
         await session.exec(
             select(OfIntelligenceMessage)
-            .where(OfIntelligenceMessage.sent_at >= cutoff)
+            .where(col(OfIntelligenceMessage.sent_at) >= cutoff)
             .where(OfIntelligenceMessage.direction == "out")
             .where(col(OfIntelligenceMessage.body).is_not(None))
         )

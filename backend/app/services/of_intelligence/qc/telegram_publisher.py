@@ -40,7 +40,7 @@ from dataclasses import dataclass
 import httpx
 from sqlmodel.ext.asyncio.session import AsyncSession
 
-from app.api.telegram import _get_bot_token  # type: ignore[attr-defined]
+from app.api.telegram import _get_bot_token
 from app.core.logging import get_logger
 from app.core.secrets_store import get_secret
 from app.models.of_qc_discord_status import OfQcDiscordStatus

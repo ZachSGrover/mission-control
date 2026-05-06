@@ -76,7 +76,7 @@ async def detect_revenue_drops(
             select(OfIntelligenceRevenue)
             .where(col(OfIntelligenceRevenue.account_source_id).is_not(None))
             .where(col(OfIntelligenceRevenue.period_start).is_not(None))
-            .where(OfIntelligenceRevenue.period_start >= week_cutoff)
+            .where(col(OfIntelligenceRevenue.period_start) >= week_cutoff)
         )
     ).all()
 

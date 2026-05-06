@@ -24,7 +24,7 @@ Hard rules:
 from __future__ import annotations
 
 import re
-from collections.abc import Iterable
+from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 from datetime import timedelta
 from typing import NamedTuple
@@ -183,7 +183,7 @@ class _Rule(NamedTuple):
     code: str
     severity: str
     direction: str  # "in" (fan→chatter) or "out" (chatter→fan)
-    matcher: callable  # type: ignore[type-arg]
+    matcher: Callable[[str], bool]
     title_template: str
     detection_phrase: str  # what ``signal`` field shows in Discord
 
@@ -274,7 +274,7 @@ async def scan_critical_qc(
     rows = (
         await session.exec(
             select(OfIntelligenceMessage)
-            .where(OfIntelligenceMessage.sent_at >= cutoff)
+            .where(col(OfIntelligenceMessage.sent_at) >= cutoff)
             .where(col(OfIntelligenceMessage.body).is_not(None))
         )
     ).all()

@@ -11,6 +11,7 @@ counts, severities.  Bodies, fan handles, raw payloads — never.
 from __future__ import annotations
 
 from collections import Counter
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 
@@ -81,24 +82,24 @@ async def build_daily_summary(
     cutoff = utcnow() - timedelta(hours=window_hours)
 
     # Accounts + chatters reviewed (anything synced in the window).
-    account_rows = (
+    account_rows: Sequence[OfIntelligenceAccount] = (
         await session.exec(
-            select(OfIntelligenceAccount).where(OfIntelligenceAccount.last_synced_at >= cutoff)
+            select(OfIntelligenceAccount).where(col(OfIntelligenceAccount.last_synced_at) >= cutoff)
         )
     ).all()
     chatters_seen_chat = (
         await session.exec(
             select(OfIntelligenceMessage.chat_source_id).where(
-                OfIntelligenceMessage.sent_at >= cutoff
+                col(OfIntelligenceMessage.sent_at) >= cutoff
             )
         )
     ).all()
     chats_reviewed = len({c for c in chatters_seen_chat if c})
 
     # Findings (Layer 2 details).
-    findings = (
+    findings: Sequence[OfIntelligenceQcFinding] = (
         await session.exec(
-            select(OfIntelligenceQcFinding).where(OfIntelligenceQcFinding.created_at >= cutoff)
+            select(OfIntelligenceQcFinding).where(col(OfIntelligenceQcFinding.created_at) >= cutoff)
         )
     ).all()
 
@@ -117,20 +118,20 @@ async def build_daily_summary(
     ]
 
     # Resolve display names for the worst lists.
-    account_names = {a.source_id: a.username for a in account_rows}
-    extra_account_ids = [a for a in findings_by_account.keys() if a not in account_names]
+    account_names = {acct.source_id: acct.username for acct in account_rows}
+    extra_account_ids = [aid for aid in findings_by_account.keys() if aid not in account_names]
     if extra_account_ids:
-        more = (
+        more: Sequence[OfIntelligenceAccount] = (
             await session.exec(
                 select(OfIntelligenceAccount).where(
                     col(OfIntelligenceAccount.source_id).in_(set(extra_account_ids))
                 )
             )
         ).all()
-        for a in more:
-            account_names[a.source_id] = a.username
+        for acct in more:
+            account_names[acct.source_id] = acct.username
 
-    chatter_rows = (
+    chatter_rows: Sequence[OfIntelligenceChatter] = (
         (
             await session.exec(
                 select(OfIntelligenceChatter).where(
@@ -147,26 +148,30 @@ async def build_daily_summary(
         (account_names.get(aid) or "<account>", n) for aid, n in findings_by_account.most_common(3)
     ]
     worst_chatters = [
-        (chatter_names.get(cid) or "<chatter>", n) for cid, n in findings_by_chatter.most_common(3)
+        ((chatter_names.get(cid) if cid else None) or "<chatter>", n)
+        for cid, n in findings_by_chatter.most_common(3)
     ]
     repeat_offenders = sorted(
-        {chatter_names.get(ch_id) or "<chatter>" for ch_id, _, _ in repeat_pairs}
+        {
+            (chatter_names.get(ch_id) if ch_id else None) or "<chatter>"
+            for ch_id, _, _ in repeat_pairs
+        }
     )
 
     # Open alerts (both layers).
-    open_alerts = (
+    open_alerts: Sequence[OfIntelligenceAlert] = (
         await session.exec(select(OfIntelligenceAlert).where(OfIntelligenceAlert.status == "open"))
     ).all()
-    critical_count = sum(1 for a in open_alerts if a.severity in _CRITICAL_SEVERITIES)
+    critical_count = sum(1 for alert in open_alerts if alert.severity in _CRITICAL_SEVERITIES)
     layer1_open: list[str] = []
     layer2_open: list[str] = []
-    for a in open_alerts:
+    for alert in open_alerts:
         # Layer 2 codes are an explicit set; everything else (sync_failure:*,
         # account_blocked, api_disconnected, …) is Layer 1.
-        if a.code in _LAYER2_CODES:
-            layer2_open.append(a.code)
+        if alert.code in _LAYER2_CODES:
+            layer2_open.append(alert.code)
         else:
-            layer1_open.append(a.code)
+            layer1_open.append(alert.code)
 
     missed_sales = sum(
         n

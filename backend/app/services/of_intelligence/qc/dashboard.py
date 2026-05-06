@@ -15,6 +15,7 @@ Privacy contract for the dashboard:
 from __future__ import annotations
 
 from collections import Counter
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 
@@ -148,18 +149,24 @@ async def build_dashboard(session: AsyncSession) -> DashboardPayload:
     daily = await build_daily_summary(session)
 
     # ── Source rows ─────────────────────────────────────────────────────
-    accounts = (await session.exec(select(OfIntelligenceAccount))).all()
-    findings = (
+    accounts: Sequence[OfIntelligenceAccount] = (
+        await session.exec(select(OfIntelligenceAccount))
+    ).all()
+    findings: Sequence[OfIntelligenceQcFinding] = (
         await session.exec(
-            select(OfIntelligenceQcFinding).where(OfIntelligenceQcFinding.created_at >= cutoff_24h)
+            select(OfIntelligenceQcFinding).where(
+                col(OfIntelligenceQcFinding.created_at) >= cutoff_24h
+            )
         )
     ).all()
-    open_alerts = (
+    open_alerts: Sequence[OfIntelligenceAlert] = (
         await session.exec(select(OfIntelligenceAlert).where(OfIntelligenceAlert.status == "open"))
     ).all()
-    revenue_rows = (
+    revenue_rows: Sequence[OfIntelligenceRevenue] = (
         await session.exec(
-            select(OfIntelligenceRevenue).where(OfIntelligenceRevenue.period_start >= cutoff_7d)
+            select(OfIntelligenceRevenue).where(
+                col(OfIntelligenceRevenue.period_start) >= cutoff_7d
+            )
         )
     ).all()
 
@@ -180,8 +187,8 @@ async def build_dashboard(session: AsyncSession) -> DashboardPayload:
 
     # ── account_status ──────────────────────────────────────────────────
     open_alerts_by_account: dict[str | None, list[str]] = {}
-    for a in open_alerts:
-        open_alerts_by_account.setdefault(a.account_source_id, []).append(a.code)
+    for alert in open_alerts:
+        open_alerts_by_account.setdefault(alert.account_source_id, []).append(alert.code)
 
     rev_24h_by_acct: Counter[str] = Counter()
     rev_prior_by_acct: Counter[str] = Counter()
@@ -194,15 +201,15 @@ async def build_dashboard(session: AsyncSession) -> DashboardPayload:
             rev_prior_by_acct[r.account_source_id] += r.revenue_cents
 
     account_status: list[AccountStatus] = []
-    for a in accounts:
-        codes = open_alerts_by_account.get(a.source_id, [])
+    for account in accounts:
+        codes = open_alerts_by_account.get(account.source_id, [])
         layer1 = [c for c in codes if c not in _LAYER2_CODES]
         layer2 = [c for c in codes if c in _LAYER2_CODES]
 
-        hours = None
-        if a.last_synced_at is not None:
-            hours = max(0, int((now - a.last_synced_at).total_seconds() // 3600))
-        access = (a.access_status or "active").lower()
+        hours: int | None = None
+        if account.last_synced_at is not None:
+            hours = max(0, int((now - account.last_synced_at).total_seconds() // 3600))
+        access = (account.access_status or "active").lower()
         if access in ("blocked", "expired", "lost"):
             health = access
         elif hours is not None and hours >= 6:
@@ -210,15 +217,15 @@ async def build_dashboard(session: AsyncSession) -> DashboardPayload:
         else:
             health = "ok"
 
-        avg7 = int(rev_prior_by_acct.get(a.source_id, 0) / 6.0)
+        avg7 = int(rev_prior_by_acct.get(account.source_id, 0) / 6.0)
         account_status.append(
             AccountStatus(
-                account_id=a.source_id,
-                username=a.username,
+                account_id=account.source_id,
+                username=account.username,
                 health_status=health,
-                last_synced_at=a.last_synced_at,
+                last_synced_at=account.last_synced_at,
                 hours_since_sync=hours,
-                revenue_24h_cents=rev_24h_by_acct.get(a.source_id, 0),
+                revenue_24h_cents=rev_24h_by_acct.get(account.source_id, 0),
                 revenue_7d_avg_cents=avg7,
                 open_layer1_codes=sorted(layer1),
                 open_layer2_codes=sorted(layer2),
@@ -282,7 +289,8 @@ async def build_dashboard(session: AsyncSession) -> DashboardPayload:
     for (chatter_id, code), count in pair_counts.most_common(10):
         chatter_mistakes.append(
             ChatterMistake(
-                chatter_name=chatter_name_by_id.get(chatter_id) or "<chatter>",
+                chatter_name=(chatter_name_by_id.get(chatter_id) if chatter_id else None)
+                or "<chatter>",
                 code=code,
                 count=count,
                 accounts_affected=len(pair_accounts.get((chatter_id, code), set())),
@@ -343,9 +351,9 @@ async def build_dashboard(session: AsyncSession) -> DashboardPayload:
         )
 
     # ── sync_health ─────────────────────────────────────────────────────
-    sync_logs = (
+    sync_logs: Sequence[OfIntelligenceSyncLog] = (
         await session.exec(
-            select(OfIntelligenceSyncLog).where(OfIntelligenceSyncLog.started_at >= cutoff_24h)
+            select(OfIntelligenceSyncLog).where(col(OfIntelligenceSyncLog.started_at) >= cutoff_24h)
         )
     ).all()
     last_success_per_entity: dict[str, datetime | None] = {}

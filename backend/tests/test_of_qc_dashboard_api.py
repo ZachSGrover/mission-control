@@ -27,7 +27,6 @@ from app.models.of_intelligence import (
     OfIntelligenceChatter,
     OfIntelligenceFan,
     OfIntelligenceMessage,
-    OfIntelligenceRevenue,
 )
 from app.models.of_qc_finding import OfIntelligenceQcFinding
 

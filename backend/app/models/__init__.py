@@ -30,6 +30,7 @@ from app.models.of_intelligence import (
 )
 from app.models.of_qc_discord_status import OfQcDiscordStatus
 from app.models.of_qc_finding import OfIntelligenceQcFinding
+from app.models.of_qc_scheduler_job import OfQcSchedulerJob
 from app.models.organization_board_access import OrganizationBoardAccess
 from app.models.organization_invite_board_access import OrganizationInviteBoardAccess
 from app.models.organization_invites import OrganizationInvite
@@ -82,6 +83,7 @@ __all__ = [
     "OfIntelligenceTrackingLink",
     "OfIntelligenceQcFinding",
     "OfQcDiscordStatus",
+    "OfQcSchedulerJob",
     "BoardTaskCustomField",
     "TaskCustomFieldDefinition",
     "TaskCustomFieldValue",

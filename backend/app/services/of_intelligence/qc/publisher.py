@@ -109,6 +109,41 @@ async def is_enabled() -> bool:
     return _truthy(os.environ.get("MC_OF_QC_DISCORD_ENABLED"))
 
 
+async def _read_db_live_send_enabled() -> bool | None:
+    """Read the ``live_send_enabled`` gate from the singleton DB row.
+
+    Independent from ``enabled`` — both must be True for scheduler-context
+    Discord publishes to actually go live.  Returns ``None`` on DB failure
+    so the caller falls back to env.
+    """
+    try:
+        from app.db.session import async_session_maker
+        from app.models.of_qc_discord_status import OfQcDiscordStatus
+    except Exception:
+        return None
+    try:
+        async with async_session_maker() as session:
+            row = await session.get(OfQcDiscordStatus, 1)
+        if row is None:
+            return None
+        return bool(getattr(row, "live_send_enabled", False))
+    except Exception:
+        return None
+
+
+async def is_live_send_enabled() -> bool:
+    """Resolve the live-send gate.  DB-first, env fallback, default OFF.
+
+    A scheduler-driven publish requires both ``is_enabled()`` and this
+    gate.  Operator-initiated test alerts pass ``bypass_kill_switch=True``
+    and skip this check entirely.
+    """
+    db_value = await _read_db_live_send_enabled()
+    if db_value is not None:
+        return db_value
+    return _truthy(os.environ.get("MC_OF_QC_LIVE_SEND_ENABLED"))
+
+
 async def _read_db_webhook() -> str:
     """Read the DB-backed encrypted secret.
 
@@ -174,6 +209,8 @@ async def publish(
 
     if not bypass_kill_switch and not await is_enabled():
         return _result(False, None, 0, "disabled", started_ns, base_extra, level="debug")
+    if not bypass_kill_switch and not await is_live_send_enabled():
+        return _result(False, None, 0, "live_send_disabled", started_ns, base_extra, level="debug")
 
     webhook_url = await _resolve_webhook_url()
     if not webhook_url:

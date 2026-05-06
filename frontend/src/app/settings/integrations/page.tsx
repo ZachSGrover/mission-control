@@ -3,7 +3,7 @@
 export const dynamic = "force-dynamic";
 
 import { useCallback, useEffect, useState } from "react";
-import { Eye, EyeOff, ExternalLink, RefreshCw, X } from "lucide-react";
+import { CheckCircle2, Eye, EyeOff, ExternalLink, Loader2, RefreshCw, Send, Shield, X, XCircle } from "lucide-react";
 
 import { SignedIn, SignedOut } from "@/auth/clerk";
 import { getApiBaseUrl } from "@/lib/api-base";
@@ -69,6 +69,85 @@ async function fetchDiscordStatus(fetchFn: FetchFn): Promise<BotStatus> {
   const res = await fetchFn(`${getApiBaseUrl()}/api/v1/discord/status`);
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
   return res.json() as Promise<BotStatus>;
+}
+
+// ── OF Intelligence QC Discord ────────────────────────────────────────────────
+
+type OfQcCardState = "not_configured" | "configured" | "last_test_failed" | "connected";
+
+type OfQcStatus = {
+  configured:           boolean;
+  preview:              string | null;
+  source:               string;
+  enabled:              boolean;
+  last_success_at:      string | null;
+  last_failure_at:      string | null;
+  last_failure_reason:  string | null;
+  last_failure_status:  number | null;
+  card_state:           OfQcCardState;
+};
+
+type OfQcTestResult = {
+  ok:         boolean;
+  status:     number | null;
+  attempts:   number;
+  reason:     string;
+  elapsed_ms: number;
+  card_state: OfQcCardState;
+};
+
+const OF_QC_BASE = "/api/v1/of-qc-discord";
+
+type AuthFetchFn = (url: string, options?: RequestInit) => Promise<Response>;
+
+async function fetchOfQcStatus(fetchFn: AuthFetchFn): Promise<OfQcStatus> {
+  const res = await fetchFn(`${getApiBaseUrl()}${OF_QC_BASE}/status`);
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  return res.json() as Promise<OfQcStatus>;
+}
+
+async function saveOfQcWebhook(key: string, fetchFn: AuthFetchFn): Promise<OfQcStatus> {
+  const res = await fetchFn(`${getApiBaseUrl()}${OF_QC_BASE}/webhook`, {
+    method:  "PUT",
+    headers: { "Content-Type": "application/json" },
+    body:    JSON.stringify({ key }),
+  });
+  if (!res.ok) {
+    const body = await res.json().catch(() => null) as { detail?: string } | null;
+    throw new Error(body?.detail ?? `HTTP ${res.status}`);
+  }
+  return res.json() as Promise<OfQcStatus>;
+}
+
+async function clearOfQcWebhook(fetchFn: AuthFetchFn): Promise<OfQcStatus> {
+  const res = await fetchFn(`${getApiBaseUrl()}${OF_QC_BASE}/webhook`, { method: "DELETE" });
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  return res.json() as Promise<OfQcStatus>;
+}
+
+async function setOfQcEnabled(enabled: boolean, fetchFn: AuthFetchFn): Promise<OfQcStatus> {
+  const res = await fetchFn(`${getApiBaseUrl()}${OF_QC_BASE}/enabled`, {
+    method:  "PUT",
+    headers: { "Content-Type": "application/json" },
+    body:    JSON.stringify({ enabled }),
+  });
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  return res.json() as Promise<OfQcStatus>;
+}
+
+async function sendOfQcTestAlert(fetchFn: AuthFetchFn): Promise<OfQcTestResult> {
+  const res = await fetchFn(`${getApiBaseUrl()}${OF_QC_BASE}/test`, { method: "POST" });
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  return res.json() as Promise<OfQcTestResult>;
+}
+
+function formatTimestamp(value: string | null): string {
+  if (!value) return "—";
+  try {
+    return new Date(value).toLocaleString();
+  } catch {
+    return value;
+  }
 }
 
 // ── Bot status card (read-only — Telegram / Discord) ─────────────────────────
@@ -266,6 +345,263 @@ function IntegrationCard({
   );
 }
 
+// ── OF Intelligence QC Discord card ──────────────────────────────────────────
+
+function OfQcStatePill({ state }: { state: OfQcCardState }) {
+  const map: Record<OfQcCardState, { label: string; cls: string; icon: React.ReactNode }> = {
+    not_configured:   { label: "Not configured",  cls: "bg-slate-100 text-slate-500",                                    icon: null },
+    configured:       { label: "Configured",      cls: "bg-amber-50 text-amber-700 border border-amber-200",             icon: null },
+    last_test_failed: { label: "Last test failed",cls: "bg-red-50 text-red-700 border border-red-200",                   icon: <XCircle className="h-3 w-3" /> },
+    connected:        { label: "Connected",       cls: "bg-emerald-50 text-emerald-700 border border-emerald-200",       icon: <CheckCircle2 className="h-3 w-3" /> },
+  };
+  const item = map[state];
+  return (
+    <span className={`inline-flex items-center gap-1 text-xs font-medium px-2 py-0.5 rounded-full ${item.cls}`}>
+      {item.icon}
+      {item.label}
+    </span>
+  );
+}
+
+function OfQcDiscordCard({ fetchFn }: { fetchFn: AuthFetchFn }) {
+  const [status, setStatus]           = useState<OfQcStatus | null>(null);
+  const [loading, setLoading]         = useState(true);
+  const [inputValue, setInputValue]   = useState("");
+  const [showValue, setShowValue]     = useState(false);
+  const [saving, setSaving]           = useState(false);
+  const [testing, setTesting]         = useState(false);
+  const [removing, setRemoving]       = useState(false);
+  const [confirmRemove, setConfirmRemove] = useState(false);
+  const [error, setError]             = useState<string | null>(null);
+  const [testToast, setTestToast]     = useState<{ ok: boolean; text: string } | null>(null);
+
+  const load = useCallback(() => {
+    setLoading(true);
+    fetchOfQcStatus(fetchFn)
+      .then(setStatus)
+      .catch((err) => setError(err instanceof Error ? err.message : "Failed to load"))
+      .finally(() => setLoading(false));
+  }, [fetchFn]);
+
+  useEffect(() => { load(); }, [load]);
+
+  const handleSave = useCallback(async () => {
+    if (!inputValue.trim()) return;
+    setSaving(true);
+    setError(null);
+    try {
+      const updated = await saveOfQcWebhook(inputValue.trim(), fetchFn);
+      setStatus(updated);
+      setInputValue("");
+      setShowValue(false);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to save");
+    } finally {
+      setSaving(false);
+    }
+  }, [inputValue, fetchFn]);
+
+  const handleToggle = useCallback(async (next: boolean) => {
+    if (!status?.configured) return;
+    try {
+      const updated = await setOfQcEnabled(next, fetchFn);
+      setStatus(updated);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to update toggle");
+    }
+  }, [status, fetchFn]);
+
+  const handleTest = useCallback(async () => {
+    if (!status?.configured) return;
+    setTesting(true);
+    setError(null);
+    setTestToast(null);
+    try {
+      const result = await sendOfQcTestAlert(fetchFn);
+      setTestToast({
+        ok:   result.ok,
+        text: result.ok
+          ? `✅ Sent (HTTP ${result.status ?? "?"}) in ${result.elapsed_ms} ms`
+          : `❌ ${result.reason}${result.status ? ` (HTTP ${result.status})` : ""}`,
+      });
+      // Refresh status to pick up the new last_success_at / last_failure_at.
+      const refreshed = await fetchOfQcStatus(fetchFn);
+      setStatus(refreshed);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to send test");
+    } finally {
+      setTesting(false);
+    }
+  }, [status, fetchFn]);
+
+  const handleRemove = useCallback(async () => {
+    setRemoving(true);
+    setError(null);
+    try {
+      const updated = await clearOfQcWebhook(fetchFn);
+      setStatus(updated);
+      setConfirmRemove(false);
+      setTestToast(null);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to remove");
+    } finally {
+      setRemoving(false);
+    }
+  }, [fetchFn]);
+
+  const cardState: OfQcCardState = status?.card_state ?? "not_configured";
+  const configured  = !!status?.configured;
+  const enabled     = !!status?.enabled;
+  const enableLocked = !configured;
+
+  return (
+    <div className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm space-y-4">
+      <div className="flex items-start justify-between gap-4">
+        <div className="space-y-1 min-w-0">
+          <div className="flex items-center gap-2 flex-wrap">
+            <Shield className="h-4 w-4 text-slate-500 shrink-0" />
+            <h3 className="font-semibold text-slate-900">OnlyFans Intelligence QC Discord</h3>
+            <OfQcStatePill state={cardState} />
+          </div>
+          <p className="text-sm text-slate-500">
+            Send QC alerts (account access, sync health, refund risk, chatter quality) to a private Discord channel.
+            Webhook stored encrypted; never displayed after saving.
+          </p>
+        </div>
+      </div>
+
+      {/* Configured state — show masked preview + remove */}
+      {configured && status?.preview && (
+        <div className="flex items-center justify-between gap-3 rounded-lg bg-slate-50 px-4 py-2.5 border border-slate-200">
+          <span className="font-mono text-sm text-slate-600 truncate">{status.preview}</span>
+          <div className="flex items-center gap-2">
+            <span className="text-xs text-slate-400">{status.source}</span>
+            {!confirmRemove ? (
+              <button
+                type="button"
+                onClick={() => setConfirmRemove(true)}
+                className="flex items-center gap-1 text-xs text-red-500 hover:text-red-700 transition-colors"
+              >
+                <X className="h-3.5 w-3.5" />
+                Remove
+              </button>
+            ) : (
+              <div className="flex items-center gap-2">
+                <span className="text-xs text-slate-500">Confirm remove?</span>
+                <button
+                  type="button"
+                  onClick={() => void handleRemove()}
+                  disabled={removing}
+                  className="text-xs text-red-600 font-medium hover:text-red-800 transition-colors disabled:opacity-50"
+                >
+                  {removing ? "Removing…" : "Yes, remove"}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setConfirmRemove(false)}
+                  disabled={removing}
+                  className="text-xs text-slate-500 hover:text-slate-700 transition-colors"
+                >
+                  Cancel
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Webhook URL input */}
+      <div className="flex gap-2">
+        <div className="relative flex-1">
+          <input
+            type={showValue ? "text" : "password"}
+            value={inputValue}
+            onChange={(e) => setInputValue(e.target.value)}
+            onKeyDown={(e) => { if (e.key === "Enter") void handleSave(); }}
+            placeholder={configured ? "Paste new webhook to rotate…" : "https://discord.com/api/webhooks/…/…"}
+            className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 pr-9 text-sm font-mono placeholder:font-sans placeholder:text-slate-400 focus:border-slate-400 focus:outline-none"
+            autoComplete="off"
+            spellCheck={false}
+          />
+          <button
+            type="button"
+            onClick={() => setShowValue((v) => !v)}
+            className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
+            tabIndex={-1}
+            aria-label={showValue ? "Hide" : "Show"}
+          >
+            {showValue ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
+          </button>
+        </div>
+        <button
+          type="button"
+          onClick={() => void handleSave()}
+          disabled={saving || !inputValue.trim()}
+          className="shrink-0 rounded-lg bg-slate-900 px-4 py-2 text-sm font-medium text-white transition-opacity hover:opacity-80 disabled:opacity-40"
+        >
+          {saving ? "Saving…" : "Save"}
+        </button>
+      </div>
+
+      {/* Toggle + Test */}
+      <div className="flex items-center justify-between gap-3 pt-2">
+        <label className="flex items-center gap-2 cursor-pointer select-none">
+          <input
+            type="checkbox"
+            checked={enabled}
+            onChange={(e) => void handleToggle(e.target.checked)}
+            disabled={enableLocked}
+            className="h-4 w-4 rounded border-slate-300 disabled:opacity-50"
+          />
+          <span className={`text-sm ${enableLocked ? "text-slate-400" : "text-slate-700"}`}>
+            Send real QC alerts to Discord
+          </span>
+          {enableLocked && <span className="text-xs text-slate-400">(save a webhook first)</span>}
+        </label>
+        <button
+          type="button"
+          onClick={() => void handleTest()}
+          disabled={testing || !configured}
+          className="shrink-0 inline-flex items-center gap-1.5 rounded-lg border border-slate-300 px-3 py-1.5 text-sm font-medium text-slate-700 transition hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed"
+        >
+          {testing ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Send className="h-3.5 w-3.5" />}
+          {testing ? "Sending…" : "Send test alert"}
+        </button>
+      </div>
+
+      {/* Test toast — clears on next test or remove */}
+      {testToast && (
+        <div className={`text-xs px-3 py-2 rounded-lg border ${
+          testToast.ok ? "bg-emerald-50 text-emerald-700 border-emerald-200" : "bg-red-50 text-red-700 border-red-200"
+        }`}>
+          {testToast.text}
+        </div>
+      )}
+
+      {/* History block */}
+      {configured && (
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs text-slate-500 pt-2 border-t border-slate-100">
+          <div>
+            <span className="text-slate-400 uppercase tracking-wide text-[10px]">Last successful test</span>
+            <div className="text-slate-700 mt-0.5">{formatTimestamp(status?.last_success_at ?? null)}</div>
+          </div>
+          <div>
+            <span className="text-slate-400 uppercase tracking-wide text-[10px]">Last failure</span>
+            <div className="text-slate-700 mt-0.5">
+              {status?.last_failure_at
+                ? `${status.last_failure_reason ?? "—"}${status.last_failure_status ? ` (HTTP ${status.last_failure_status})` : ""} · ${formatTimestamp(status.last_failure_at)}`
+                : "—"}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {error   && <p className="text-sm text-red-500">{error}</p>}
+      {loading && <p className="text-xs text-slate-400 inline-flex items-center gap-1"><Loader2 className="h-3 w-3 animate-spin" /> Loading…</p>}
+    </div>
+  );
+}
+
 // ── Page body ─────────────────────────────────────────────────────────────────
 
 function IntegrationsBody() {
@@ -294,6 +630,8 @@ function IntegrationsBody() {
   }, [fetchWithAuth]);
 
   useEffect(() => {
+    // Initial fetch — flips loading state then resolves into setIntegrations.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setLoading(true);
     fetchIntegrations(fetchWithAuth)
       .then(setIntegrations)
@@ -337,6 +675,12 @@ function IntegrationsBody() {
           loading={discordLoading}
           onRefresh={loadBotStatuses}
         />
+      </div>
+
+      {/* ── OnlyFans Intelligence ── */}
+      <div className="space-y-3">
+        <h2 className="text-sm font-semibold text-slate-700 uppercase tracking-wide">OnlyFans Intelligence</h2>
+        <OfQcDiscordCard fetchFn={fetchWithAuth} />
       </div>
 
       {/* ── API credential integrations ── */}

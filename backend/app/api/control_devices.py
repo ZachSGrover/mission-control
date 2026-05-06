@@ -9,6 +9,7 @@ Endpoints (prefix /api/v1/control/devices):
 from __future__ import annotations
 
 import time
+from typing import Any
 
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel, Field
@@ -25,7 +26,7 @@ class HeartbeatRequest(BaseModel):
     name: str = Field(..., min_length=1, max_length=80)
     capabilities: list[str] = []
     current_task: str | None = None
-    meta: dict = {}
+    meta: dict[str, Any] = {}
 
 
 class DeviceOut(BaseModel):
@@ -36,7 +37,7 @@ class DeviceOut(BaseModel):
     last_seen: float
     age_s: float
     online: bool
-    meta: dict
+    meta: dict[str, Any]
 
 
 def _to_out(dev: device_registry.Device) -> DeviceOut:

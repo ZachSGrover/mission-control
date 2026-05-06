@@ -16,10 +16,9 @@ Security:
 
 from __future__ import annotations
 
-import logging
 import os
 import time
-from typing import Any
+from typing import Any, cast
 
 import httpx
 from fastapi import APIRouter, Depends, Header, HTTPException, Request, status
@@ -30,12 +29,13 @@ from app.api.mc_roles import require_owner
 from app.core import message_dedup, message_metrics, telegram_polling
 from app.core.ai_backend import ask_ai
 from app.core.auth import AuthContext, get_auth_context
-from app.core.secrets_store import delete_secret, get_secret_with_source, mask_key, set_secret
+from app.core.logging import get_logger
+from app.core.secrets_store import delete_secret, get_secret_with_source, set_secret
 from app.core.speed_layer import classify
 from app.db.session import get_session
 
 router = APIRouter(prefix="/telegram", tags=["telegram"])
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 AUTH_DEP = Depends(get_auth_context)
 OWNER_DEP = Depends(require_owner)
@@ -127,7 +127,7 @@ async def _get_me(token: str) -> dict[str, Any]:
     async with httpx.AsyncClient(timeout=10.0) as client:
         resp = await client.get(url)
         resp.raise_for_status()
-        return resp.json()
+        return cast(dict[str, Any], resp.json())
 
 
 # ── Command handlers ──────────────────────────────────────────────────────────
@@ -368,7 +368,7 @@ async def _process_incoming_message(
                 route.reason,
                 chat_id,
             )
-            response_text, provider = await ask_ai(text, session)
+            response_text, provider = await ask_ai(text, session, trigger_source="telegram")
             logger.info("telegram.ai.replied provider=%s chars=%d", provider, len(response_text))
         else:
             response_text = route.fast_reply or "👍"

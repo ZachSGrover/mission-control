@@ -18,6 +18,24 @@ from app.models.connector_approvals import ConnectorApproval
 from app.models.creator_credentials import CreatorCredential
 from app.models.gateways import Gateway
 from app.models.kill_switches import KillSwitch
+from app.models.of_intelligence import (
+    BusinessMemoryEntry,
+    OfIntelligenceAccount,
+    OfIntelligenceAlert,
+    OfIntelligenceChat,
+    OfIntelligenceChatter,
+    OfIntelligenceFan,
+    OfIntelligenceMassMessage,
+    OfIntelligenceMessage,
+    OfIntelligencePost,
+    OfIntelligenceQcReport,
+    OfIntelligenceRevenue,
+    OfIntelligenceSyncLog,
+    OfIntelligenceTrackingLink,
+)
+from app.models.of_qc_discord_status import OfQcDiscordStatus
+from app.models.of_qc_finding import OfIntelligenceQcFinding
+from app.models.of_qc_scheduler_job import OfQcSchedulerJob
 from app.models.organization_board_access import OrganizationBoardAccess
 from app.models.organization_invite_board_access import OrganizationInviteBoardAccess
 from app.models.organization_invites import OrganizationInvite
@@ -34,6 +52,7 @@ from app.models.task_custom_fields import (
 from app.models.task_dependencies import TaskDependency
 from app.models.task_fingerprints import TaskFingerprint
 from app.models.tasks import Task
+from app.models.usage import UsageAlertConfig, UsageEvent, UsageSnapshot
 from app.models.users import User
 
 __all__ = [
@@ -59,6 +78,22 @@ __all__ = [
     "MarketplaceSkill",
     "SkillPack",
     "Organization",
+    "BusinessMemoryEntry",
+    "OfIntelligenceAccount",
+    "OfIntelligenceAlert",
+    "OfIntelligenceChat",
+    "OfIntelligenceChatter",
+    "OfIntelligenceFan",
+    "OfIntelligenceMassMessage",
+    "OfIntelligenceMessage",
+    "OfIntelligencePost",
+    "OfIntelligenceQcReport",
+    "OfIntelligenceRevenue",
+    "OfIntelligenceSyncLog",
+    "OfIntelligenceTrackingLink",
+    "OfIntelligenceQcFinding",
+    "OfQcDiscordStatus",
+    "OfQcSchedulerJob",
     "BoardTaskCustomField",
     "TaskCustomFieldDefinition",
     "TaskCustomFieldValue",
@@ -71,5 +106,8 @@ __all__ = [
     "TaskFingerprint",
     "Tag",
     "TagAssignment",
+    "UsageAlertConfig",
+    "UsageEvent",
+    "UsageSnapshot",
     "User",
 ]

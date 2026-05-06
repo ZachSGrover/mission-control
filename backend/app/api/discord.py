@@ -7,7 +7,6 @@ Endpoints:
 
 from __future__ import annotations
 
-import logging
 import os
 import time
 
@@ -19,11 +18,12 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 from app.core import message_dedup, message_metrics
 from app.core.ai_backend import ask_ai
 from app.core.auth import AuthContext, get_auth_context
+from app.core.logging import get_logger
 from app.core.speed_layer import classify
 from app.db.session import get_session
 
 router = APIRouter(prefix="/discord", tags=["discord"])
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 AUTH_DEP = Depends(get_auth_context)
 SESSION_DEP = Depends(get_session)
@@ -123,7 +123,7 @@ async def discord_status(_: AuthContext = AUTH_DEP) -> DiscordStatusResponse:
                             return DiscordStatusResponse(
                                 connected=is_connected,
                                 bot_username=bot_name,
-                                detail=f"openclaw:{ch.get('status','')}",
+                                detail=f"openclaw:{ch.get('status', '')}",
                             )
                 _note_transition(True)
                 return DiscordStatusResponse(connected=True, detail="openclaw:gateway-reachable")
@@ -186,7 +186,7 @@ async def handle_discord_message(
     provider = "none"
 
     if route.use_ai:
-        reply, provider = await ask_ai(body.text, session)
+        reply, provider = await ask_ai(body.text, session, trigger_source="discord")
     else:
         reply = route.fast_reply or "👍"
 

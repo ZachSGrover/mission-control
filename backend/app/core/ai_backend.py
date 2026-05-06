@@ -10,15 +10,23 @@ Only called on the AI path — the fast/greeting path never reaches this module.
 from __future__ import annotations
 
 import asyncio
-import logging
 import os
+from collections.abc import Awaitable, Callable
 from typing import Final
 
+from anthropic.types import TextBlock
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.core.config import settings
+from app.core.logging import get_logger
 from app.core.secrets_store import get_api_key
+from app.core.time import utcnow
 from app.services.audit_log import record_audit
+from app.services.usage.logger import (
+    current_environment,
+    extract_provider_usage,
+    record_usage_event,
+)
 
 # ── Provider order (cloud-only; no OpenClaw / localhost path) ────────────────
 # Controlled by MC_AI_PROVIDER_ORDER env var.  Default: openai first, anthropic
@@ -32,7 +40,7 @@ _PROVIDER_ORDER: tuple[str, ...] = tuple(
 
 __all__ = ["ask_ai", "ask_ai_detailed"]
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 # ── Retry policy (exponential backoff) ───────────────────────────────────────
 _MAX_ATTEMPTS: "Final[int]" = 3
@@ -56,7 +64,7 @@ def _is_transient(exc: BaseException) -> bool:
 
 
 async def _attempt_with_retry(
-    coro_factory,  # zero-arg callable returning a coroutine
+    coro_factory: Callable[[], Awaitable[str]],
     provider: str,
     timeout_s: float,
 ) -> tuple[str, int]:
@@ -102,12 +110,19 @@ _SYSTEM_PROMPT: Final = (
 _MAX_TIMEOUT_S: Final = 12.0
 
 
-async def ask_ai(prompt: str, session: AsyncSession) -> tuple[str, str]:
+async def ask_ai(
+    prompt: str,
+    session: AsyncSession,
+    *,
+    trigger_source: str = "backend",
+) -> tuple[str, str]:
     """
     Return (reply_text, provider_used).  Thin wrapper over ask_ai_detailed for
     backwards compatibility with Phase 2 callers.
     """
-    reply, provider, _attempts, _err = await ask_ai_detailed(prompt, session)
+    reply, provider, _attempts, _err = await ask_ai_detailed(
+        prompt, session, trigger_source=trigger_source
+    )
     return reply, provider
 
 
@@ -115,6 +130,7 @@ async def _run_provider(
     provider: str,
     prompt: str,
     session: AsyncSession,
+    trigger_source: str,
 ) -> tuple[str, int]:
     """Resolve the key for `provider`, call it, return (reply, attempts)."""
     if provider == "openai":
@@ -122,7 +138,7 @@ async def _run_provider(
         if not key.strip():
             raise RuntimeError("openai: no api key configured")
         return await _attempt_with_retry(
-            lambda: _call_openai(prompt, key.strip()),
+            lambda: _call_openai(prompt, key.strip(), session, trigger_source),
             provider="openai",
             timeout_s=_MAX_TIMEOUT_S,
         )
@@ -131,7 +147,7 @@ async def _run_provider(
         if not key.strip():
             raise RuntimeError("anthropic: no api key configured")
         return await _attempt_with_retry(
-            lambda: _call_anthropic(prompt, key.strip()),
+            lambda: _call_anthropic(prompt, key.strip(), session, trigger_source),
             provider="anthropic",
             timeout_s=_MAX_TIMEOUT_S,
         )
@@ -141,6 +157,8 @@ async def _run_provider(
 async def ask_ai_detailed(
     prompt: str,
     session: AsyncSession,
+    *,
+    trigger_source: str = "backend",
 ) -> tuple[str, str, int, str | None]:
     """
     Return (reply_text, provider_used, total_attempts, error_or_none).
@@ -165,7 +183,9 @@ async def ask_ai_detailed(
 
     for provider in _PROVIDER_ORDER:
         try:
-            reply, attempts = await _run_provider(provider, redacted_prompt, session)
+            reply, attempts = await _run_provider(
+                provider, redacted_prompt, session, trigger_source
+            )
             total_attempts += attempts
             await _audit_llm_call(
                 session,
@@ -254,31 +274,104 @@ async def _audit_llm_call(
         logger.warning("ai_backend.audit_commit_failed error=%s", type(exc).__name__)
 
 
-async def _call_anthropic(prompt: str, api_key: str) -> str:
+_AI_BACKEND_FEATURE: Final = "messaging"
+
+
+async def _call_anthropic(
+    prompt: str,
+    api_key: str,
+    session: AsyncSession,
+    trigger_source: str,
+) -> str:
     from anthropic import AsyncAnthropic
 
     client = AsyncAnthropic(api_key=api_key)
-    message = await client.messages.create(
-        model="claude-haiku-4-5-20251001",
-        max_tokens=400,
-        system=_SYSTEM_PROMPT,
-        messages=[{"role": "user", "content": prompt}],
+    model = "claude-haiku-4-5-20251001"
+    started_at = utcnow()
+    try:
+        message = await client.messages.create(
+            model=model,
+            max_tokens=400,
+            system=_SYSTEM_PROMPT,
+            messages=[{"role": "user", "content": prompt}],
+        )
+    except Exception as exc:
+        await record_usage_event(
+            session,
+            provider="anthropic",
+            model=model,
+            feature=_AI_BACKEND_FEATURE,
+            trigger_source=trigger_source,
+            environment=current_environment(),
+            status="error",
+            error=type(exc).__name__,
+            started_at=started_at,
+            ended_at=utcnow(),
+        )
+        raise
+    in_tok, out_tok = extract_provider_usage("anthropic", message)
+    await record_usage_event(
+        session,
+        provider="anthropic",
+        model=model,
+        input_tokens=in_tok,
+        output_tokens=out_tok,
+        feature=_AI_BACKEND_FEATURE,
+        trigger_source=trigger_source,
+        environment=current_environment(),
+        started_at=started_at,
+        ended_at=utcnow(),
     )
-    parts = [block.text for block in message.content if getattr(block, "type", None) == "text"]
+    parts = [block.text for block in message.content if isinstance(block, TextBlock)]
     return "".join(parts).strip() or "(empty reply)"
 
 
-async def _call_openai(prompt: str, api_key: str) -> str:
+async def _call_openai(
+    prompt: str,
+    api_key: str,
+    session: AsyncSession,
+    trigger_source: str,
+) -> str:
     from openai import AsyncOpenAI
 
     client = AsyncOpenAI(api_key=api_key)
-    completion = await client.chat.completions.create(
-        model=settings.openai_model or "gpt-4o-mini",
-        max_tokens=400,
-        messages=[
-            {"role": "system", "content": _SYSTEM_PROMPT},
-            {"role": "user", "content": prompt},
-        ],
+    model = settings.openai_model or "gpt-4o-mini"
+    started_at = utcnow()
+    try:
+        completion = await client.chat.completions.create(
+            model=model,
+            max_tokens=400,
+            messages=[
+                {"role": "system", "content": _SYSTEM_PROMPT},
+                {"role": "user", "content": prompt},
+            ],
+        )
+    except Exception as exc:
+        await record_usage_event(
+            session,
+            provider="openai",
+            model=model,
+            feature=_AI_BACKEND_FEATURE,
+            trigger_source=trigger_source,
+            environment=current_environment(),
+            status="error",
+            error=type(exc).__name__,
+            started_at=started_at,
+            ended_at=utcnow(),
+        )
+        raise
+    in_tok, out_tok = extract_provider_usage("openai", completion)
+    await record_usage_event(
+        session,
+        provider="openai",
+        model=model,
+        input_tokens=in_tok,
+        output_tokens=out_tok,
+        feature=_AI_BACKEND_FEATURE,
+        trigger_source=trigger_source,
+        environment=current_environment(),
+        started_at=started_at,
+        ended_at=utcnow(),
     )
     choice = completion.choices[0] if completion.choices else None
     reply = (choice.message.content if choice and choice.message else "") or ""

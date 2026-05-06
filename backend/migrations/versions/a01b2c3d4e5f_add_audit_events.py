@@ -1,14 +1,19 @@
-"""Add audit_events table and merge prior alembic heads.
+"""Add audit_events table.
 
 Revision ID: a01b2c3d4e5f
-Revises: 99cd6df95f85, b4338be78eec, f5a7c3e8d1b2
+Revises: g3a8e2c5b709
 Create Date: 2026-04-29 00:00:00.000000
 
 This migration is part of Security Sprint 1. It introduces the
-``audit_events`` table used by ``app.services.audit_log.record_audit``
-and simultaneously folds the three pre-existing alembic heads into a
-single chain. No production data is altered; the migration only
-creates a new, empty table and the indexes needed for forensic queries.
+``audit_events`` table used by ``app.services.audit_log.record_audit``.
+No production data is altered; the migration only creates a new, empty
+table and the indexes needed for forensic queries.
+
+Re-parented during the merge from ``origin/main`` (commit 20bf0ac1):
+the original tuple parent ``(99cd6df95f85, b4338be78eec, f5a7c3e8d1b2)``
+fed into the (then-divergent) alembic heads.  Those heads have since
+been linearised on ``main`` through ``g3a8e2c5b709``; pointing at the
+new tip preserves the full ancestry without a redundant merge node.
 
 Idempotent: every create is guarded by an inspector check so re-runs
 are safe.
@@ -21,7 +26,7 @@ from alembic import op
 
 # revision identifiers, used by Alembic.
 revision = "a01b2c3d4e5f"
-down_revision = ("99cd6df95f85", "b4338be78eec", "f5a7c3e8d1b2")
+down_revision = "g3a8e2c5b709"
 branch_labels = None
 depends_on = None
 

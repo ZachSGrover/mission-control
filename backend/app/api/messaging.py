@@ -8,7 +8,6 @@ Endpoints:
 
 from __future__ import annotations
 
-import logging
 import time
 from typing import Literal
 
@@ -19,11 +18,12 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 from app.core import message_metrics
 from app.core.ai_backend import ask_ai
 from app.core.auth import AuthContext, get_auth_context
+from app.core.logging import get_logger
 from app.core.speed_layer import classify
 from app.db.session import get_session
 
 router = APIRouter(prefix="/messaging", tags=["messaging"])
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 AUTH_DEP = Depends(get_auth_context)
 SESSION_DEP = Depends(get_session)
@@ -54,7 +54,7 @@ async def route_message(
     provider = "none"
 
     if route.use_ai:
-        reply, provider = await ask_ai(body.text, session)
+        reply, provider = await ask_ai(body.text, session, trigger_source=body.source)
     else:
         # "command" means the caller should route to its own command handler —
         # surface a hint so misrouted commands don't silently no-op.

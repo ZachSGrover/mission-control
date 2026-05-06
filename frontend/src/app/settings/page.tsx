@@ -13,6 +13,13 @@ import { DashboardSidebar } from "@/components/organisms/DashboardSidebar";
 import { DashboardShell } from "@/components/templates/DashboardShell";
 import { useAuthFetch } from "@/hooks/use-auth-fetch";
 import { logRemoteCommand, logSystemAction, writeAutoJournal } from "@/lib/action-logger";
+import {
+  clearGatewayToken,
+  loadGatewayToken,
+  maskGatewayToken,
+  saveGatewayToken,
+} from "@/lib/gateway-token-store";
+import { resetGatewayConnection } from "@/lib/openclaw-singleton";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -622,6 +629,157 @@ function TelegramSection({ fetchFn }: { fetchFn: FetchFn }) {
   );
 }
 
+// ── Gateway token section (browser-only, localStorage) ───────────────────────
+// Stores the OpenClaw operator token in `localStorage["mc_openclaw_token"]`.
+// The OpenClaw singleton reads it at WS-connect time and falls back to
+// `NEXT_PUBLIC_OPENCLAW_TOKEN` (.env.local for local dev / Electron) when
+// nothing is stored. The token never leaves this browser; we never log it.
+
+function GatewayTokenSection() {
+  const [storedPreview, setStoredPreview] = useState<string>("");
+  const [value, setValue] = useState<string>("");
+  const [shown, setShown] = useState<boolean>(false);
+  const [busy, setBusy] = useState<boolean>(false);
+  const [feedback, setFeedback] = useState<{ ok: boolean; msg: string } | null>(null);
+
+  // Hydrate the preview from localStorage after mount (avoids SSR mismatch).
+  useEffect(() => {
+    setStoredPreview(maskGatewayToken(loadGatewayToken()));
+  }, []);
+
+  const fb = useCallback((ok: boolean, msg: string) => {
+    setFeedback({ ok, msg });
+    setTimeout(() => setFeedback(null), 3000);
+  }, []);
+
+  const handleSave = () => {
+    const trimmed = value.trim();
+    if (!trimmed) { fb(false, "Paste a token first."); return; }
+    setBusy(true);
+    try {
+      saveGatewayToken(trimmed);
+      setStoredPreview(maskGatewayToken(trimmed));
+      setValue("");
+      resetGatewayConnection();
+      fb(true, "Saved. Reconnecting…");
+      // Logged with no token text — auditable that a save happened, never the value.
+      logSystemAction("integration", "Gateway token saved", "Settings → Gateway");
+    } catch {
+      fb(false, "Could not save. localStorage may be disabled.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const handleClear = () => {
+    setBusy(true);
+    try {
+      clearGatewayToken();
+      setStoredPreview("");
+      setValue("");
+      resetGatewayConnection();
+      fb(true, "Cleared.");
+      logSystemAction("integration", "Gateway token cleared", "Settings → Gateway");
+    } catch {
+      fb(false, "Could not clear.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <section className="space-y-3">
+      <h2 className="text-xs font-semibold uppercase tracking-widest" style={{ color: "var(--text-quiet)" }}>
+        Gateway
+      </h2>
+      <div
+        className="rounded-xl p-4 space-y-3"
+        style={{ background: "var(--surface-strong)", border: "1px solid var(--border)" }}
+      >
+        <div>
+          <p className="text-sm font-medium" style={{ color: "var(--text)" }}>OpenClaw operator token</p>
+          <p className="text-xs leading-relaxed" style={{ color: "var(--text-muted)" }}>
+            Required for the deployed app to authenticate against your local OpenClaw gateway.
+            Stored only in this browser&apos;s localStorage; never sent to the backend, never logged.
+          </p>
+        </div>
+
+        {storedPreview && (
+          <div
+            className="flex items-center justify-between rounded-lg px-3 py-2 text-xs"
+            style={{ background: "var(--surface)", border: "1px solid var(--border)", color: "var(--text-muted)" }}
+          >
+            <span>
+              <span className="font-mono" style={{ color: "var(--text)" }}>{storedPreview}</span>
+              <span className="ml-2">— stored in this browser</span>
+            </span>
+            <button
+              type="button"
+              onClick={handleClear}
+              disabled={busy}
+              className="rounded px-2 py-1 text-xs hover:opacity-80 disabled:opacity-50"
+              style={{ background: "transparent", color: "var(--danger, rgb(248 113 113))" }}
+              title="Remove the token from this browser"
+            >
+              Clear
+            </button>
+          </div>
+        )}
+
+        <div className="flex items-center gap-2">
+          <div className="relative flex-1">
+            <input
+              type={shown ? "text" : "password"}
+              value={value}
+              onChange={(e) => setValue(e.target.value)}
+              placeholder="Paste operator token"
+              autoComplete="off"
+              spellCheck={false}
+              disabled={busy}
+              className="w-full rounded-lg px-3 py-2 pr-9 text-sm font-mono focus:outline-none disabled:opacity-50"
+              style={{ background: "var(--surface)", border: "1px solid var(--border-strong)", color: "var(--text)" }}
+            />
+            <button
+              type="button"
+              onClick={() => setShown((s) => !s)}
+              tabIndex={-1}
+              className="absolute right-2 top-1/2 -translate-y-1/2 rounded p-1 hover:opacity-80"
+              style={{ color: "var(--text-quiet)" }}
+              aria-label={shown ? "Hide token" : "Show token"}
+            >
+              {shown ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
+            </button>
+          </div>
+          <button
+            type="button"
+            onClick={handleSave}
+            disabled={busy || !value.trim()}
+            className="rounded-lg px-3 py-2 text-xs font-medium disabled:opacity-50"
+            style={{ background: "var(--accent)", color: "white" }}
+          >
+            Save
+          </button>
+        </div>
+
+        {feedback && (
+          <p
+            className="text-xs"
+            style={{ color: feedback.ok ? "var(--accent-strong)" : "rgb(248 113 113)" }}
+          >
+            {feedback.msg}
+          </p>
+        )}
+
+        <p className="text-[11px] leading-relaxed" style={{ color: "var(--text-quiet)" }}>
+          Local dev (<code className="font-mono">npm run dev</code>) and the Electron app continue to read the token from{" "}
+          <code className="font-mono">NEXT_PUBLIC_OPENCLAW_TOKEN</code> in <code className="font-mono">.env.local</code>{" "}
+          when nothing is stored here. localStorage takes precedence whenever it is set.
+        </p>
+      </div>
+    </section>
+  );
+}
+
 // ── Settings page ─────────────────────────────────────────────────────────────
 
 export default function SettingsPage() {
@@ -745,6 +903,9 @@ export default function SettingsPage() {
               </section>
               {/* Remote Access — Telegram */}
               <TelegramSection fetchFn={fetchWithAuth} />
+
+              {/* Gateway — OpenClaw operator token (browser-only) */}
+              <GatewayTokenSection />
 
               {/* Branding — logo + app name */}
               <section className="space-y-3">

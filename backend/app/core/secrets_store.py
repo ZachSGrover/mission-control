@@ -18,13 +18,14 @@ from __future__ import annotations
 
 import base64
 import hashlib
-import logging
 
 from cryptography.fernet import Fernet, InvalidToken
 from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
-logger = logging.getLogger(__name__)
+from app.core.logging import get_logger
+
+logger = get_logger(__name__)
 
 # ── Supported providers ──────────────────────────────────────────────────────
 
@@ -34,11 +35,23 @@ PROVIDER_KEYS: dict[str, str] = {
     "anthropic": "api_key.anthropic",
 }
 
+# Admin / billing keys used only by the Usage Tracker collectors.  Separate
+# from the inference keys above — admin keys can read org-wide usage/cost
+# but are not interchangeable with regular API keys.
+ADMIN_PROVIDER_KEYS: dict[str, str] = {
+    "openai": "admin_key.openai",
+    "anthropic": "admin_key.anthropic",
+}
+
 GITHUB_KEYS: dict[str, str] = {
     "github_username": "github.username",
     "github_pat": "github.pat",
     "github_repo": "github.repo",
 }
+
+# OF Intelligence — QC Discord webhook URL.  Single value for v1; later phases
+# may add per-channel routing.  Read by app.services.of_intelligence.qc.publisher.
+QC_DISCORD_WEBHOOK_DB_KEY: str = "discord.qc.webhook_url"
 
 # ── Fernet helpers ───────────────────────────────────────────────────────────
 

@@ -17,7 +17,7 @@ import uuid
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from threading import RLock
-from typing import Literal
+from typing import Any, Literal
 
 __all__ = [
     "Agent",
@@ -113,7 +113,7 @@ _DEFAULT_AGENTS: list[Agent] = [
 _VALID_FIELDS = {f for f in Agent.__dataclass_fields__}
 
 
-def _coerce_entry(entry: dict) -> Agent:
+def _coerce_entry(entry: dict[str, Any]) -> Agent:
     # Drop unknown fields, fill defaults for any missing ones → forward-compat.
     clean = {k: v for k, v in entry.items() if k in _VALID_FIELDS}
     clean.setdefault("platforms", [])

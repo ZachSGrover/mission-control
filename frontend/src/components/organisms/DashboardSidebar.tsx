@@ -11,13 +11,16 @@ import {
   Check,
   CloudUpload,
   FolderOpen,
+  Gauge,
   GitBranch,
+  Heart,
   Layout,
   Loader2,
   MessageSquare,
   Network,
   Plug,
   Settings,
+  Siren,
   TriangleAlert,
   Users,
   Wrench,
@@ -151,12 +154,19 @@ export function DashboardSidebar() {
 
         {/* Automation */}
         <NavSection label="Automation">
+          <NavLink href="/hermes"    label="Hermes"    Icon={Siren} />
           <NavLink href="/boards"    label="Boards"    Icon={Layout} />
           <NavLink href="/agents"    label="Agents"    Icon={Bot} />
           <NavLink href="/control"   label="Control"   Icon={Network} />
           <NavLink href="/workflows" label="Workflows" Icon={GitBranch} />
           <NavLink href="/skills"    label="Skills"    Icon={Wrench} />
           <NavLink href="/activity"  label="Logs"      Icon={Activity} />
+        </NavSection>
+
+        {/* Business / Intelligence — analytics + spend products. */}
+        <NavSection label="Business / Intelligence">
+          <NavLink href="/of-intelligence" label="OnlyFans Intelligence" Icon={Heart} />
+          <NavLink href="/usage"           label="Usage Tracker"         Icon={Gauge} />
         </NavSection>
 
         {/* System */}

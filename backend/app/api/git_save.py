@@ -3,10 +3,10 @@
 from __future__ import annotations
 
 import asyncio
-import logging
 import subprocess
 from datetime import datetime
 from pathlib import Path
+from typing import Any
 
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel
@@ -14,13 +14,14 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.core.auth import AuthContext, get_auth_context
 from app.core.config import settings
+from app.core.logging import get_logger
 from app.core.secrets_store import GITHUB_KEYS, get_secret
 from app.db.session import get_session
 
 router = APIRouter(prefix="/git", tags=["git"])
 AUTH_DEP = Depends(get_auth_context)
 SESSION_DEP = Depends(get_session)
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 # Repo root is 3 levels up from this file:
 # backend/app/api/git_save.py → backend/app/api → backend/app → backend → repo root
@@ -41,7 +42,7 @@ class SaveResponse(BaseModel):
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
 
-def _run(args: list[str], *, env: dict | None = None) -> tuple[int, str, str]:
+def _run(args: list[str], *, env: dict[str, Any] | None = None) -> tuple[int, str, str]:
     """Run a git command synchronously, return (returncode, stdout, stderr)."""
     result = subprocess.run(
         args,
@@ -54,7 +55,7 @@ def _run(args: list[str], *, env: dict | None = None) -> tuple[int, str, str]:
     return result.returncode, result.stdout.strip(), result.stderr.strip()
 
 
-def _git(*args: str, env: dict | None = None) -> tuple[int, str, str]:
+def _git(*args: str, env: dict[str, Any] | None = None) -> tuple[int, str, str]:
     return _run(["git", *args], env=env)
 
 

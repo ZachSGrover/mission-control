@@ -32,6 +32,7 @@ from app.api.gateway import router as gateway_router
 from app.api.gateways import router as gateways_router
 from app.api.gemini_chat import router as gemini_chat_router
 from app.api.git_save import router as git_save_router
+from app.api.hermes import router as hermes_router
 from app.api.integrations import router as integrations_router
 from app.api.journal import router as journal_router
 from app.api.judge import router as judge_router
@@ -40,6 +41,9 @@ from app.api.mc_allowed_users import router as mc_allowed_users_router
 from app.api.mc_roles import router as mc_roles_router
 from app.api.messaging import router as messaging_router
 from app.api.metrics import router as metrics_router
+from app.api.of_intelligence import router as of_intelligence_router
+from app.api.of_qc_discord import router as of_qc_discord_router
+from app.api.of_qc_scheduler import router as of_qc_scheduler_router
 from app.api.openai_chat import router as openai_chat_router
 from app.api.operator import router as operator_router
 from app.api.organizations import router as organizations_router
@@ -51,6 +55,7 @@ from app.api.tags import router as tags_router
 from app.api.task_custom_fields import router as task_custom_fields_router
 from app.api.tasks import router as tasks_router
 from app.api.telegram import router as telegram_router
+from app.api.usage import router as usage_router
 from app.api.users import router as users_router
 from app.api.workflows import router as workflows_router
 from app.core.config import settings
@@ -147,6 +152,13 @@ OPENAPI_TAGS = [
     {
         "name": "tags",
         "description": "Tag catalog and task-tag association management endpoints.",
+    },
+    {
+        "name": "usage",
+        "description": (
+            "AI / API usage and spend tracking — read-only dashboards plus "
+            "manual refresh and alert-threshold configuration."
+        ),
     },
     {
         "name": "users",
@@ -506,11 +518,20 @@ async def lifespan(_: FastAPI) -> AsyncIterator[None]:
     from app.core import network_monitor as _netmon
     from app.core import telegram_polling as _tgpoll
     from app.services import audit_retention_scheduler as _retention
+    from app.services.of_intelligence.qc import scheduler as _qc_scheduler
 
     _bg_stop = _asyncio.Event()
-    _bg_tasks: list[_asyncio.Task] = [
+    _bg_tasks: list[_asyncio.Task[None]] = [
         _asyncio.create_task(_netmon.run_forever(_bg_stop), name="network_monitor"),
         _asyncio.create_task(_tgpoll.run_supervisor(_bg_stop), name="telegram_polling_supervisor"),
+        # OF Daily QC supervisor — disabled by default at the DB layer
+        # (``daily_qc_enabled=False``).  When the toggle is off the loop
+        # records ``skipped`` rows and does NO QC work; no Discord or
+        # Telegram sends happen until the operator flips both
+        # ``daily_qc_enabled`` AND ``live_send_enabled``.  An env-var
+        # hard kill switch (``MC_OF_QC_SCHEDULER_DISABLE=1``) prevents
+        # the supervisor from even starting.
+        _asyncio.create_task(_qc_scheduler.run_supervisor(_bg_stop), name="of_qc_scheduler"),
     ]
     # Sprint 5: register the audit-retention supervisor. The supervisor
     # itself refuses to do anything unless ``MC_AUDIT_RETENTION_ENABLED=1``
@@ -653,6 +674,7 @@ api_v1.include_router(agents_router)
 api_v1.include_router(activity_router)
 api_v1.include_router(gateway_router)
 api_v1.include_router(gateways_router)
+api_v1.include_router(hermes_router)
 api_v1.include_router(metrics_router)
 api_v1.include_router(organizations_router)
 api_v1.include_router(souls_directory_router)
@@ -690,6 +712,10 @@ api_v1.include_router(control_agents_router)
 api_v1.include_router(control_devices_router)
 api_v1.include_router(control_tasks_router)
 api_v1.include_router(system_node_router)
+api_v1.include_router(usage_router)
+api_v1.include_router(of_intelligence_router)
+api_v1.include_router(of_qc_discord_router)
+api_v1.include_router(of_qc_scheduler_router)
 app.include_router(api_v1)
 
 add_pagination(app)

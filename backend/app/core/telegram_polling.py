@@ -23,7 +23,6 @@ No restart required if polling isn't needed — the supervisor stays idle.
 from __future__ import annotations
 
 import asyncio
-import logging
 import os
 import time
 from dataclasses import dataclass
@@ -34,6 +33,7 @@ from typing import Any
 import httpx
 
 from app.core import message_dedup, network_monitor
+from app.core.logging import get_logger
 
 __all__ = [
     "record_webhook_hit",
@@ -42,7 +42,7 @@ __all__ = [
     "TelegramModeSnapshot",
 ]
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 _DATA_DIR = Path(os.getenv("MC_DATA_DIR", str(Path.home() / ".mission-control")))
 _OFFSET_PATH = _DATA_DIR / "telegram_last_update_id"
@@ -55,7 +55,7 @@ _lock = RLock()
 _last_webhook_hit: float | None = None
 _current_mode: str = "webhook"  # "webhook" | "polling" | "idle"
 _last_mode_change_at: float | None = None
-_polling_task: asyncio.Task | None = None
+_polling_task: asyncio.Task[None] | None = None
 
 
 @dataclass
@@ -153,7 +153,7 @@ async def _dispatch_update(update: dict[str, Any]) -> None:
 async def _poll_once(token: str) -> None:
     global _current_mode, _last_mode_change_at
     offset = _load_offset()
-    params = {
+    params: dict[str, int | list[str]] = {
         "timeout": _POLL_TIMEOUT_S,
         "allowed_updates": ["message", "edited_message"],
     }

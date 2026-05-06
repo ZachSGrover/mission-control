@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import json
+from datetime import datetime
+from typing import Any, cast
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel
@@ -11,11 +13,58 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 from app.core.auth import AuthContext, get_auth_context
 from app.core.config import settings
 from app.core.secrets_store import get_api_key
+from app.core.time import utcnow
 from app.db.session import get_session
+from app.services.usage.logger import (
+    current_environment,
+    extract_provider_usage,
+    record_usage_event,
+)
 
 router = APIRouter(prefix="/judge", tags=["judge"])
 AUTH_DEP = Depends(get_auth_context)
 SESSION_DEP = Depends(get_session)
+
+_FEATURE = "judge"
+_TRIGGER = "judge"
+
+
+async def _record(
+    session: AsyncSession,
+    *,
+    provider: str,
+    model: str,
+    started_at: datetime,
+    response: object | None = None,
+    error: BaseException | None = None,
+) -> None:
+    if error is not None:
+        await record_usage_event(
+            session,
+            provider=provider,
+            model=model,
+            feature=_FEATURE,
+            trigger_source=_TRIGGER,
+            environment=current_environment(),
+            status="error",
+            error=type(error).__name__,
+            started_at=started_at,
+            ended_at=utcnow(),
+        )
+        return
+    in_tok, out_tok = extract_provider_usage(provider, response)
+    await record_usage_event(
+        session,
+        provider=provider,
+        model=model,
+        input_tokens=in_tok,
+        output_tokens=out_tok,
+        feature=_FEATURE,
+        trigger_source=_TRIGGER,
+        environment=current_environment(),
+        started_at=started_at,
+        ended_at=utcnow(),
+    )
 
 
 class JudgeResponses(BaseModel):
@@ -86,7 +135,7 @@ def _build_judge_prompt(request: JudgeRequest) -> str:
     return "\n".join(lines)
 
 
-def _parse_judge_response(raw: str) -> dict:  # type: ignore[type-arg]
+def _parse_judge_response(raw: str) -> dict[str, Any]:
     text = raw.strip()
     # Strip markdown code fences if present
     if text.startswith("```"):
@@ -94,7 +143,7 @@ def _parse_judge_response(raw: str) -> dict:  # type: ignore[type-arg]
         text = "\n".join(lines[1:])
         if text.rstrip().endswith("```"):
             text = text.rstrip()[: text.rstrip().rfind("```")]
-    return json.loads(text)
+    return cast(dict[str, Any], json.loads(text))
 
 
 @router.post("/evaluate", response_model=JudgeResult)
@@ -117,11 +166,11 @@ async def evaluate(
     # Try OpenAI first (most reliable JSON output), fall back to Gemini
     openai_key = await get_api_key("openai", session, settings.openai_api_key)
     if openai_key.strip():
-        return await _judge_with_openai(openai_key.strip(), prompt)
+        return await _judge_with_openai(openai_key.strip(), prompt, session)
 
     gemini_key = await get_api_key("gemini", session, settings.gemini_api_key)
     if gemini_key.strip():
-        return await _judge_with_gemini(gemini_key.strip(), prompt)
+        return await _judge_with_gemini(gemini_key.strip(), prompt, session)
 
     raise HTTPException(
         status_code=status.HTTP_400_BAD_REQUEST,
@@ -129,13 +178,15 @@ async def evaluate(
     )
 
 
-async def _judge_with_openai(api_key: str, prompt: str) -> JudgeResult:
+async def _judge_with_openai(api_key: str, prompt: str, session: AsyncSession) -> JudgeResult:
     from openai import AsyncOpenAI
 
     client = AsyncOpenAI(api_key=api_key)
+    model = settings.openai_model
+    started_at = utcnow()
     try:
         resp = await client.chat.completions.create(
-            model=settings.openai_model,
+            model=model,
             messages=[
                 {
                     "role": "system",
@@ -150,24 +201,28 @@ async def _judge_with_openai(api_key: str, prompt: str) -> JudgeResult:
             response_format={"type": "json_object"},
             temperature=0.1,
         )
-        raw = resp.choices[0].message.content or ""
     except Exception as exc:
+        await _record(session, provider="openai", model=model, started_at=started_at, error=exc)
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
             detail=f"OpenAI judge error: {exc}",
         ) from exc
 
+    await _record(session, provider="openai", model=model, started_at=started_at, response=resp)
+    raw = resp.choices[0].message.content or ""
     return _build_result(raw)
 
 
-async def _judge_with_gemini(api_key: str, prompt: str) -> JudgeResult:
+async def _judge_with_gemini(api_key: str, prompt: str, session: AsyncSession) -> JudgeResult:
     from google import genai
     from google.genai import types
 
     client = genai.Client(api_key=api_key)
+    model = settings.gemini_model
+    started_at = utcnow()
     try:
         resp = client.models.generate_content(
-            model=settings.gemini_model,
+            model=model,
             contents=prompt,
             config=types.GenerateContentConfig(
                 system_instruction=(
@@ -177,13 +232,15 @@ async def _judge_with_gemini(api_key: str, prompt: str) -> JudgeResult:
                 temperature=0.1,
             ),
         )
-        raw = resp.text or ""
     except Exception as exc:
+        await _record(session, provider="gemini", model=model, started_at=started_at, error=exc)
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
             detail=f"Gemini judge error: {exc}",
         ) from exc
 
+    await _record(session, provider="gemini", model=model, started_at=started_at, response=resp)
+    raw = resp.text or ""
     return _build_result(raw)
 
 

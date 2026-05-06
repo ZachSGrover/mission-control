@@ -246,9 +246,7 @@ async def _chatter_names(session: AsyncSession, ids: list[str]) -> dict[str, str
         return {}
     rows = (
         await session.exec(
-            select(OfIntelligenceChatter).where(
-                col(OfIntelligenceChatter.source_id).in_(set(ids))
-            )
+            select(OfIntelligenceChatter).where(col(OfIntelligenceChatter.source_id).in_(set(ids)))
         )
     ).all()
     return {r.source_id: r.name for r in rows}
@@ -259,9 +257,7 @@ async def _account_usernames(session: AsyncSession, ids: list[str]) -> dict[str,
         return {}
     rows = (
         await session.exec(
-            select(OfIntelligenceAccount).where(
-                col(OfIntelligenceAccount.source_id).in_(set(ids))
-            )
+            select(OfIntelligenceAccount).where(col(OfIntelligenceAccount.source_id).in_(set(ids)))
         )
     ).all()
     return {r.source_id: r.username for r in rows}

@@ -121,9 +121,7 @@ async def test_bad_english_fires_on_typos(body: str) -> None:
 @pytest.mark.asyncio
 async def test_bad_english_does_not_fire_on_clean_text() -> None:
     async with _make_session() as session:
-        await _seed_outbound(
-            session, "thanks for subscribing, hope you enjoy the content"
-        )
+        await _seed_outbound(session, "thanks for subscribing, hope you enjoy the content")
         cands = await scan_chatter_findings(session)
         assert not any(c.code == "bad_english" for c in cands)
 

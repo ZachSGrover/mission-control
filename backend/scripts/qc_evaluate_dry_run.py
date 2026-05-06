@@ -63,11 +63,7 @@ from app.db.session import async_session_maker  # noqa: E402
 
 def _summary_to_jsonable(value: object) -> object:
     if hasattr(value, "__dict__"):
-        return {
-            k: _summary_to_jsonable(v)
-            for k, v in vars(value).items()
-            if not k.startswith("_")
-        }
+        return {k: _summary_to_jsonable(v) for k, v in vars(value).items() if not k.startswith("_")}
     if isinstance(value, list):
         return [_summary_to_jsonable(v) for v in value]
     if isinstance(value, tuple):

@@ -186,7 +186,7 @@ async def test_sync_failure_does_not_leak_raw_error_text(
     realistic error string in context to verify it's still ignored — only
     the entity field is allowed.
     """
-    leaky_error = "OnlyMonster 401: {\"error\":\"token bad\",\"fan\":\"@somefan\"}"
+    leaky_error = 'OnlyMonster 401: {"error":"token bad","fan":"@somefan"}'
     await ship_account_or_sync_alert(
         code="sync_failure:messages",
         title="Sync failed for messages",

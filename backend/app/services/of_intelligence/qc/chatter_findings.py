@@ -120,7 +120,9 @@ class _ChatterRule(NamedTuple):
 
 _CHATTER_RULES: list[_ChatterRule] = [
     _ChatterRule("bad_english", "low", _matches_bad_english, "outbound English-quality flag"),
-    _ChatterRule("lazy_reply", "medium", _matches_lazy_reply, "outbound too short to count as reply"),
+    _ChatterRule(
+        "lazy_reply", "medium", _matches_lazy_reply, "outbound too short to count as reply"
+    ),
     _ChatterRule("low_effort_chatting", "low", _matches_low_effort, "outbound short + no question"),
 ]
 

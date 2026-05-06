@@ -64,7 +64,6 @@ from app.services.of_intelligence.qc import (  # noqa: E402
     publish,
 )
 
-
 # ── Canned scenarios ─────────────────────────────────────────────────────────
 
 

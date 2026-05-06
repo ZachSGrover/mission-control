@@ -173,9 +173,7 @@ async def test_banned_content_does_not_fire_on_inbound() -> None:
     """A fan saying a banned term doesn't flag the chatter — direction-checked."""
     async with _make_session() as session:
         acct = await _seed_account(session, username="luna_main")
-        await _seed_message(
-            session, body="minor", direction="in", account_source_id=acct
-        )
+        await _seed_message(session, body="minor", direction="in", account_source_id=acct)
         cands = await scan_critical_qc(session)
         assert "banned_content_risk" not in _codes(cands)
 
@@ -217,9 +215,7 @@ async def test_rude_reply_does_not_fire_on_inbound() -> None:
     """If the fan is rude, that's not a chatter QC issue; direction enforced."""
     async with _make_session() as session:
         acct = await _seed_account(session, username="luna_main")
-        await _seed_message(
-            session, body="you're an idiot", direction="in", account_source_id=acct
-        )
+        await _seed_message(session, body="you're an idiot", direction="in", account_source_id=acct)
         cands = await scan_critical_qc(session)
         assert "rude_reply" not in _codes(cands)
 
@@ -255,11 +251,16 @@ async def test_clean_messages_produce_no_candidates() -> None:
     async with _make_session() as session:
         acct = await _seed_account(session, username="luna_main")
         await _seed_message(
-            session, body="hey thanks for subscribing!", direction="out",
+            session,
+            body="hey thanks for subscribing!",
+            direction="out",
             account_source_id=acct,
         )
         await _seed_message(
-            session, body="love you", direction="in", account_source_id=acct,
+            session,
+            body="love you",
+            direction="in",
+            account_source_id=acct,
         )
         cands = await scan_critical_qc(session)
         assert cands == []
@@ -288,9 +289,7 @@ async def test_candidate_does_not_include_matched_keyword_or_body() -> None:
     async with _make_session() as session:
         acct = await _seed_account(session, username="luna_main")
         ch = await _seed_chatter(session, name="Mia")
-        body_with_keyword = (
-            "Sure babe, I'll give you a REFUND if you want — also @somefan said hi"
-        )
+        body_with_keyword = "Sure babe, I'll give you a REFUND if you want — also @somefan said hi"
         await _seed_message(
             session,
             body=body_with_keyword,
@@ -329,9 +328,7 @@ async def test_multiple_matches_same_account_collapse_to_one_candidate_per_code(
     async with _make_session() as session:
         acct = await _seed_account(session, username="luna_main")
         for body in ["refund please", "I want my refund", "filing a chargeback"]:
-            await _seed_message(
-                session, body=body, direction="in", account_source_id=acct
-            )
+            await _seed_message(session, body=body, direction="in", account_source_id=acct)
         cands = await scan_critical_qc(session)
         refund_cands = [c for c in cands if c.code == "refund_risk"]
         assert len(refund_cands) == 1

@@ -133,8 +133,7 @@ def _validate_webhook_url(value: str) -> str:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=(
-                "Must be a Discord webhook URL "
-                "(https://discord.com/api/webhooks/<id>/<token>)."
+                "Must be a Discord webhook URL " "(https://discord.com/api/webhooks/<id>/<token>)."
             ),
         )
     return candidate
@@ -198,9 +197,7 @@ def _compute_card_state(
 ) -> CardState:
     if not configured:
         return "not_configured"
-    if last_failure is not None and (
-        last_success is None or last_failure > last_success
-    ):
+    if last_failure is not None and (last_success is None or last_failure > last_success):
         return "last_test_failed"
     if last_success is not None:
         return "connected"

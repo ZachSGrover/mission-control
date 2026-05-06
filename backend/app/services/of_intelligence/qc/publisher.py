@@ -64,8 +64,8 @@ class PublishResult:
     status: int | None
     attempts: int
     reason: str  # "ok" | "disabled" | "no_webhook" | "privacy_violation"
-                 # | "http_4xx" | "http_5xx" | "rate_limited" | "network_error"
-                 # | "timeout" | "exception"
+    # | "http_4xx" | "http_5xx" | "rate_limited" | "network_error"
+    # | "timeout" | "exception"
     elapsed_ms: int
 
 
@@ -252,7 +252,9 @@ async def _post_with_retry(
             break
 
     level = "warning" if last_reason in ("rate_limited", "http_5xx") else "error"
-    return _result(False, last_status, _MAX_ATTEMPTS, last_reason, started_ns, log_extra, level=level)
+    return _result(
+        False, last_status, _MAX_ATTEMPTS, last_reason, started_ns, log_extra, level=level
+    )
 
 
 async def _sleep_backoff(attempt: int) -> None:
@@ -291,7 +293,9 @@ def _result(
     level: str | None,
 ) -> PublishResult:
     elapsed_ms = max(0, (time.perf_counter_ns() - started_ns) // 1_000_000)
-    result = PublishResult(ok=ok, status=status, attempts=attempts, reason=reason, elapsed_ms=elapsed_ms)
+    result = PublishResult(
+        ok=ok, status=status, attempts=attempts, reason=reason, elapsed_ms=elapsed_ms
+    )
     if level is not None:
         log_method = getattr(logger, level)
         log_method(

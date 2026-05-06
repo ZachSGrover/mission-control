@@ -19,7 +19,6 @@ from app.services.of_intelligence.qc.privacy_modes import (
     internal_detail_gate_open,
 )
 
-
 # ── PrivacyMode.coerce ─────────────────────────────────────────────────────
 
 

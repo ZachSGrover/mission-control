@@ -137,9 +137,7 @@ async def detect_revenue_drops(
                     revenue_24h_cents=rev_24h,
                     revenue_7d_avg_cents=int(avg_daily),
                     severity="high",
-                    reason=(
-                        f"24h revenue below {int(threshold * 100)}% of 7d daily avg"
-                    ),
+                    reason=(f"24h revenue below {int(threshold * 100)}% of 7d daily avg"),
                 )
             )
 

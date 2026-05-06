@@ -169,9 +169,7 @@ async def evaluate_alerts(
         findings_persisted = await persist_findings(session, chatter_candidates)
         rollup = await fire_rollup_if_due(session)
     except Exception:
-        logger.exception(
-            "of_intelligence.alerts.layer2_failed (Layer 1 ships completed already)"
-        )
+        logger.exception("of_intelligence.alerts.layer2_failed (Layer 1 ships completed already)")
 
     summary = AlertEvaluationSummary(
         evaluated_at=utcnow(),
@@ -335,7 +333,8 @@ async def _rule_revenue_drop(session: AsyncSession) -> list[AlertCandidate]:
             severity=w.severity,
             title=(
                 f"{w.username or w.account_source_id} revenue drop"
-                if w.username else "Account revenue drop"
+                if w.username
+                else "Account revenue drop"
             ),
             message=w.reason,
             account_source_id=w.account_source_id,

@@ -894,9 +894,8 @@ async def trigger_daily_summary(
         from app.services.of_intelligence.qc.telegram_publisher import (
             ship_daily_summary_telegram,
         )
-        summary, tg_result = await ship_daily_summary_telegram(
-            session, bypass_kill_switch=True
-        )
+
+        summary, tg_result = await ship_daily_summary_telegram(session, bypass_kill_switch=True)
         return DailySummaryResponse(
             generated_at=summary.generated_at,
             accounts_reviewed=summary.accounts_reviewed,
@@ -1030,9 +1029,13 @@ async def get_qc_dashboard(
             for o in payload.fan_opportunities
         ],
         sync_health=DashboardSyncHealth(
-            last_success_per_entity=payload.sync_health.last_success_per_entity if payload.sync_health else {},
+            last_success_per_entity=(
+                payload.sync_health.last_success_per_entity if payload.sync_health else {}
+            ),
             error_count_24h=payload.sync_health.error_count_24h if payload.sync_health else 0,
-            stale_account_count=payload.sync_health.stale_account_count if payload.sync_health else 0,
+            stale_account_count=(
+                payload.sync_health.stale_account_count if payload.sync_health else 0
+            ),
             api_disconnected=payload.sync_health.api_disconnected if payload.sync_health else False,
         ),
         action_list=list(payload.action_list),

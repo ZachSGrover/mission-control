@@ -21,7 +21,6 @@ from app.services.of_intelligence.qc.formatters import (
 )
 from app.services.of_intelligence.qc.severity import Severity
 
-
 # ── format_alert ─────────────────────────────────────────────────────────────
 
 
@@ -153,7 +152,9 @@ def test_privacy_guard_rejects_discord_bot_token_pattern() -> None:
 
 def test_privacy_guard_rejects_caller_supplied_substring() -> None:
     with pytest.raises(PrivacyViolation):
-        assert_privacy_safe("Chatter Mia replied to fan_handle_xyz", forbidden_substrings=("fan_handle_xyz",))
+        assert_privacy_safe(
+            "Chatter Mia replied to fan_handle_xyz", forbidden_substrings=("fan_handle_xyz",)
+        )
 
 
 def test_privacy_guard_ignores_blank_substrings() -> None:

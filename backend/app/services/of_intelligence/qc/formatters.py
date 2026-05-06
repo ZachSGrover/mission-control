@@ -73,13 +73,13 @@ class RolledUpPayload:
     """Single-message rollup for medium/low chatter findings."""
 
     severity: Severity
-    window_label: str               # e.g. "last 30 min"
+    window_label: str  # e.g. "last 30 min"
     total_findings: int
     chatter_count: int
     account_count: int
-    lines: tuple[str, ...] = ()     # already-formatted, privacy-safe
+    lines: tuple[str, ...] = ()  # already-formatted, privacy-safe
     action: str | None = None
-    refs: tuple[str, ...] = ()      # alert/finding ref ids
+    refs: tuple[str, ...] = ()  # alert/finding ref ids
     title: str = "Chatter QC"
 
 
@@ -123,9 +123,7 @@ def format_alert(payload: AlertPayload) -> str:
 def format_rollup(payload: RolledUpPayload) -> str:
     """Render a windowed digest of grouped chatter findings."""
     glyph = SEVERITY_GLYPH.get(payload.severity, "🟧")
-    header = (
-        f"{glyph} [QC] {_trim(payload.title, MAX_TITLE_CHARS)} — {payload.window_label}"
-    )
+    header = f"{glyph} [QC] {_trim(payload.title, MAX_TITLE_CHARS)} — {payload.window_label}"
     summary = (
         f"{payload.total_findings} issues across "
         f"{payload.chatter_count} chatter(s), {payload.account_count} account(s)"

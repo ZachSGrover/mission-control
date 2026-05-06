@@ -174,15 +174,21 @@ async def test_only_unhealthy_accounts_get_warnings() -> None:
         await _seed_account(session, source_id="acct-bad", username="bad")
         for i in range(1, 7):
             await _seed_revenue(
-                session, account_source_id="acct-good", cents=10000,
+                session,
+                account_source_id="acct-good",
+                cents=10000,
                 period_start=utcnow() - timedelta(days=i),
             )
             await _seed_revenue(
-                session, account_source_id="acct-bad", cents=10000,
+                session,
+                account_source_id="acct-bad",
+                cents=10000,
                 period_start=utcnow() - timedelta(days=i),
             )
         await _seed_revenue(
-            session, account_source_id="acct-good", cents=12000,
+            session,
+            account_source_id="acct-good",
+            cents=12000,
             period_start=utcnow() - timedelta(hours=6),
         )
         # bad: zero 24h
@@ -200,7 +206,9 @@ async def test_warning_has_no_raw_breakdown_or_payload() -> None:
         await _seed_account(session, source_id="acct-1", username="luna")
         for i in range(1, 7):
             await _seed_revenue(
-                session, account_source_id="acct-1", cents=10000,
+                session,
+                account_source_id="acct-1",
+                cents=10000,
                 period_start=utcnow() - timedelta(days=i),
             )
         warnings = await detect_revenue_drops(session)

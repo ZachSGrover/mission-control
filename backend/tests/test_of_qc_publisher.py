@@ -129,14 +129,18 @@ def _stub_db_state(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 @pytest.mark.asyncio
-async def test_publish_returns_disabled_when_kill_switch_off(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_publish_returns_disabled_when_kill_switch_off(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     monkeypatch.delenv("MC_OF_QC_DISCORD_ENABLED", raising=False)
     monkeypatch.setenv("MC_OF_QC_DISCORD_WEBHOOK_URL", WEBHOOK_URL)
 
     fake = _patch_client(monkeypatch, [_FakeResponse(204)])
     result = await publish(SAFE_MESSAGE, code="x", severity="critical")
 
-    assert result == PublishResult(ok=False, status=None, attempts=0, reason="disabled", elapsed_ms=result.elapsed_ms)
+    assert result == PublishResult(
+        ok=False, status=None, attempts=0, reason="disabled", elapsed_ms=result.elapsed_ms
+    )
     assert fake.calls == []  # never hit the network
 
 
@@ -275,7 +279,9 @@ async def test_publish_persistent_network_error(monkeypatch: pytest.MonkeyPatch)
 
 
 @pytest.mark.asyncio
-async def test_publish_aborts_when_message_contains_webhook_url(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_publish_aborts_when_message_contains_webhook_url(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     _enable(monkeypatch)
     fake = _patch_client(monkeypatch, [_FakeResponse(204)])
 

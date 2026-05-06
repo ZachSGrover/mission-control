@@ -151,33 +151,31 @@ async def build_dashboard(session: AsyncSession) -> DashboardPayload:
     accounts = (await session.exec(select(OfIntelligenceAccount))).all()
     findings = (
         await session.exec(
-            select(OfIntelligenceQcFinding).where(
-                OfIntelligenceQcFinding.created_at >= cutoff_24h
-            )
+            select(OfIntelligenceQcFinding).where(OfIntelligenceQcFinding.created_at >= cutoff_24h)
         )
     ).all()
     open_alerts = (
-        await session.exec(
-            select(OfIntelligenceAlert).where(OfIntelligenceAlert.status == "open")
-        )
+        await session.exec(select(OfIntelligenceAlert).where(OfIntelligenceAlert.status == "open"))
     ).all()
     revenue_rows = (
         await session.exec(
-            select(OfIntelligenceRevenue).where(
-                OfIntelligenceRevenue.period_start >= cutoff_7d
-            )
+            select(OfIntelligenceRevenue).where(OfIntelligenceRevenue.period_start >= cutoff_7d)
         )
     ).all()
 
     # Resolve display names once.
     chatter_ids = {f.chatter_source_id for f in findings if f.chatter_source_id}
     chatters = (
-        await session.exec(
-            select(OfIntelligenceChatter).where(
-                col(OfIntelligenceChatter.source_id).in_(chatter_ids)
+        (
+            await session.exec(
+                select(OfIntelligenceChatter).where(
+                    col(OfIntelligenceChatter.source_id).in_(chatter_ids)
+                )
             )
-        )
-    ).all() if chatter_ids else []
+        ).all()
+        if chatter_ids
+        else []
+    )
     chatter_name_by_id = {c.source_id: c.name for c in chatters}
 
     # ── account_status ──────────────────────────────────────────────────
@@ -265,7 +263,9 @@ async def build_dashboard(session: AsyncSession) -> DashboardPayload:
                 critical_count=crit,
                 high_count=high,
                 top_codes=code_counter.most_common(5),
-                worst_chatter=chatter_name_by_id.get(worst_chatter_id) if worst_chatter_id else None,
+                worst_chatter=(
+                    chatter_name_by_id.get(worst_chatter_id) if worst_chatter_id else None
+                ),
             )
         )
     chatting_quality.sort(key=lambda x: x.total_findings, reverse=True)
@@ -296,20 +296,28 @@ async def build_dashboard(session: AsyncSession) -> DashboardPayload:
     # Resolve fan handles via OfIntelligenceMessage.fan_source_id → OfIntelligenceFan
     msg_ids = {f.message_source_id for f in opp_findings if f.message_source_id}
     msg_rows = (
-        await session.exec(
-            select(OfIntelligenceMessage).where(
-                col(OfIntelligenceMessage.source_id).in_(msg_ids)
+        (
+            await session.exec(
+                select(OfIntelligenceMessage).where(
+                    col(OfIntelligenceMessage.source_id).in_(msg_ids)
+                )
             )
-        )
-    ).all() if msg_ids else []
+        ).all()
+        if msg_ids
+        else []
+    )
     fan_id_by_msg = {m.source_id: m.fan_source_id for m in msg_rows}
 
     fan_ids = {fid for fid in fan_id_by_msg.values() if fid}
     fan_rows = (
-        await session.exec(
-            select(OfIntelligenceFan).where(col(OfIntelligenceFan.source_id).in_(fan_ids))
-        )
-    ).all() if fan_ids else []
+        (
+            await session.exec(
+                select(OfIntelligenceFan).where(col(OfIntelligenceFan.source_id).in_(fan_ids))
+            )
+        ).all()
+        if fan_ids
+        else []
+    )
     handle_by_fan = {f.source_id: getattr(f, "username", None) for f in fan_rows}
 
     fan_opportunities: list[FanOpportunity] = []
@@ -322,8 +330,12 @@ async def build_dashboard(session: AsyncSession) -> DashboardPayload:
                 finding_id=str(f.id),
                 code=f.code,
                 severity=f.severity,
-                account_username=account_name_by_id.get(f.account_source_id) if f.account_source_id else None,
-                chatter_name=chatter_name_by_id.get(f.chatter_source_id) if f.chatter_source_id else None,
+                account_username=(
+                    account_name_by_id.get(f.account_source_id) if f.account_source_id else None
+                ),
+                chatter_name=(
+                    chatter_name_by_id.get(f.chatter_source_id) if f.chatter_source_id else None
+                ),
                 fan_handle=fan_handle,
                 age_minutes=age,
                 dashboard_ref=f"qc/finding/{f.id}",
@@ -333,9 +345,7 @@ async def build_dashboard(session: AsyncSession) -> DashboardPayload:
     # ── sync_health ─────────────────────────────────────────────────────
     sync_logs = (
         await session.exec(
-            select(OfIntelligenceSyncLog).where(
-                OfIntelligenceSyncLog.started_at >= cutoff_24h
-            )
+            select(OfIntelligenceSyncLog).where(OfIntelligenceSyncLog.started_at >= cutoff_24h)
         )
     ).all()
     last_success_per_entity: dict[str, datetime | None] = {}

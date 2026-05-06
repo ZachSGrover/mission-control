@@ -78,6 +78,7 @@ async def _make_client(
 
     async def _stub_tg(*_a: Any, **_kw: Any) -> tuple[Any, Any]:
         from app.services.of_intelligence.qc.daily_summary import build_daily_summary
+
         summary = await build_daily_summary(_a[0])
 
         class _R:
@@ -102,7 +103,9 @@ async def _make_client(
 
 
 @pytest.mark.asyncio
-async def test_dashboard_mock_returns_deterministic_payload(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_dashboard_mock_returns_deterministic_payload(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     async with _make_client(monkeypatch) as (client, _maker):
         res = await client.get("/api/v1/of-intelligence/qc/dashboard?mock=1")
         assert res.status_code == 200
@@ -179,26 +182,35 @@ async def test_fan_handle_only_appears_in_fan_opportunities_not_other_sections(
         async with maker() as session:
             session.add(
                 OfIntelligenceAccount(
-                    source="onlymonster", source_id="acct-1", username="luna",
+                    source="onlymonster",
+                    source_id="acct-1",
+                    username="luna",
                     access_status="active",
                 )
             )
             session.add(
                 OfIntelligenceChatter(
-                    source="onlymonster", source_id="ch-1", name="Mia", active=True,
+                    source="onlymonster",
+                    source_id="ch-1",
+                    name="Mia",
+                    active=True,
                 )
             )
             session.add(
                 OfIntelligenceFan(
-                    source="onlymonster", source_id="fan-1",
-                    account_source_id="acct-1", username="@private_fan",
+                    source="onlymonster",
+                    source_id="fan-1",
+                    account_source_id="acct-1",
+                    username="@private_fan",
                 )
             )
             msg_id = f"m-{uuid4().hex[:6]}"
             session.add(
                 OfIntelligenceMessage(
-                    source="onlymonster", source_id=msg_id,
-                    account_source_id="acct-1", chatter_source_id="ch-1",
+                    source="onlymonster",
+                    source_id=msg_id,
+                    account_source_id="acct-1",
+                    chatter_source_id="ch-1",
                     fan_source_id="fan-1",
                     direction="in",
                     sent_at=utcnow() - timedelta(minutes=10),
@@ -222,7 +234,15 @@ async def test_fan_handle_only_appears_in_fan_opportunities_not_other_sections(
         assert any(o.get("fan_handle") == "@private_fan" for o in body["fan_opportunities"])
         # @private_fan must NOT appear in any other section's serialised form.
         import json
-        for key in ("account_status", "revenue_warnings", "chatting_quality", "chatter_mistakes", "sync_health", "action_list"):
+
+        for key in (
+            "account_status",
+            "revenue_warnings",
+            "chatting_quality",
+            "chatter_mistakes",
+            "sync_health",
+            "action_list",
+        ):
             section_json = json.dumps(body[key])
             assert "@private_fan" not in section_json, f"fan handle leaked in {key}"
 
@@ -274,14 +294,17 @@ async def test_no_message_bodies_anywhere_in_dashboard_response(
         async with maker() as session:
             session.add(
                 OfIntelligenceAccount(
-                    source="onlymonster", source_id="acct-1",
-                    username="luna", access_status="active",
+                    source="onlymonster",
+                    source_id="acct-1",
+                    username="luna",
+                    access_status="active",
                 )
             )
             msg_id = f"m-{uuid4().hex[:6]}"
             session.add(
                 OfIntelligenceMessage(
-                    source="onlymonster", source_id=msg_id,
+                    source="onlymonster",
+                    source_id=msg_id,
                     account_source_id="acct-1",
                     direction="in",
                     sent_at=utcnow() - timedelta(minutes=10),

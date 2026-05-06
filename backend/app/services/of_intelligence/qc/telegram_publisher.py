@@ -68,7 +68,7 @@ class TelegramPublishResult:
     ok: bool
     status: int | None
     reason: str  # "ok" | "disabled" | "telegram_disabled" | "no_telegram"
-                 # | "no_telegram_chat" | "http_NNN" | "network_error" | "privacy_violation"
+    # | "no_telegram_chat" | "http_NNN" | "network_error" | "privacy_violation"
     elapsed_ms: int
 
 

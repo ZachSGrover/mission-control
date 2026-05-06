@@ -312,14 +312,10 @@ async def scan_critical_qc(
             seen.add(key)
 
             account_name = (
-                account_usernames.get(row.account_source_id)
-                if row.account_source_id
-                else None
+                account_usernames.get(row.account_source_id) if row.account_source_id else None
             )
             chatter_name = (
-                chatter_names.get(row.chatter_source_id)
-                if row.chatter_source_id
-                else None
+                chatter_names.get(row.chatter_source_id) if row.chatter_source_id else None
             )
             candidates.append(
                 CriticalQcCandidate(

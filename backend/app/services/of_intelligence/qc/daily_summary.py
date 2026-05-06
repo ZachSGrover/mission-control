@@ -83,9 +83,7 @@ async def build_daily_summary(
     # Accounts + chatters reviewed (anything synced in the window).
     account_rows = (
         await session.exec(
-            select(OfIntelligenceAccount).where(
-                OfIntelligenceAccount.last_synced_at >= cutoff
-            )
+            select(OfIntelligenceAccount).where(OfIntelligenceAccount.last_synced_at >= cutoff)
         )
     ).all()
     chatters_seen_chat = (
@@ -100,9 +98,7 @@ async def build_daily_summary(
     # Findings (Layer 2 details).
     findings = (
         await session.exec(
-            select(OfIntelligenceQcFinding).where(
-                OfIntelligenceQcFinding.created_at >= cutoff
-            )
+            select(OfIntelligenceQcFinding).where(OfIntelligenceQcFinding.created_at >= cutoff)
         )
     ).all()
 
@@ -117,16 +113,12 @@ async def build_daily_summary(
         pair_codes[(f.chatter_source_id, f.account_source_id, f.code)] += 1
 
     repeat_pairs = [
-        (ch_id, acct_id, code)
-        for (ch_id, acct_id, code), n in pair_codes.items()
-        if n >= 3
+        (ch_id, acct_id, code) for (ch_id, acct_id, code), n in pair_codes.items() if n >= 3
     ]
 
     # Resolve display names for the worst lists.
     account_names = {a.source_id: a.username for a in account_rows}
-    extra_account_ids = [
-        a for a in findings_by_account.keys() if a not in account_names
-    ]
+    extra_account_ids = [a for a in findings_by_account.keys() if a not in account_names]
     if extra_account_ids:
         more = (
             await session.exec(
@@ -139,21 +131,23 @@ async def build_daily_summary(
             account_names[a.source_id] = a.username
 
     chatter_rows = (
-        await session.exec(
-            select(OfIntelligenceChatter).where(
-                col(OfIntelligenceChatter.source_id).in_(set(findings_by_chatter.keys()))
+        (
+            await session.exec(
+                select(OfIntelligenceChatter).where(
+                    col(OfIntelligenceChatter.source_id).in_(set(findings_by_chatter.keys()))
+                )
             )
-        )
-    ).all() if findings_by_chatter else []
+        ).all()
+        if findings_by_chatter
+        else []
+    )
     chatter_names = {c.source_id: c.name for c in chatter_rows}
 
     worst_accounts = [
-        (account_names.get(aid) or "<account>", n)
-        for aid, n in findings_by_account.most_common(3)
+        (account_names.get(aid) or "<account>", n) for aid, n in findings_by_account.most_common(3)
     ]
     worst_chatters = [
-        (chatter_names.get(cid) or "<chatter>", n)
-        for cid, n in findings_by_chatter.most_common(3)
+        (chatter_names.get(cid) or "<chatter>", n) for cid, n in findings_by_chatter.most_common(3)
     ]
     repeat_offenders = sorted(
         {chatter_names.get(ch_id) or "<chatter>" for ch_id, _, _ in repeat_pairs}
@@ -161,9 +155,7 @@ async def build_daily_summary(
 
     # Open alerts (both layers).
     open_alerts = (
-        await session.exec(
-            select(OfIntelligenceAlert).where(OfIntelligenceAlert.status == "open")
-        )
+        await session.exec(select(OfIntelligenceAlert).where(OfIntelligenceAlert.status == "open"))
     ).all()
     critical_count = sum(1 for a in open_alerts if a.severity in _CRITICAL_SEVERITIES)
     layer1_open: list[str] = []
@@ -177,12 +169,11 @@ async def build_daily_summary(
             layer1_open.append(a.code)
 
     missed_sales = sum(
-        n for (ch, ac, code), n in pair_codes.items()
+        n
+        for (ch, ac, code), n in pair_codes.items()
         if code in ("missed_buying_signal", "weak_sales_handling")
     )
-    slow_responses = sum(
-        n for (ch, ac, code), n in pair_codes.items() if code == "slow_response"
-    )
+    slow_responses = sum(n for (ch, ac, code), n in pair_codes.items() if code == "slow_response")
     follow_ups_needed = sum(
         n for (ch, ac, code), n in pair_codes.items() if code == "missed_follow_up"
     )
@@ -234,13 +225,11 @@ def render_daily_summary(summary: DailySummary) -> str:
     ]
     if summary.worst_accounts:
         lines.append(
-            "Worst accounts: "
-            + ", ".join(f"{n} ({c})" for n, c in summary.worst_accounts)
+            "Worst accounts: " + ", ".join(f"{n} ({c})" for n, c in summary.worst_accounts)
         )
     if summary.worst_chatters:
         lines.append(
-            "Worst chatters: "
-            + ", ".join(f"{n} ({c})" for n, c in summary.worst_chatters)
+            "Worst chatters: " + ", ".join(f"{n} ({c})" for n, c in summary.worst_chatters)
         )
     if summary.repeat_offenders:
         lines.append("Repeat offenders: " + ", ".join(summary.repeat_offenders))
@@ -272,9 +261,7 @@ async def ship_daily_summary(
     """Build and ship the daily summary.  Returns (summary, publish_result)."""
     summary = await build_daily_summary(session, window_hours=window_hours)
     rendered = render_daily_summary(summary)
-    severity = (
-        Severity.HIGH if summary.critical_alert_count > 0 else Severity.MEDIUM
-    )
+    severity = Severity.HIGH if summary.critical_alert_count > 0 else Severity.MEDIUM
     result = await publish(
         rendered,
         code=DAILY_SUMMARY_CODE,

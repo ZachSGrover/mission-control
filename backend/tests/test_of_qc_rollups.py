@@ -29,9 +29,9 @@ from app.services.of_intelligence.qc.rollups import (
 
 
 @contextlib.asynccontextmanager
-async def _make_session(monkeypatch: pytest.MonkeyPatch) -> AsyncIterator[
-    tuple[AsyncSession, list[dict[str, Any]]]
-]:
+async def _make_session(
+    monkeypatch: pytest.MonkeyPatch,
+) -> AsyncIterator[tuple[AsyncSession, list[dict[str, Any]]]]:
     engine = create_async_engine("sqlite+aiosqlite:///:memory:")
     async with engine.connect() as conn, conn.begin():
         await conn.run_sync(SQLModel.metadata.create_all)
@@ -52,6 +52,7 @@ async def _make_session(monkeypatch: pytest.MonkeyPatch) -> AsyncIterator[
         return _R()
 
     monkeypatch.setattr(rollups, "publish", _fake_publish)
+
     # Also stub the underlying publisher so any direct call doesn't hit the
     # network.
     async def _fake_pub2(*_a: Any, **_kw: Any) -> object:
@@ -75,11 +76,7 @@ async def _make_session(monkeypatch: pytest.MonkeyPatch) -> AsyncIterator[
 
 async def _seed_chatter(session: AsyncSession, name: str) -> str:
     sid = f"ch-{uuid4().hex[:6]}"
-    session.add(
-        OfIntelligenceChatter(
-            source="onlymonster", source_id=sid, name=name, active=True
-        )
-    )
+    session.add(OfIntelligenceChatter(source="onlymonster", source_id=sid, name=name, active=True))
     await session.commit()
     return sid
 
@@ -146,7 +143,9 @@ async def test_rollup_fires_at_threshold_and_marks_findings(
         ch = await _seed_chatter(session, "Mia")
         ac = await _seed_account(session, "luna_main")
         for _ in range(3):
-            await _seed_finding(session, code="lazy_reply", chatter_source_id=ch, account_source_id=ac)
+            await _seed_finding(
+                session, code="lazy_reply", chatter_source_id=ch, account_source_id=ac
+            )
 
         result = await fire_rollup_if_due(session)
         assert result.alert_id is not None
@@ -161,9 +160,7 @@ async def test_rollup_fires_at_threshold_and_marks_findings(
         # Rollup alert row created.
         alerts = (
             await session.exec(
-                select(OfIntelligenceAlert).where(
-                    OfIntelligenceAlert.code == ROLLUP_ALERT_CODE
-                )
+                select(OfIntelligenceAlert).where(OfIntelligenceAlert.code == ROLLUP_ALERT_CODE)
             )
         ).all()
         assert len(alerts) == 1
@@ -193,9 +190,7 @@ async def test_rollup_below_escalation_threshold_uses_medium(
 
         alerts = (
             await session.exec(
-                select(OfIntelligenceAlert).where(
-                    OfIntelligenceAlert.code == ROLLUP_ALERT_CODE
-                )
+                select(OfIntelligenceAlert).where(OfIntelligenceAlert.code == ROLLUP_ALERT_CODE)
             )
         ).all()
         assert alerts[0].severity == "medium"
@@ -213,7 +208,9 @@ async def test_rollup_skips_already_rolled_findings(
         ch = await _seed_chatter(session, "Mia")
         ac = await _seed_account(session, "luna_main")
         for _ in range(3):
-            await _seed_finding(session, code="lazy_reply", chatter_source_id=ch, account_source_id=ac)
+            await _seed_finding(
+                session, code="lazy_reply", chatter_source_id=ch, account_source_id=ac
+            )
 
         await fire_rollup_if_due(session)
         assert len(captured) == 1
@@ -236,7 +233,9 @@ async def test_rollup_does_not_leak_source_ids(
         ch = await _seed_chatter(session, "Mia")
         ac = await _seed_account(session, "luna_main")
         for _ in range(2):
-            await _seed_finding(session, code="lazy_reply", chatter_source_id=ch, account_source_id=ac)
+            await _seed_finding(
+                session, code="lazy_reply", chatter_source_id=ch, account_source_id=ac
+            )
 
         await fire_rollup_if_due(session)
         rendered = captured[0]["rendered"]

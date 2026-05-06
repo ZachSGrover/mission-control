@@ -106,9 +106,7 @@ async def test_summary_aggregates_findings_and_alerts(
             )
         )
         session.add(
-            OfIntelligenceChatter(
-                source="onlymonster", source_id="ch-1", name="Mia", active=True
-            )
+            OfIntelligenceChatter(source="onlymonster", source_id="ch-1", name="Mia", active=True)
         )
         # 4 findings on (ch-1, acct-1, lazy_reply) → repeat offender
         for _ in range(4):

@@ -48,8 +48,10 @@ async def _make_session(
     class _FakeClient:
         async def __aenter__(self) -> "_FakeClient":
             return self
+
         async def __aexit__(self, *_a: object) -> None:
             return None
+
         async def post(self, url: str, *, json: dict[str, Any] | None = None) -> _FakeResp:
             captured.append({"url": url, "json": json or {}})
             return _FakeResp()
@@ -58,6 +60,7 @@ async def _make_session(
 
     async def _fake_get_token(_session: AsyncSession) -> str:
         return bot_token or ""
+
     monkeypatch.setattr(tp, "_get_bot_token", _fake_get_token)
 
     try:
@@ -147,14 +150,17 @@ async def test_http_4xx_returns_reason_not_raise(monkeypatch: pytest.MonkeyPatch
 @pytest.mark.asyncio
 async def test_network_error_returns_reason_not_raise(monkeypatch: pytest.MonkeyPatch) -> None:
     async with _make_session(monkeypatch) as (session, _):
+
         async def _boom_post(*_a: Any, **_kw: Any) -> Any:
             raise httpx.ConnectError("boom")
 
         class _BrokenClient:
             async def __aenter__(self) -> "_BrokenClient":
                 return self
+
             async def __aexit__(self, *_a: object) -> None:
                 return None
+
             post = _boom_post
 
         monkeypatch.setattr(tp.httpx, "AsyncClient", lambda *a, **kw: _BrokenClient())
@@ -185,9 +191,10 @@ async def test_rendered_text_has_no_fan_handle_or_body(monkeypatch: pytest.Monke
     must contain neither.  Telegram payload is re-derived from
     ``build_daily_summary``, which uses only safe fields."""
     from datetime import timedelta
+    from uuid import uuid4
+
     from app.core.time import utcnow
     from app.models.of_intelligence import OfIntelligenceFan, OfIntelligenceMessage
-    from uuid import uuid4
 
     async with _make_session(monkeypatch) as (session, captured):
         session.add(

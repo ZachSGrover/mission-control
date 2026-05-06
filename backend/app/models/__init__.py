@@ -13,6 +13,21 @@ from app.models.board_webhook_payloads import BoardWebhookPayload
 from app.models.board_webhooks import BoardWebhook
 from app.models.boards import Board
 from app.models.gateways import Gateway
+from app.models.of_intelligence import (
+    BusinessMemoryEntry,
+    OfIntelligenceAccount,
+    OfIntelligenceAlert,
+    OfIntelligenceChat,
+    OfIntelligenceChatter,
+    OfIntelligenceFan,
+    OfIntelligenceMassMessage,
+    OfIntelligenceMessage,
+    OfIntelligencePost,
+    OfIntelligenceQcReport,
+    OfIntelligenceRevenue,
+    OfIntelligenceSyncLog,
+    OfIntelligenceTrackingLink,
+)
 from app.models.organization_board_access import OrganizationBoardAccess
 from app.models.organization_invite_board_access import OrganizationInviteBoardAccess
 from app.models.organization_invites import OrganizationInvite
@@ -50,6 +65,19 @@ __all__ = [
     "MarketplaceSkill",
     "SkillPack",
     "Organization",
+    "BusinessMemoryEntry",
+    "OfIntelligenceAccount",
+    "OfIntelligenceAlert",
+    "OfIntelligenceChat",
+    "OfIntelligenceChatter",
+    "OfIntelligenceFan",
+    "OfIntelligenceMassMessage",
+    "OfIntelligenceMessage",
+    "OfIntelligencePost",
+    "OfIntelligenceQcReport",
+    "OfIntelligenceRevenue",
+    "OfIntelligenceSyncLog",
+    "OfIntelligenceTrackingLink",
     "BoardTaskCustomField",
     "TaskCustomFieldDefinition",
     "TaskCustomFieldValue",

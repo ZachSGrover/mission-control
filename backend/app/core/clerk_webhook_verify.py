@@ -22,11 +22,12 @@ signed) without touching the endpoint handler.
 from __future__ import annotations
 
 import hmac
-import logging
 import os
 from typing import Mapping
 
-logger = logging.getLogger(__name__)
+from app.core.logging import get_logger
+
+logger = get_logger(__name__)
 
 
 class WebhookVerificationError(RuntimeError):

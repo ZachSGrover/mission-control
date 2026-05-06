@@ -37,13 +37,13 @@ What this module does NOT do:
 
 from __future__ import annotations
 
-import logging
 from dataclasses import dataclass
 from typing import Final
 from uuid import UUID
 
 from sqlmodel.ext.asyncio.session import AsyncSession
 
+from app.core.logging import get_logger
 from app.services.audit_log import record_audit
 from app.services.onlymonster_fake_client import (
     FakeClientRefusedInProductionError,
@@ -52,7 +52,7 @@ from app.services.onlymonster_fake_client import (
 )
 from app.services.onlymonster_integration import fetch_creator_snapshot
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 CONNECTOR_TYPE: Final[str] = "onlymonster"

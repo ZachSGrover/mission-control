@@ -22,17 +22,17 @@ Design choices:
 
 from __future__ import annotations
 
-import logging
 import time
 from typing import Final
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse
 
+from app.core.logging import get_logger
 from app.db.session import async_session_maker
 from app.services.audit_log import record_audit
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 THROTTLE_WINDOW_SECONDS: Final[int] = 300
 

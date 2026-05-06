@@ -28,18 +28,18 @@ Why this fake exists:
 
 from __future__ import annotations
 
-import logging
 import os
 from typing import Any, Final
 
 from app.core import startup_guard
+from app.core.logging import get_logger
 from app.core.onlyfans_direct_client import AbstractOnlyFansReadOnlyClient
 from app.core.onlyfans_direct_credentials import (
     assert_no_forbidden_credential_keys,
 )
 from app.services.onlyfans_direct_fixtures import fixture_payload_for
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 ENV_ALLOW_FAKE_IN_PROD: Final[str] = "MC_OF_DIRECT_ALLOW_FAKE_CLIENT"

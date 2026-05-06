@@ -27,7 +27,6 @@ Contracts:
 from __future__ import annotations
 
 import json
-import logging
 import os
 from typing import Any
 
@@ -39,10 +38,11 @@ from app.core.clerk_webhook_verify import (
     WebhookVerificationError,
     verify_webhook,
 )
+from app.core.logging import get_logger
 from app.db.session import get_session
 from app.services.audit_log import record_audit
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 router = APIRouter(prefix="/webhooks/clerk", tags=["webhooks"])
 

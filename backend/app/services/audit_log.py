@@ -23,12 +23,12 @@ Design choices:
 
 from __future__ import annotations
 
-import logging
 from typing import Final, Literal
 from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.logging import get_logger
 from app.core.redact import redact_metadata
 from app.models.audit_events import (
     AUDIT_CATEGORIES,
@@ -37,7 +37,7 @@ from app.models.audit_events import (
     AuditEvent,
 )
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 AuditCategory = Literal[
     "auth",

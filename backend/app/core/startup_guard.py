@@ -12,12 +12,11 @@ the guard is environment-aware.
 
 from __future__ import annotations
 
-import logging
-
 from app.core.config import settings as app_settings
+from app.core.logging import get_logger
 from app.core.secrets_store import is_dedicated_encryption_key_configured
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 class InsecureProductionStartupError(RuntimeError):

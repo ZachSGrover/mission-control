@@ -37,9 +37,9 @@ When Sprint 8D wires real reads, the changes happen here:
 
 from __future__ import annotations
 
-import logging
 from typing import Any, Final
 
+from app.core.logging import get_logger
 from app.core.onlyfans_direct_client import AbstractOnlyFansReadOnlyClient
 from app.core.onlyfans_direct_credential_ref import CredentialReference
 from app.core.onlyfans_direct_credentials import (
@@ -59,7 +59,7 @@ from app.services.onlyfans_direct_transport import (
     UnexpectedStatusError,
 )
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 # Sprint 8D paths used by the three implemented reads. Kept here

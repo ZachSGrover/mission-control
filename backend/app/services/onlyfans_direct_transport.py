@@ -39,7 +39,6 @@ Status surface:
 from __future__ import annotations
 
 import json as _json
-import logging
 import os
 from dataclasses import dataclass, field
 from typing import Any, Awaitable, Callable, Final, Mapping, Protocol, runtime_checkable
@@ -53,7 +52,9 @@ from typing import Any, Awaitable, Callable, Final, Mapping, Protocol, runtime_c
 # module must remain network-import-free.
 import httpx
 
-logger = logging.getLogger(__name__)
+from app.core.logging import get_logger
+
+logger = get_logger(__name__)
 
 
 # Sprint 8D requires *both* the sandbox flag (Sprint 8C) and a new

@@ -30,7 +30,6 @@ the dry-run path is the contract.
 
 from __future__ import annotations
 
-import logging
 import os
 from dataclasses import dataclass
 from typing import Any, Final, Literal
@@ -39,6 +38,7 @@ from uuid import UUID
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.core.connector_gate import GateVerdict, is_connector_action_allowed
+from app.core.logging import get_logger
 from app.core.onlyfans_direct_client import (
     READ_ACTION_TO_METHOD,
     OnlyFansReadOnlyClient,
@@ -61,7 +61,7 @@ from app.core.onlyfans_direct_rate_policy import (
 from app.services.audit_log import record_audit
 from app.services.onlyfans_direct_fixtures import fixture_payload_for
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 CONNECTOR_TYPE: Final[str] = "onlyfans_direct"

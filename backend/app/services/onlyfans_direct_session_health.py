@@ -23,15 +23,15 @@ set of buckets, not free-form strings carrying details.
 
 from __future__ import annotations
 
-import logging
 from typing import Final, Literal, Protocol, runtime_checkable
 from uuid import UUID
 
 from sqlmodel.ext.asyncio.session import AsyncSession
 
+from app.core.logging import get_logger
 from app.services.audit_log import record_audit
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 CONNECTOR_TYPE: Final[str] = "onlyfans_direct"

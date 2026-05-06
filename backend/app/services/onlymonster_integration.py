@@ -34,19 +34,19 @@ trail sees the gate is alive.
 
 from __future__ import annotations
 
-import logging
 from dataclasses import dataclass
 from typing import Any
 from uuid import UUID
 
 from sqlmodel.ext.asyncio.session import AsyncSession
 
+from app.core.logging import get_logger
 from app.services.audit_log import record_audit
 from app.services.gated_onlymonster_sync import (
     gated_onlymonster_creator_sync,
 )
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 # Used by the test suite to demonstrate the seam without a real client.

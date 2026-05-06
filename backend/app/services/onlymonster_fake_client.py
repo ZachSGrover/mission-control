@@ -32,14 +32,14 @@ to use the real client or the fake based on env flag and presence.
 
 from __future__ import annotations
 
-import logging
 import os
 from dataclasses import dataclass
 from typing import Any, Final, Protocol
 
 from app.core import startup_guard
+from app.core.logging import get_logger
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 ENV_ALLOW_FAKE_IN_PROD: Final[str] = "MC_ONLYMONSTER_ALLOW_FAKE_CLIENT"

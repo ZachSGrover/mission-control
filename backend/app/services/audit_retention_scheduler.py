@@ -25,10 +25,10 @@ the operational team has signed off on the retention windows.
 from __future__ import annotations
 
 import asyncio
-import logging
 import os
 from typing import Final
 
+from app.core.logging import get_logger
 from app.db.session import async_session_maker
 from app.services.audit_log import record_audit
 from app.services.audit_retention import (
@@ -36,7 +36,7 @@ from app.services.audit_retention import (
     purge_old_audit_events,
 )
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 # How often the supervisor wakes up to run a pass. Default 24h — a
 # weekly real purge is what the security plan calls for, but a daily

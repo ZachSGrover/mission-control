@@ -37,12 +37,12 @@ transport / connector wrapper handles that.
 from __future__ import annotations
 
 import json
-import logging
 from dataclasses import dataclass
 from typing import Any, Final
 
 from sqlmodel.ext.asyncio.session import AsyncSession
 
+from app.core.logging import get_logger
 from app.core.onlyfans_direct_credential_ref import (
     ALLOWED_PROVIDER,
     CredentialReference,
@@ -54,7 +54,7 @@ from app.services.onlyfans_direct_transport import (
     CredentialMaterial,
 )
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 # Wire-shape allowlist. Stored credentials for the OnlyFans direct

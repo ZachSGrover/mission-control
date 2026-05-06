@@ -333,6 +333,95 @@ export const ofiApi = {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body),
     }),
+
+  qcDashboard:   (f: FetchFn, mock = false) =>
+    jsonRequest<QcDashboardPayload>(f, `/qc/dashboard${mock ? "?mock=1" : ""}`),
+  shipDailySummary: (f: FetchFn, channel: "discord" | "telegram" = "discord") =>
+    jsonRequest<DailySummaryShipResult>(f, `/qc/daily-summary?channel=${channel}`, {
+      method: "POST",
+    }),
+};
+
+// ── QC Dashboard payload types — mirror backend ────────────────────────────────
+
+export type QcDashboardAccountStatus = {
+  account_id: string;
+  username: string | null;
+  health_status: string;
+  last_synced_at: string | null;
+  hours_since_sync: number | null;
+  revenue_24h_cents: number;
+  revenue_7d_avg_cents: number;
+  open_layer1_codes: string[];
+  open_layer2_codes: string[];
+};
+
+export type QcDashboardRevenueWarning = {
+  account_id: string;
+  username: string | null;
+  revenue_24h_cents: number;
+  revenue_7d_avg_cents: number;
+  severity: string;
+  reason: string;
+  dashboard_ref: string;
+};
+
+export type QcDashboardChattingQuality = {
+  account_id: string;
+  username: string | null;
+  total_findings: number;
+  critical_count: number;
+  high_count: number;
+  top_codes: [string, number][];
+  worst_chatter: string | null;
+};
+
+export type QcDashboardChatterMistake = {
+  chatter_name: string;
+  code: string;
+  count: number;
+  accounts_affected: number;
+  dashboard_ref: string;
+};
+
+export type QcDashboardFanOpportunity = {
+  finding_id: string;
+  code: string;
+  severity: string;
+  account_username: string | null;
+  chatter_name: string | null;
+  fan_handle: string | null;
+  age_minutes: number;
+  dashboard_ref: string;
+};
+
+export type QcDashboardSyncHealth = {
+  last_success_per_entity: Record<string, string | null>;
+  error_count_24h: number;
+  stale_account_count: number;
+  api_disconnected: boolean;
+};
+
+export type QcDashboardPayload = {
+  generated_at: string;
+  account_status: QcDashboardAccountStatus[];
+  revenue_warnings: QcDashboardRevenueWarning[];
+  chatting_quality: QcDashboardChattingQuality[];
+  chatter_mistakes: QcDashboardChatterMistake[];
+  fan_opportunities: QcDashboardFanOpportunity[];
+  sync_health: QcDashboardSyncHealth;
+  action_list: string[];
+  mock: boolean;
+};
+
+export type DailySummaryShipResult = {
+  generated_at: string;
+  total_findings: number;
+  critical_alert_count: number;
+  publish_ok: boolean;
+  publish_reason: string;
+  publish_status: number | null;
+  channel: string;
 };
 
 // ── Display helpers ───────────────────────────────────────────────────────────

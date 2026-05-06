@@ -296,6 +296,103 @@ class AlertEvaluationResponse(BaseModel):
     rules_run: int
     alerts_created: int
     alerts_skipped_existing: int
+    chatter_findings_persisted: int = 0
+    rollup_findings: int = 0
+    rollup_alert_id: str | None = None
+
+
+class DailySummaryResponse(BaseModel):
+    generated_at: datetime
+    accounts_reviewed: int
+    chats_reviewed: int
+    total_findings: int
+    critical_alert_count: int
+    worst_accounts: list[tuple[str, int]] = []
+    worst_chatters: list[tuple[str, int]] = []
+    repeat_offenders: list[str] = []
+    missed_sales_signals: int = 0
+    slow_responses: int = 0
+    follow_ups_needed: int = 0
+    layer1_open_alerts: list[str] = []
+    layer2_open_alerts: list[str] = []
+    actions: list[str] = []
+    publish_ok: bool
+    publish_reason: str
+    publish_status: int | None = None
+    channel: str = "discord"
+
+
+# ── Dashboard payload schemas ────────────────────────────────────────────────
+
+
+class DashboardAccountStatus(BaseModel):
+    account_id: str
+    username: str | None
+    health_status: str
+    last_synced_at: datetime | None
+    hours_since_sync: int | None
+    revenue_24h_cents: int
+    revenue_7d_avg_cents: int
+    open_layer1_codes: list[str]
+    open_layer2_codes: list[str]
+
+
+class DashboardRevenueWarning(BaseModel):
+    account_id: str
+    username: str | None
+    revenue_24h_cents: int
+    revenue_7d_avg_cents: int
+    severity: str
+    reason: str
+    dashboard_ref: str
+
+
+class DashboardChattingQuality(BaseModel):
+    account_id: str
+    username: str | None
+    total_findings: int
+    critical_count: int
+    high_count: int
+    top_codes: list[tuple[str, int]]
+    worst_chatter: str | None
+
+
+class DashboardChatterMistake(BaseModel):
+    chatter_name: str
+    code: str
+    count: int
+    accounts_affected: int
+    dashboard_ref: str
+
+
+class DashboardFanOpportunity(BaseModel):
+    finding_id: str
+    code: str
+    severity: str
+    account_username: str | None
+    chatter_name: str | None
+    fan_handle: str | None  # dashboard-only; never reaches Discord/Telegram
+    age_minutes: int
+    dashboard_ref: str
+
+
+class DashboardSyncHealth(BaseModel):
+    last_success_per_entity: dict[str, datetime | None]
+    error_count_24h: int
+    stale_account_count: int
+    api_disconnected: bool
+
+
+class DashboardResponse(BaseModel):
+    generated_at: datetime
+    account_status: list[DashboardAccountStatus]
+    revenue_warnings: list[DashboardRevenueWarning]
+    chatting_quality: list[DashboardChattingQuality]
+    chatter_mistakes: list[DashboardChatterMistake]
+    fan_opportunities: list[DashboardFanOpportunity]
+    sync_health: DashboardSyncHealth
+    action_list: list[str]
+    mock: bool = False
 
 
 class MemoryEntryRow(BaseModel):
@@ -764,6 +861,185 @@ async def trigger_alert_evaluation(
         rules_run=summary.rules_run,
         alerts_created=summary.alerts_created,
         alerts_skipped_existing=summary.alerts_skipped_existing,
+        chatter_findings_persisted=summary.chatter_findings_persisted,
+        rollup_findings=summary.rollup_findings,
+        rollup_alert_id=summary.rollup_alert_id,
+    )
+
+
+@router.post("/qc/daily-summary", response_model=DailySummaryResponse)
+async def trigger_daily_summary(
+    channel: str = "discord",
+    _role: str = OWNER_DEP,
+    session: AsyncSession = SESSION_DEP,
+) -> DailySummaryResponse:
+    """Build + ship the daily QC scorecard.
+
+    Owner-only.  Bypasses the kill switch (operator-initiated, must surface
+    even if real-alert toggle is off) but still requires a saved webhook
+    (Discord) or token + chat id (Telegram).
+
+    ``channel=discord`` (default) ships via the existing webhook publisher.
+    ``channel=telegram`` ships via the safe-summary Telegram publisher and
+    returns ``publish_reason="no_telegram"`` if Telegram isn't configured.
+    """
+    selected = (channel or "discord").strip().lower()
+    if selected not in ("discord", "telegram"):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="channel must be 'discord' or 'telegram'.",
+        )
+
+    if selected == "telegram":
+        from app.services.of_intelligence.qc.telegram_publisher import (
+            ship_daily_summary_telegram,
+        )
+
+        summary, tg_result = await ship_daily_summary_telegram(session, bypass_kill_switch=True)
+        return DailySummaryResponse(
+            generated_at=summary.generated_at,
+            accounts_reviewed=summary.accounts_reviewed,
+            chats_reviewed=summary.chats_reviewed,
+            total_findings=summary.total_findings,
+            critical_alert_count=summary.critical_alert_count,
+            worst_accounts=list(summary.worst_accounts),
+            worst_chatters=list(summary.worst_chatters),
+            repeat_offenders=list(summary.repeat_offenders),
+            missed_sales_signals=summary.missed_sales_signals,
+            slow_responses=summary.slow_responses,
+            follow_ups_needed=summary.follow_ups_needed,
+            layer1_open_alerts=list(summary.layer1_open_alerts),
+            layer2_open_alerts=list(summary.layer2_open_alerts),
+            actions=list(summary.actions),
+            publish_ok=tg_result.ok,
+            publish_reason=tg_result.reason,
+            publish_status=tg_result.status,
+            channel="telegram",
+        )
+
+    from app.services.of_intelligence.qc.daily_summary import ship_daily_summary
+
+    summary, result = await ship_daily_summary(session, bypass_kill_switch=True)
+    return DailySummaryResponse(
+        generated_at=summary.generated_at,
+        accounts_reviewed=summary.accounts_reviewed,
+        chats_reviewed=summary.chats_reviewed,
+        total_findings=summary.total_findings,
+        critical_alert_count=summary.critical_alert_count,
+        worst_accounts=list(summary.worst_accounts),
+        worst_chatters=list(summary.worst_chatters),
+        repeat_offenders=list(summary.repeat_offenders),
+        missed_sales_signals=summary.missed_sales_signals,
+        slow_responses=summary.slow_responses,
+        follow_ups_needed=summary.follow_ups_needed,
+        layer1_open_alerts=list(summary.layer1_open_alerts),
+        layer2_open_alerts=list(summary.layer2_open_alerts),
+        actions=list(summary.actions),
+        publish_ok=result.ok,
+        publish_reason=result.reason,
+        publish_status=result.status,
+        channel="discord",
+    )
+
+
+@router.get("/qc/dashboard", response_model=DashboardResponse)
+async def get_qc_dashboard(
+    mock: int = 0,
+    _role: str = OWNER_DEP,
+    session: AsyncSession = SESSION_DEP,
+) -> DashboardResponse:
+    """Read-only Daily QC Dashboard payload (Layer 3 view).
+
+    Owner-only.  Includes per-account status, revenue warnings, chatting
+    quality, top chatter mistakes, fan opportunities (the only section
+    that may include fan handles), sync health, and the Layer-3 action
+    list.
+
+    ``?mock=1`` returns a deterministic fixture without touching the DB —
+    used by frontend dev and CI.
+    """
+    from app.services.of_intelligence.qc.dashboard import (
+        build_dashboard,
+        build_mock_payload,
+    )
+
+    payload = build_mock_payload() if mock else await build_dashboard(session)
+
+    return DashboardResponse(
+        generated_at=payload.generated_at,
+        account_status=[
+            DashboardAccountStatus(
+                account_id=a.account_id,
+                username=a.username,
+                health_status=a.health_status,
+                last_synced_at=a.last_synced_at,
+                hours_since_sync=a.hours_since_sync,
+                revenue_24h_cents=a.revenue_24h_cents,
+                revenue_7d_avg_cents=a.revenue_7d_avg_cents,
+                open_layer1_codes=a.open_layer1_codes,
+                open_layer2_codes=a.open_layer2_codes,
+            )
+            for a in payload.account_status
+        ],
+        revenue_warnings=[
+            DashboardRevenueWarning(
+                account_id=w.account_id,
+                username=w.username,
+                revenue_24h_cents=w.revenue_24h_cents,
+                revenue_7d_avg_cents=w.revenue_7d_avg_cents,
+                severity=w.severity,
+                reason=w.reason,
+                dashboard_ref=w.dashboard_ref,
+            )
+            for w in payload.revenue_warnings
+        ],
+        chatting_quality=[
+            DashboardChattingQuality(
+                account_id=q.account_id,
+                username=q.username,
+                total_findings=q.total_findings,
+                critical_count=q.critical_count,
+                high_count=q.high_count,
+                top_codes=q.top_codes,
+                worst_chatter=q.worst_chatter,
+            )
+            for q in payload.chatting_quality
+        ],
+        chatter_mistakes=[
+            DashboardChatterMistake(
+                chatter_name=m.chatter_name,
+                code=m.code,
+                count=m.count,
+                accounts_affected=m.accounts_affected,
+                dashboard_ref=m.dashboard_ref,
+            )
+            for m in payload.chatter_mistakes
+        ],
+        fan_opportunities=[
+            DashboardFanOpportunity(
+                finding_id=o.finding_id,
+                code=o.code,
+                severity=o.severity,
+                account_username=o.account_username,
+                chatter_name=o.chatter_name,
+                fan_handle=o.fan_handle,
+                age_minutes=o.age_minutes,
+                dashboard_ref=o.dashboard_ref,
+            )
+            for o in payload.fan_opportunities
+        ],
+        sync_health=DashboardSyncHealth(
+            last_success_per_entity=(
+                payload.sync_health.last_success_per_entity if payload.sync_health else {}
+            ),
+            error_count_24h=payload.sync_health.error_count_24h if payload.sync_health else 0,
+            stale_account_count=(
+                payload.sync_health.stale_account_count if payload.sync_health else 0
+            ),
+            api_disconnected=payload.sync_health.api_disconnected if payload.sync_health else False,
+        ),
+        action_list=list(payload.action_list),
+        mock=bool(mock),
     )
 
 

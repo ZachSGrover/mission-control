@@ -16,13 +16,16 @@ from app.core.auth import AuthContext, get_auth_context
 from app.core.secrets_store import (
     GITHUB_KEYS,
     PROVIDER_KEYS,
-    delete_secret,
     get_api_key_with_source,
     get_secret,
     mask_key,
-    set_secret,
 )
 from app.db.session import get_session
+from app.services.audit_log import record_audit_event
+from app.services.settings_scope import (
+    delete_secret_scoped,
+    set_secret_scoped,
+)
 
 router = APIRouter(prefix="/settings", tags=["settings"])
 AUTH_DEP = Depends(get_auth_context)
@@ -84,8 +87,8 @@ async def get_api_keys(
 async def upsert_api_key(
     provider: str,
     body: SetApiKeyRequest,
-    _: AuthContext = AUTH_DEP,
-    _role: str = Depends(require_owner),
+    auth: AuthContext = AUTH_DEP,
+    role: str = Depends(require_owner),
     session: AsyncSession = SESSION_DEP,
 ) -> ApiKeyStatus:
     """Save an API key for the given provider.  Takes effect immediately."""
@@ -101,15 +104,30 @@ async def upsert_api_key(
             detail="Key value must not be empty.",
         )
     db_key = PROVIDER_KEYS[provider]
-    await set_secret(session, db_key, key_value)
+    await set_secret_scoped(session, db_key, key_value, organization_id=None)
+    await record_audit_event(
+        session,
+        event_type="settings.api_key.save",
+        category="credential",
+        action="put",
+        result="success",
+        severity="warning",
+        actor_user_id=auth.user.id if auth.user else None,
+        actor_email=auth.user.email if auth.user else None,
+        actor_role=role,
+        resource_type="api_key",
+        resource_id=provider,
+        metadata={"provider": provider, "preview": mask_key(key_value)},
+    )
+    await session.commit()
     return ApiKeyStatus(configured=True, preview=mask_key(key_value))
 
 
 @router.delete("/api-keys/{provider}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_api_key(
     provider: str,
-    _: AuthContext = AUTH_DEP,
-    _role: str = Depends(require_owner),
+    auth: AuthContext = AUTH_DEP,
+    role: str = Depends(require_owner),
     session: AsyncSession = SESSION_DEP,
 ) -> None:
     """Remove the stored API key for the given provider (reverts to .env if set)."""
@@ -119,7 +137,22 @@ async def delete_api_key(
             detail=f"Unknown provider '{provider}'. Valid: {sorted(PROVIDER_KEYS)}",
         )
     db_key = PROVIDER_KEYS[provider]
-    await delete_secret(session, db_key)
+    await delete_secret_scoped(session, db_key, organization_id=None)
+    await record_audit_event(
+        session,
+        event_type="settings.api_key.delete",
+        category="credential",
+        action="delete",
+        result="success",
+        severity="high",
+        actor_user_id=auth.user.id if auth.user else None,
+        actor_email=auth.user.email if auth.user else None,
+        actor_role=role,
+        resource_type="api_key",
+        resource_id=provider,
+        metadata={"provider": provider},
+    )
+    await session.commit()
 
 
 # ── GitHub credentials ────────────────────────────────────────────────────────
@@ -171,8 +204,8 @@ async def get_github_settings(
 async def upsert_github_field(
     field: str,
     body: SetGitHubFieldRequest,
-    _: AuthContext = AUTH_DEP,
-    _role: str = Depends(require_owner),
+    auth: AuthContext = AUTH_DEP,
+    role: str = Depends(require_owner),
     session: AsyncSession = SESSION_DEP,
 ) -> GitHubFieldStatus:
     """Save a GitHub credential field. Takes effect immediately."""
@@ -188,16 +221,32 @@ async def upsert_github_field(
             detail="Value must not be empty.",
         )
     db_key = GITHUB_KEYS[field]
-    await set_secret(session, db_key, value)
+    await set_secret_scoped(session, db_key, value, organization_id=None)
     preview = mask_key(value) if field == "github_pat" else value
+    await record_audit_event(
+        session,
+        event_type="settings.github.save",
+        category="credential",
+        action="put",
+        result="success",
+        # PAT is high-sensitivity; username/repo are routine config.
+        severity="high" if field == "github_pat" else "info",
+        actor_user_id=auth.user.id if auth.user else None,
+        actor_email=auth.user.email if auth.user else None,
+        actor_role=role,
+        resource_type="github_field",
+        resource_id=field,
+        metadata={"field": field, "preview": preview},
+    )
+    await session.commit()
     return GitHubFieldStatus(configured=True, preview=preview)
 
 
 @router.delete("/github/{field}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_github_field(
     field: str,
-    _: AuthContext = AUTH_DEP,
-    _role: str = Depends(require_owner),
+    auth: AuthContext = AUTH_DEP,
+    role: str = Depends(require_owner),
     session: AsyncSession = SESSION_DEP,
 ) -> None:
     """Remove a stored GitHub credential (reverts to .env fallback if set)."""
@@ -207,4 +256,19 @@ async def delete_github_field(
             detail=f"Unknown field '{field}'. Valid: {sorted(GITHUB_KEYS)}",
         )
     db_key = GITHUB_KEYS[field]
-    await delete_secret(session, db_key)
+    await delete_secret_scoped(session, db_key, organization_id=None)
+    await record_audit_event(
+        session,
+        event_type="settings.github.delete",
+        category="credential",
+        action="delete",
+        result="success",
+        severity="high" if field == "github_pat" else "info",
+        actor_user_id=auth.user.id if auth.user else None,
+        actor_email=auth.user.email if auth.user else None,
+        actor_role=role,
+        resource_type="github_field",
+        resource_id=field,
+        metadata={"field": field},
+    )
+    await session.commit()

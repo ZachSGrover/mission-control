@@ -142,14 +142,22 @@ export default function EditGatewayPage() {
 
     setError(null);
 
+    // Sprint 5: API responses now mask the legacy ``token`` field.
+    // Only include ``token`` in the patch when the user actually typed
+    // a value, so editing the URL or workspace_root does not clobber a
+    // configured token. To rotate the token, the user types the new
+    // value (which becomes a non-empty ``gatewayToken``).
+    const userTypedToken = (gatewayToken ?? "").trim();
     const payload: GatewayUpdate = {
       name: resolvedName.trim(),
       url: resolvedGatewayUrl.trim(),
-      token: resolvedGatewayToken.trim() || null,
       disable_device_pairing: resolvedDisableDevicePairing,
       workspace_root: resolvedWorkspaceRoot.trim(),
       allow_insecure_tls: resolvedAllowInsecureTls,
     };
+    if (userTypedToken) {
+      payload.token = userTypedToken;
+    }
 
     updateMutation.mutate({ gatewayId, data: payload });
   };

@@ -14,7 +14,11 @@ from app.models.board_webhook_payloads import BoardWebhookPayload
 from app.models.board_webhooks import BoardWebhook
 from app.models.boards import Board
 from app.models.bot_registry import BotRegistryEntry
+from app.models.client_consents import ClientConsent
+from app.models.connector_approvals import ConnectorApproval
+from app.models.creator_credentials import CreatorCredential
 from app.models.gateways import Gateway
+from app.models.kill_switches import KillSwitch
 from app.models.of_intelligence import (
     BusinessMemoryEntry,
     OfIntelligenceAccount,
@@ -67,7 +71,11 @@ __all__ = [
     "BoardOnboardingSession",
     "BoardGroup",
     "Board",
+    "ClientConsent",
+    "ConnectorApproval",
+    "CreatorCredential",
     "Gateway",
+    "KillSwitch",
     "GatewayInstalledSkill",
     "MarketplaceSkill",
     "SkillPack",

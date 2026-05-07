@@ -16,6 +16,14 @@ export interface GatewayRead {
   name: string;
   organization_id: string;
   token?: string | null;
+  /**
+   * Sprint 4 hardening: present iff a token is configured for this gateway.
+   * Set by the backend's GatewayRead schema validator without exposing the
+   * token value or its preview. Added manually after PR #21 reconciliation;
+   * a future ``npm run api:gen`` against a running backend will regenerate
+   * this file with the same field.
+   */
+  token_configured?: boolean;
   updated_at: string;
   url: string;
   workspace_root: string;

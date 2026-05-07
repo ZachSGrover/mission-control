@@ -23,6 +23,7 @@ from app.api.board_onboarding import router as board_onboarding_router
 from app.api.board_webhooks import router as board_webhooks_router
 from app.api.boards import router as boards_router
 from app.api.bots import router as bots_router
+from app.api.clerk_webhooks import router as clerk_webhooks_router
 from app.api.control_agents import router as control_agents_router
 from app.api.control_devices import router as control_devices_router
 from app.api.control_tasks import router as control_tasks_router
@@ -46,6 +47,7 @@ from app.api.of_qc_scheduler import router as of_qc_scheduler_router
 from app.api.openai_chat import router as openai_chat_router
 from app.api.operator import router as operator_router
 from app.api.organizations import router as organizations_router
+from app.api.security_admin import router as security_admin_router
 from app.api.skills_marketplace import router as skills_marketplace_router
 from app.api.souls_directory import router as souls_directory_router
 from app.api.synthesize import router as synthesize_router
@@ -494,6 +496,12 @@ async def lifespan(_: FastAPI) -> AsyncIterator[None]:
         settings.environment,
         settings.db_auto_migrate,
     )
+    # Sprint 3 hardening: refuse to start in production without a
+    # dedicated SETTINGS_ENCRYPTION_KEY. Local/dev/test fall back as
+    # before for ergonomics.
+    from app.core.startup_guard import assert_production_encryption_configured
+
+    assert_production_encryption_configured()
     await init_db()
     _log_key_availability()
 
@@ -524,6 +532,7 @@ async def lifespan(_: FastAPI) -> AsyncIterator[None]:
 
     from app.core import network_monitor as _netmon
     from app.core import telegram_polling as _tgpoll
+    from app.services import audit_retention_scheduler as _retention
     from app.services.of_intelligence.qc import scheduler as _qc_scheduler
 
     _bg_stop = _asyncio.Event()
@@ -539,6 +548,16 @@ async def lifespan(_: FastAPI) -> AsyncIterator[None]:
         # the supervisor from even starting.
         _asyncio.create_task(_qc_scheduler.run_supervisor(_bg_stop), name="of_qc_scheduler"),
     ]
+    # Sprint 5: register the audit-retention supervisor. The supervisor
+    # itself refuses to do anything unless ``MC_AUDIT_RETENTION_ENABLED=1``
+    # is set; we still spawn the task so the operator opting in via env
+    # var doesn't need a redeploy.
+    _bg_tasks.append(
+        _asyncio.create_task(
+            _retention.run_retention_supervisor(_bg_stop),
+            name="audit_retention_supervisor",
+        )
+    )
     logger.info("app.lifecycle.background_tasks_started count=%d", len(_bg_tasks))
 
     logger.info("app.lifecycle.started")
@@ -562,6 +581,13 @@ app = MissionControlFastAPI(
     lifespan=lifespan,
     openapi_tags=OPENAPI_TAGS,
 )
+
+# Sprint 3 hardening: audit 401 / 403 responses with throttling. The
+# handler is registered before any router so it catches denials from
+# every dependency.
+from app.core.denial_audit import install_denial_audit_handler  # noqa: E402
+
+install_denial_audit_handler(app)
 
 # Known production frontend origins — always allowed even if not in CORS_ORIGINS env var.
 # Update this list when adding new custom domains or Render service URLs.
@@ -686,6 +712,8 @@ api_v1.include_router(judge_router)
 api_v1.include_router(synthesize_router)
 api_v1.include_router(operator_router)
 api_v1.include_router(app_settings_router)
+api_v1.include_router(security_admin_router)
+api_v1.include_router(clerk_webhooks_router)
 api_v1.include_router(integrations_router)
 api_v1.include_router(git_save_router)
 api_v1.include_router(mc_roles_router)

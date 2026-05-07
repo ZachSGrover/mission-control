@@ -18,9 +18,14 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.api.mc_roles import require_owner
 from app.core.auth import AuthContext, get_auth_context
-from app.core.secrets_store import delete_secret, get_secret_with_source, mask_key, set_secret
+from app.core.secrets_store import mask_key
 from app.db.session import get_session
 from app.services.audit_log import actor_from_auth, record_audit
+from app.services.settings_scope import (
+    delete_secret_scoped,
+    get_secret_scoped,
+    set_secret_scoped,
+)
 
 router = APIRouter(prefix="/integrations", tags=["integrations"])
 AUTH_DEP = Depends(get_auth_context)
@@ -93,10 +98,14 @@ async def list_integrations(
     Owner-only.  Even masked previews of integration keys are gated to the
     owner so operator/builder/viewer roles cannot enumerate which platform
     credentials are wired up.
+
+    Sprint 6: route through the scoped wrapper. ``organization_id=None``
+    keeps legacy global behaviour today; future sprints can resolve the
+    caller's org context and pass it here without re-touching this file.
     """
     result: list[IntegrationStatus] = []
     for name, db_key in INTEGRATION_KEYS.items():
-        value, source = await get_secret_with_source(session, db_key)
+        value, source = await get_secret_scoped(session, db_key, organization_id=None)
         configured = bool(value and value.strip())
         meta = INTEGRATION_META[name]
         result.append(
@@ -120,7 +129,7 @@ async def save_credential(
     body: SetCredentialRequest,
     request: Request,
     auth: AuthContext = AUTH_DEP,
-    _role: str = OWNER_DEP,
+    role: str = OWNER_DEP,
     session: AsyncSession = SESSION_DEP,
 ) -> IntegrationStatus:
     """Save or update the API key for an integration. Takes effect immediately."""
@@ -136,15 +145,19 @@ async def save_credential(
             detail="Credential value must not be empty.",
         )
     db_key = INTEGRATION_KEYS[name]
-    await set_secret(session, db_key, value)
+    # Sprint 6: route credential write through the scoped wrapper so
+    # future per-org isolation lands without re-touching this file.
+    await set_secret_scoped(session, db_key, value, organization_id=None)
     actor_id, actor_email = actor_from_auth(auth)
     # Privacy: never include the credential value or its preview in the
     # audit row.  We only record that a write happened for this integration.
+    # Uses PR #21's canonical record_audit signature so the integration row
+    # joins the same audit_events stream as role/allowlist/bot operations.
     await record_audit(
         session,
         actor_clerk_user_id=actor_id,
         actor_email=actor_email,
-        actor_role="owner",
+        actor_role=role,
         action="integration.write",
         target_type="integration",
         target_id=name,
@@ -171,7 +184,7 @@ async def delete_credential(
     name: str,
     request: Request,
     auth: AuthContext = AUTH_DEP,
-    _role: str = OWNER_DEP,
+    role: str = OWNER_DEP,
     session: AsyncSession = SESSION_DEP,
 ) -> None:
     """Remove the stored credential for an integration."""
@@ -181,13 +194,14 @@ async def delete_credential(
             detail=f"Unknown integration '{name}'. Valid: {sorted(INTEGRATION_KEYS)}",
         )
     db_key = INTEGRATION_KEYS[name]
-    await delete_secret(session, db_key)
+    # Sprint 6: scoped delete for forward compatibility with per-org isolation.
+    await delete_secret_scoped(session, db_key, organization_id=None)
     actor_id, actor_email = actor_from_auth(auth)
     await record_audit(
         session,
         actor_clerk_user_id=actor_id,
         actor_email=actor_email,
-        actor_role="owner",
+        actor_role=role,
         action="integration.delete",
         target_type="integration",
         target_id=name,

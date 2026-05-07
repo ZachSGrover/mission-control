@@ -21,6 +21,7 @@ from app.core.config import settings
 from app.core.logging import get_logger
 from app.core.secrets_store import get_api_key
 from app.core.time import utcnow
+from app.services.audit_log import record_audit_event
 from app.services.usage.logger import (
     current_environment,
     extract_provider_usage,
@@ -166,20 +167,114 @@ async def ask_ai_detailed(
     All calls go directly to the hosted cloud APIs — no OpenClaw / localhost
     gateway is involved.  Each provider retries transient errors with
     exponential backoff before the next in the chain is tried.
+
+    Sprint 3 hardening: the prompt is run through
+    :func:`app.core.pii_redact.redact_for_llm` before being handed to
+    the provider client. The redactor strips obvious credentials,
+    emails, phone numbers, and JWT-shaped strings. The original
+    ``prompt`` is never logged.
     """
+    from app.core.pii_redact import redact_for_llm
+
+    redacted_prompt, was_redacted, redaction_counts = redact_for_llm(prompt)
     total_attempts = 0
     last_error: str | None = None
+    prompt_len = len(redacted_prompt)
 
     for provider in _PROVIDER_ORDER:
         try:
-            reply, attempts = await _run_provider(provider, prompt, session, trigger_source)
-            return reply, provider, total_attempts + attempts, last_error
+            reply, attempts = await _run_provider(
+                provider, redacted_prompt, session, trigger_source
+            )
+            total_attempts += attempts
+            await _audit_llm_call(
+                session,
+                provider=provider,
+                result="success",
+                attempts=total_attempts,
+                prompt_len=prompt_len,
+                reply_len=len(reply),
+                error=None,
+                redaction_applied=was_redacted,
+                redaction_counts=redaction_counts,
+            )
+            return reply, provider, total_attempts, last_error
         except Exception as exc:
             total_attempts += _MAX_ATTEMPTS
             last_error = f"{last_error + '; ' if last_error else ''}{provider}: {exc}"
             logger.warning("ai_backend.%s.unavailable error=%s", provider, exc)
+            await _audit_llm_call(
+                session,
+                provider=provider,
+                result="failed",
+                attempts=total_attempts,
+                prompt_len=prompt_len,
+                reply_len=0,
+                error=type(exc).__name__,
+                redaction_applied=was_redacted,
+                redaction_counts=redaction_counts,
+            )
 
     return _NO_KEY_MSG, "none", total_attempts, last_error
+
+
+async def _audit_llm_call(
+    session: AsyncSession,
+    *,
+    provider: str,
+    result: str,
+    attempts: int,
+    prompt_len: int,
+    reply_len: int,
+    error: str | None,
+    redaction_applied: bool = False,
+    redaction_counts: dict[str, int] | None = None,
+) -> None:
+    """Audit a single LLM provider attempt without ever touching prompt/reply text.
+
+    By design we log only sizes and the exception class — never prompt body,
+    reply body, or any hash that could re-identify content. The audit row is
+    added to the caller's session and committed so each call is durable even
+    if the request handler later rolls back.
+    """
+    # Late imports to avoid a hard-coupled module-level dependency for a
+    # belt-and-braces type narrowing. The ``AuditResult`` / ``AuditSeverity``
+    # aliases live in ``app.services.audit_log`` so the vocabulary stays
+    # single-sourced; using them here (instead of inline ``Literal[...]``
+    # subscripts) also sidesteps a pyflakes false-positive that misreads
+    # aliased ``Literal`` subscript args as bare names.
+    from typing import cast
+
+    from app.services.audit_log import AuditResult, AuditSeverity
+
+    safe_result: AuditResult = cast(
+        AuditResult,
+        result if result in {"success", "denied", "failed", "blocked", "skipped"} else "failed",
+    )
+    severity: AuditSeverity = "info" if safe_result == "success" else "warning"
+    await record_audit_event(
+        session,
+        event_type="llm.call",
+        category="llm",
+        action="invoke",
+        result=safe_result,
+        severity=severity,
+        resource_type="llm_provider",
+        resource_id=provider,
+        metadata={
+            "provider": provider,
+            "attempts": attempts,
+            "prompt_chars": prompt_len,
+            "reply_chars": reply_len,
+            "error_class": error,
+            "pii_redaction_applied": redaction_applied,
+            "pii_redaction_counts": redaction_counts or {},
+        },
+    )
+    try:
+        await session.commit()
+    except Exception as exc:  # pragma: no cover — defensive
+        logger.warning("ai_backend.audit_commit_failed error=%s", type(exc).__name__)
 
 
 _AI_BACKEND_FEATURE: Final = "messaging"

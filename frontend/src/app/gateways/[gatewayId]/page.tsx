@@ -231,7 +231,7 @@ export default function GatewayDetailPage() {
                   <div>
                     <p className="text-xs uppercase text-slate-400">Token</p>
                     <p className="mt-1 text-sm font-medium text-slate-900">
-                      {maskToken(gateway.token)}
+                      {gateway.token_configured ? "configured" : "not set"}
                     </p>
                   </div>
                   <div>

@@ -160,6 +160,10 @@ export function DashboardSidebar() {
           <NavLink href="/control"   label="Control"   Icon={Network} />
           <NavLink href="/workflows" label="Workflows" Icon={GitBranch} />
           <NavLink href="/skills"    label="Skills"    Icon={Wrench} />
+          {/* Bots — operator role surface.  Visible to owner + operator only. */}
+          {(role === "owner" || role === "operator") && (
+            <NavLink href="/bots" label="Bots" Icon={Bot} />
+          )}
           <NavLink href="/activity"  label="Logs"      Icon={Activity} />
         </NavSection>
 

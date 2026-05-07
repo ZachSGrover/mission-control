@@ -3,7 +3,7 @@
 import type { ReactNode } from "react";
 
 import { useRole } from "@/hooks/use-role";
-import type { MCRole } from "@/lib/roles";
+import { hasMinRole, type MCRole } from "@/lib/roles";
 
 interface RoleGuardProps {
   /** Minimum role required to render children. */
@@ -13,12 +13,6 @@ interface RoleGuardProps {
   /** Rendered when the user doesn't have the required role. Defaults to null. */
   denied?: ReactNode;
   children: ReactNode;
-}
-
-const ROLE_RANK: Record<MCRole, number> = { owner: 3, builder: 2, viewer: 1 };
-
-function hasMinRole(userRole: MCRole, required: MCRole): boolean {
-  return ROLE_RANK[userRole] >= ROLE_RANK[required];
 }
 
 /**

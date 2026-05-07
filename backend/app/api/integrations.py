@@ -12,7 +12,7 @@ Endpoints:
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from pydantic import BaseModel
 from sqlmodel.ext.asyncio.session import AsyncSession
 
@@ -20,6 +20,7 @@ from app.api.mc_roles import require_owner
 from app.core.auth import AuthContext, get_auth_context
 from app.core.secrets_store import delete_secret, get_secret_with_source, mask_key, set_secret
 from app.db.session import get_session
+from app.services.audit_log import actor_from_auth, record_audit
 
 router = APIRouter(prefix="/integrations", tags=["integrations"])
 AUTH_DEP = Depends(get_auth_context)
@@ -84,9 +85,15 @@ class SetCredentialRequest(BaseModel):
 @router.get("", response_model=list[IntegrationStatus])
 async def list_integrations(
     _: AuthContext = AUTH_DEP,
+    _role: str = OWNER_DEP,
     session: AsyncSession = SESSION_DEP,
 ) -> list[IntegrationStatus]:
-    """Return credential status for all supported integrations."""
+    """Return credential status for all supported integrations.
+
+    Owner-only.  Even masked previews of integration keys are gated to the
+    owner so operator/builder/viewer roles cannot enumerate which platform
+    credentials are wired up.
+    """
     result: list[IntegrationStatus] = []
     for name, db_key in INTEGRATION_KEYS.items():
         value, source = await get_secret_with_source(session, db_key)
@@ -111,7 +118,8 @@ async def list_integrations(
 async def save_credential(
     name: str,
     body: SetCredentialRequest,
-    _: AuthContext = AUTH_DEP,
+    request: Request,
+    auth: AuthContext = AUTH_DEP,
     _role: str = OWNER_DEP,
     session: AsyncSession = SESSION_DEP,
 ) -> IntegrationStatus:
@@ -129,6 +137,22 @@ async def save_credential(
         )
     db_key = INTEGRATION_KEYS[name]
     await set_secret(session, db_key, value)
+    actor_id, actor_email = actor_from_auth(auth)
+    # Privacy: never include the credential value or its preview in the
+    # audit row.  We only record that a write happened for this integration.
+    await record_audit(
+        session,
+        actor_clerk_user_id=actor_id,
+        actor_email=actor_email,
+        actor_role="owner",
+        action="integration.write",
+        target_type="integration",
+        target_id=name,
+        outcome="success",
+        safe_summary=f"credential set for integration={name}",
+        request=request,
+    )
+    await session.commit()
     meta = INTEGRATION_META[name]
     return IntegrationStatus(
         name=name,
@@ -145,7 +169,8 @@ async def save_credential(
 @router.delete("/{name}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_credential(
     name: str,
-    _: AuthContext = AUTH_DEP,
+    request: Request,
+    auth: AuthContext = AUTH_DEP,
     _role: str = OWNER_DEP,
     session: AsyncSession = SESSION_DEP,
 ) -> None:
@@ -157,3 +182,17 @@ async def delete_credential(
         )
     db_key = INTEGRATION_KEYS[name]
     await delete_secret(session, db_key)
+    actor_id, actor_email = actor_from_auth(auth)
+    await record_audit(
+        session,
+        actor_clerk_user_id=actor_id,
+        actor_email=actor_email,
+        actor_role="owner",
+        action="integration.delete",
+        target_type="integration",
+        target_id=name,
+        outcome="success",
+        safe_summary=f"credential cleared for integration={name}",
+        request=request,
+    )
+    await session.commit()

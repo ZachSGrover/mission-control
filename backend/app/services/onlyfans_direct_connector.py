@@ -58,7 +58,7 @@ from app.core.onlyfans_direct_rate_policy import (
     DEFAULT_MAX_REQUESTS_PER_MINUTE,
     SessionHealth,
 )
-from app.services.audit_log import record_audit
+from app.services.audit_log import record_audit_event
 from app.services.onlyfans_direct_fixtures import fixture_payload_for
 
 logger = get_logger(__name__)
@@ -607,7 +607,7 @@ class OnlyFansDirectConnector:
         actor_user_id: UUID | None,
         actor_email: str | None,
     ) -> str | None:
-        row = await record_audit(
+        row = await record_audit_event(
             session,
             event_type="connector.run.blocked",
             category="connector",
@@ -645,7 +645,7 @@ class OnlyFansDirectConnector:
         used_fake_client: bool = False,
         rows_read: int = 0,
     ) -> str | None:
-        row = await record_audit(
+        row = await record_audit_event(
             session,
             event_type="connector.dry_run.pass",
             category="connector",
@@ -747,7 +747,7 @@ class OnlyFansDirectConnector:
         notify_status = DEFAULT_NOTIFIER.status()
 
         async def _audit_blocked(reason: SandboxBlockedReason, notes: str) -> SandboxResult:
-            audit_row = await record_audit(
+            audit_row = await record_audit_event(
                 session,
                 event_type="connector.sandbox.blocked",
                 category="connector",
@@ -987,7 +987,7 @@ class OnlyFansDirectConnector:
                 f"Challenge detected during sandbox read: {exc.reason_category}",
             )
         except UnexpectedStatusError as exc:
-            audit_row = await record_audit(
+            audit_row = await record_audit_event(
                 session,
                 event_type="connector.sandbox.failed",
                 category="connector",
@@ -1053,7 +1053,7 @@ class OnlyFansDirectConnector:
 
             field_counts = safe_field_counts(parse_revenue_summary(summary))
 
-        success_row = await record_audit(
+        success_row = await record_audit_event(
             session,
             event_type="connector.sandbox.success",
             category="connector",

@@ -19,7 +19,7 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 import app.models  # noqa: F401  — registers all SQLModel tables
 from app.core.connector_gate import is_connector_action_allowed
 from app.core.time import utcnow
-from app.models.audit_events import AuditEvent
+from app.models.audit_event import AuditEvent
 from app.models.client_consents import ClientConsent
 from app.models.creator_credentials import CreatorCredential
 from app.models.kill_switches import KillSwitch

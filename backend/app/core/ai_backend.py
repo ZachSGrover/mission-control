@@ -21,7 +21,7 @@ from app.core.config import settings
 from app.core.logging import get_logger
 from app.core.secrets_store import get_api_key
 from app.core.time import utcnow
-from app.services.audit_log import record_audit
+from app.services.audit_log import record_audit_event
 from app.services.usage.logger import (
     current_environment,
     extract_provider_usage,
@@ -252,7 +252,7 @@ async def _audit_llm_call(
         result if result in {"success", "denied", "failed", "blocked", "skipped"} else "failed",
     )
     severity: AuditSeverity = "info" if safe_result == "success" else "warning"
-    await record_audit(
+    await record_audit_event(
         session,
         event_type="llm.call",
         category="llm",

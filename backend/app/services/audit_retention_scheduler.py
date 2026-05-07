@@ -30,7 +30,7 @@ from typing import Final
 
 from app.core.logging import get_logger
 from app.db.session import async_session_maker
-from app.services.audit_log import record_audit
+from app.services.audit_log import record_audit_event
 from app.services.audit_retention import (
     preview_purge,
     purge_old_audit_events,
@@ -69,7 +69,7 @@ async def run_retention_pass(*, dry_run: bool | None = None) -> dict[str, int]:
     async with async_session_maker() as session:
         if effective_dry_run:
             preview = await preview_purge(session)
-            await record_audit(
+            await record_audit_event(
                 session,
                 event_type="audit.retention.preview",
                 category="security",
@@ -83,7 +83,7 @@ async def run_retention_pass(*, dry_run: bool | None = None) -> dict[str, int]:
             return preview
 
         deleted = await purge_old_audit_events(session, dry_run=False)
-        await record_audit(
+        await record_audit_event(
             session,
             event_type="audit.retention.purge",
             category="security",

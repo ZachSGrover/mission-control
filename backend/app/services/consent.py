@@ -23,7 +23,7 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.core.time import utcnow
 from app.models.client_consents import CONSENT_TYPES, ClientConsent
-from app.services.audit_log import record_audit
+from app.services.audit_log import record_audit_event
 
 
 def _validate_consent_type(consent_type: str) -> None:
@@ -66,7 +66,7 @@ async def grant(
     session.add(row)
     await session.flush()
 
-    await record_audit(
+    await record_audit_event(
         session,
         event_type="consent.grant",
         category="permission",
@@ -111,7 +111,7 @@ async def revoke(
         row.notes = (row.notes + "; " if row.notes else "") + f"revoke_reason: {reason}"
     session.add(row)
 
-    await record_audit(
+    await record_audit_event(
         session,
         event_type="consent.revoke",
         category="permission",

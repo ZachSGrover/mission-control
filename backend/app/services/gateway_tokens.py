@@ -40,7 +40,7 @@ from app.core.secrets_store import (
 )
 from app.core.time import utcnow
 from app.models.gateways import Gateway
-from app.services.audit_log import record_audit
+from app.services.audit_log import record_audit_event
 
 
 def token_preview(plaintext: str | None) -> str | None:
@@ -83,7 +83,7 @@ async def set_token(
     gateway.updated_at = utcnow()
     session.add(gateway)
 
-    await record_audit(
+    await record_audit_event(
         session,
         event_type="gateway.token.set",
         category="credential",
@@ -163,7 +163,7 @@ async def migrate_legacy_tokens(
         gw.token = None
         gw.updated_at = utcnow()
         session.add(gw)
-        await record_audit(
+        await record_audit_event(
             session,
             event_type="gateway.token.legacy_migrated",
             category="credential",

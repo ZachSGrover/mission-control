@@ -42,7 +42,7 @@ from app.core.onlyfans_direct_schemas import (
     parse_revenue_summary,
     safe_field_counts,
 )
-from app.models.audit_events import AuditEvent
+from app.models.audit_event import AuditEvent
 from app.services import creator_credentials as _cred_svc
 from app.services.onlyfans_direct_connector import (
     ENV_SANDBOX_ALLOWED,

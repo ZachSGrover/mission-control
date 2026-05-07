@@ -21,7 +21,7 @@ from app.core.secrets_store import (
     mask_key,
 )
 from app.db.session import get_session
-from app.services.audit_log import record_audit
+from app.services.audit_log import record_audit_event
 from app.services.settings_scope import (
     delete_secret_scoped,
     set_secret_scoped,
@@ -105,7 +105,7 @@ async def upsert_api_key(
         )
     db_key = PROVIDER_KEYS[provider]
     await set_secret_scoped(session, db_key, key_value, organization_id=None)
-    await record_audit(
+    await record_audit_event(
         session,
         event_type="settings.api_key.save",
         category="credential",
@@ -138,7 +138,7 @@ async def delete_api_key(
         )
     db_key = PROVIDER_KEYS[provider]
     await delete_secret_scoped(session, db_key, organization_id=None)
-    await record_audit(
+    await record_audit_event(
         session,
         event_type="settings.api_key.delete",
         category="credential",
@@ -223,7 +223,7 @@ async def upsert_github_field(
     db_key = GITHUB_KEYS[field]
     await set_secret_scoped(session, db_key, value, organization_id=None)
     preview = mask_key(value) if field == "github_pat" else value
-    await record_audit(
+    await record_audit_event(
         session,
         event_type="settings.github.save",
         category="credential",
@@ -257,7 +257,7 @@ async def delete_github_field(
         )
     db_key = GITHUB_KEYS[field]
     await delete_secret_scoped(session, db_key, organization_id=None)
-    await record_audit(
+    await record_audit_event(
         session,
         event_type="settings.github.delete",
         category="credential",

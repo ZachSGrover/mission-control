@@ -37,7 +37,7 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 
 import app.models  # noqa: F401  — registers tables
 from app.core.onlyfans_direct_credential_ref import CredentialReference
-from app.models.audit_events import AuditEvent
+from app.models.audit_event import AuditEvent
 from app.services import creator_credentials as _cred_svc
 from app.services.onlyfans_direct_connector import (
     ALLOWED_SANDBOX_ACTIONS,

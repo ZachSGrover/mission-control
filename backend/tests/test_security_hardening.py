@@ -24,7 +24,7 @@ from app.core.startup_guard import (
     is_production,
 )
 from app.core.time import utcnow
-from app.models.audit_events import AuditEvent
+from app.models.audit_event import AuditEvent
 from app.models.gateways import Gateway
 
 
@@ -294,6 +294,7 @@ async def test_audit_retention_preview_counts_old_rows() -> None:
             now = utcnow()
             # An ancient credential row → eligible.
             old = AuditEvent(
+                actor_clerk_user_id="system",
                 event_type="t",
                 category="credential",
                 action="put",
@@ -302,6 +303,7 @@ async def test_audit_retention_preview_counts_old_rows() -> None:
             )
             # A recent auth row → not eligible (auth is 90d).
             recent = AuditEvent(
+                actor_clerk_user_id="system",
                 event_type="t",
                 category="auth",
                 action="login",
@@ -310,6 +312,7 @@ async def test_audit_retention_preview_counts_old_rows() -> None:
             )
             # An ancient auth row → eligible (>90d).
             old_auth = AuditEvent(
+                actor_clerk_user_id="system",
                 event_type="t",
                 category="auth",
                 action="login",

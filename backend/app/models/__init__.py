@@ -5,7 +5,7 @@ from app.models.agents import Agent
 from app.models.app_setting import AppSetting
 from app.models.approval_task_links import ApprovalTaskLink
 from app.models.approvals import Approval
-from app.models.audit_events import AuditEvent
+from app.models.audit_event import AuditEvent
 from app.models.board_group_memory import BoardGroupMemory
 from app.models.board_groups import BoardGroup
 from app.models.board_memory import BoardMemory
@@ -13,6 +13,7 @@ from app.models.board_onboarding import BoardOnboardingSession
 from app.models.board_webhook_payloads import BoardWebhookPayload
 from app.models.board_webhooks import BoardWebhook
 from app.models.boards import Board
+from app.models.bot_registry import BotRegistryEntry
 from app.models.client_consents import ClientConsent
 from app.models.connector_approvals import ConnectorApproval
 from app.models.creator_credentials import CreatorCredential
@@ -60,6 +61,7 @@ __all__ = [
     "ActivityEvent",
     "Agent",
     "AuditEvent",
+    "BotRegistryEntry",
     "ApprovalTaskLink",
     "Approval",
     "BoardGroupMemory",

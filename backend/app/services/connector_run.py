@@ -54,7 +54,7 @@ from app.core.connector_gate import (
     GateVerdict,
     is_connector_action_allowed,
 )
-from app.services.audit_log import record_audit
+from app.services.audit_log import record_audit_event
 
 T = TypeVar("T")
 
@@ -101,7 +101,7 @@ async def run_with_gate(
     )
 
     if not verdict.allowed:
-        await record_audit(
+        await record_audit_event(
             session,
             event_type="connector.run.blocked",
             category="connector",

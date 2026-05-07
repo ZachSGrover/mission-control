@@ -23,7 +23,7 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.core.time import utcnow
 from app.models.kill_switches import KILL_SWITCH_SCOPES, KillSwitch
-from app.services.audit_log import record_audit
+from app.services.audit_log import record_audit_event
 
 KillSwitchScope = Literal["global", "organization", "creator", "connector"]
 
@@ -73,7 +73,7 @@ async def enable(
     row.updated_at = utcnow()
     session.add(row)
 
-    await record_audit(
+    await record_audit_event(
         session,
         event_type="kill_switch.enable",
         category="security",
@@ -110,7 +110,7 @@ async def disable(
             row.reason = reason
         session.add(row)
 
-    await record_audit(
+    await record_audit_event(
         session,
         event_type="kill_switch.disable",
         category="security",

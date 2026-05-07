@@ -36,7 +36,7 @@ from app.api.security_admin import (
 )
 from app.core.auth import AuthContext
 from app.core.pii_redact import redact_for_llm
-from app.models.audit_events import AuditEvent
+from app.models.audit_event import AuditEvent
 from app.services import connector_approvals as approvals_svc
 from app.services import consent as consent_svc
 from app.services.audit_retention_scheduler import (

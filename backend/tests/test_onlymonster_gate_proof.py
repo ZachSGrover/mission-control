@@ -32,7 +32,7 @@ from sqlmodel import SQLModel, select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 import app.models  # noqa: F401  — registers tables
-from app.models.audit_events import AuditEvent
+from app.models.audit_event import AuditEvent
 from app.services.onlymonster_fake_client import (
     FakeClientRefusedInProductionError,
     FakeOnlyMonsterClient,

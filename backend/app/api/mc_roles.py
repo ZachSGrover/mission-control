@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from collections.abc import Awaitable, Callable
+
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from pydantic import BaseModel
 from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
@@ -13,8 +15,8 @@ from app.core.config import settings
 from app.core.logging import get_logger
 from app.core.time import utcnow
 from app.db.session import get_session
-from app.models.mc_role import VALID_ROLES, MCUserRole
-from app.services.audit_log import record_audit
+from app.models.mc_role import ROLE_RANK, VALID_ROLES, MCUserRole
+from app.services.audit_log import actor_from_auth, record_audit
 
 router = APIRouter(prefix="/roles", tags=["roles"])
 logger = get_logger(__name__)
@@ -96,6 +98,39 @@ async def require_owner(role: str = Depends(get_mc_role)) -> str:
     return role
 
 
+def _require_min_rank(
+    min_role: str,
+    error_detail: str,
+) -> Callable[[str], Awaitable[str]]:
+    """Build a FastAPI dependency that requires *min_role* or higher in ROLE_RANK."""
+    threshold = ROLE_RANK.get(min_role, 0)
+
+    async def _dep(role: str = Depends(get_mc_role)) -> str:
+        if ROLE_RANK.get(role, 0) < threshold:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=error_detail,
+            )
+        return role
+
+    return _dep
+
+
+# Operator or higher (owner, operator).  Used by bot start/stop and any other
+# bot-operations surface where builders/viewers must not act.
+require_operator = _require_min_rank(
+    "operator",
+    "Operator access required.",
+)
+
+# Builder or higher (owner, operator, builder).  Reserved for endpoints that
+# should not be visible to read-only viewers.
+require_builder = _require_min_rank(
+    "builder",
+    "Builder access required.",
+)
+
+
 # ── Schemas ───────────────────────────────────────────────────────────────────
 
 
@@ -166,6 +201,7 @@ async def list_users(
 async def set_user_role(
     clerk_user_id: str,
     body: SetRoleRequest,
+    request: Request,
     auth: AuthContext = AUTH_DEP,
     actor_role: str = Depends(require_owner),
     session: AsyncSession = SESSION_DEP,
@@ -201,6 +237,19 @@ async def set_user_role(
         )
         session.add(row)
 
+    actor_id, actor_email = actor_from_auth(auth)
+    await record_audit(
+        session,
+        actor_clerk_user_id=actor_id,
+        actor_email=actor_email,
+        actor_role="owner",
+        action="role.set",
+        target_type="user",
+        target_id=clerk_user_id,
+        outcome="success",
+        safe_summary=f"role={body.role} disabled={body.disabled}",
+        request=request,
+    )
     await session.commit()
 
     from app.models.users import User
@@ -215,27 +264,6 @@ async def set_user_role(
         body.disabled,
     )
 
-    await record_audit(
-        session,
-        event_type="role.set",
-        category="role",
-        action="put",
-        result="success",
-        severity="high",
-        actor_user_id=auth.user.id if auth.user else None,
-        actor_email=auth.user.email if auth.user else None,
-        actor_role=actor_role,
-        resource_type="user_role",
-        resource_id=clerk_user_id,
-        metadata={
-            "target_clerk_user_id": clerk_user_id,
-            "target_email": user.email if user else None,
-            "new_role": body.role,
-            "disabled": body.disabled,
-        },
-    )
-    await session.commit()
-
     return UserRoleEntry(
         clerk_user_id=clerk_user_id,
         email=user.email if user else None,
@@ -248,6 +276,7 @@ async def set_user_role(
 @router.delete("/users/{clerk_user_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def remove_user_role(
     clerk_user_id: str,
+    request: Request,
     auth: AuthContext = AUTH_DEP,
     actor_role: str = Depends(require_owner),
     session: AsyncSession = SESSION_DEP,
@@ -263,19 +292,17 @@ async def remove_user_role(
     row = result.first()
     if row:
         await session.delete(row)
+        actor_id, actor_email = actor_from_auth(auth)
+        await record_audit(
+            session,
+            actor_clerk_user_id=actor_id,
+            actor_email=actor_email,
+            actor_role="owner",
+            action="role.remove",
+            target_type="user",
+            target_id=clerk_user_id,
+            outcome="success",
+            safe_summary="role row removed (reverts to viewer default)",
+            request=request,
+        )
         await session.commit()
-    await record_audit(
-        session,
-        event_type="role.remove",
-        category="role",
-        action="delete",
-        result="success" if row else "skipped",
-        severity="high",
-        actor_user_id=auth.user.id if auth.user else None,
-        actor_email=auth.user.email if auth.user else None,
-        actor_role=actor_role,
-        resource_type="user_role",
-        resource_id=clerk_user_id,
-        metadata={"target_clerk_user_id": clerk_user_id, "had_explicit_role": row is not None},
-    )
-    await session.commit()

@@ -38,7 +38,7 @@ from app.models.creator_credentials import (
     CREDENTIAL_TYPES,
     CreatorCredential,
 )
-from app.services.audit_log import record_audit
+from app.services.audit_log import record_audit_event
 
 
 class CredentialVaultUnavailableError(RuntimeError):
@@ -111,7 +111,7 @@ async def create_credential(
     session.add(row)
     await session.flush()
 
-    await record_audit(
+    await record_audit_event(
         session,
         event_type="creator_credential.create",
         category="credential",
@@ -154,7 +154,7 @@ async def revoke_credential(
     row.revoked_at = utcnow()
     session.add(row)
 
-    await record_audit(
+    await record_audit_event(
         session,
         event_type="creator_credential.revoke",
         category="credential",
@@ -215,7 +215,7 @@ async def rotate_credential(
     session.add(new)
     await session.flush()
 
-    await record_audit(
+    await record_audit_event(
         session,
         event_type="creator_credential.rotate",
         category="credential",

@@ -40,7 +40,7 @@ from app.core.clerk_webhook_verify import (
 )
 from app.core.logging import get_logger
 from app.db.session import get_session
-from app.services.audit_log import record_audit
+from app.services.audit_log import record_audit_event
 
 logger = get_logger(__name__)
 
@@ -122,7 +122,7 @@ async def receive_clerk_webhook(
 
     if body.type != "session.created":
         # Audit the skip so the operator can see the webhook is reaching us.
-        await record_audit(
+        await record_audit_event(
             session,
             event_type="auth.webhook.received",
             category="auth",
@@ -146,7 +146,7 @@ async def receive_clerk_webhook(
         if isinstance(first, dict):
             email = first.get("email_address")
 
-    await record_audit(
+    await record_audit_event(
         session,
         event_type="auth.login.success",
         category="auth",

@@ -15,8 +15,8 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 
 # Ensure all models are registered with SQLModel.metadata.
 import app.models  # noqa: F401  (registration side-effect)
-from app.models.audit_events import AuditEvent
-from app.services.audit_log import record_audit
+from app.models.audit_event import AuditEvent
+from app.services.audit_log import record_audit_event
 
 
 async def _make_engine() -> AsyncEngine:
@@ -36,7 +36,7 @@ async def test_record_audit_writes_a_row() -> None:
     try:
         async with await _make_session(engine) as session:
             user_id = uuid4()
-            event = await record_audit(
+            event = await record_audit_event(
                 session,
                 event_type="credential.save",
                 category="credential",
@@ -70,7 +70,7 @@ async def test_record_audit_redacts_metadata() -> None:
     engine = await _make_engine()
     try:
         async with await _make_session(engine) as session:
-            await record_audit(
+            await record_audit_event(
                 session,
                 event_type="credential.save",
                 category="credential",
@@ -93,7 +93,7 @@ async def test_record_audit_rejects_unknown_category() -> None:
     engine = await _make_engine()
     try:
         async with await _make_session(engine) as session:
-            event = await record_audit(
+            event = await record_audit_event(
                 session,
                 event_type="nope",
                 category="nonsense",  # type: ignore[arg-type]
@@ -114,7 +114,7 @@ async def test_record_audit_strict_raises_on_unknown_category() -> None:
     try:
         async with await _make_session(engine) as session:
             with pytest.raises(ValueError):
-                await record_audit(
+                await record_audit_event(
                     session,
                     event_type="nope",
                     category="nonsense",  # type: ignore[arg-type]
@@ -131,7 +131,7 @@ async def test_record_audit_does_not_commit() -> None:
     engine = await _make_engine()
     try:
         async with await _make_session(engine) as session:
-            await record_audit(
+            await record_audit_event(
                 session,
                 event_type="auth.login",
                 category="auth",

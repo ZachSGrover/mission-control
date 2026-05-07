@@ -29,7 +29,7 @@ from app.core.onlyfans_direct_credential_ref import (
     CredentialReference,
     check_credential_status,
 )
-from app.models.audit_events import AuditEvent
+from app.models.audit_event import AuditEvent
 from app.services import creator_credentials as _cred_svc
 from app.services.onlyfans_direct_connector import (
     ENV_SANDBOX_ALLOWED,

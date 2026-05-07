@@ -33,8 +33,8 @@ from uuid import UUID
 from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
-from app.models.audit_events import AuditEvent
-from app.services.audit_log import record_audit
+from app.models.audit_event import AuditEvent
+from app.services.audit_log import record_audit_event
 
 CONNECTOR_TYPE: Final[str] = "onlyfans_direct"
 EVENT_TYPE: Final[str] = "connector.golive.sandbox"
@@ -70,7 +70,7 @@ async def record_owner_signoff(
         # transcript into this field.
         metadata["notes"] = notes[:500]
 
-    row = await record_audit(
+    row = await record_audit_event(
         session,
         event_type=EVENT_TYPE,
         category="connector",

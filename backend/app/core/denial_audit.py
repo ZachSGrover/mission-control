@@ -30,7 +30,7 @@ from fastapi.responses import JSONResponse
 
 from app.core.logging import get_logger
 from app.db.session import async_session_maker
-from app.services.audit_log import record_audit
+from app.services.audit_log import record_audit_event
 
 logger = get_logger(__name__)
 
@@ -214,7 +214,7 @@ async def _denial_audit_handler(request: Request, exc: HTTPException) -> JSONRes
                     except (ValueError, TypeError):
                         actor_uuid = None
 
-                    await record_audit(
+                    await record_audit_event(
                         session,
                         event_type=(
                             "auth.denied.unauthorized"

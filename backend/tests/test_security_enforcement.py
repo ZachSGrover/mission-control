@@ -28,7 +28,7 @@ from app.core.clerk_webhook_verify import (
     verify_webhook,
 )
 from app.core.pii_redact import redact_for_llm
-from app.models.audit_events import AuditEvent
+from app.models.audit_event import AuditEvent
 from app.services.gated_onlymonster_sync import (
     gated_onlymonster_creator_sync,
 )

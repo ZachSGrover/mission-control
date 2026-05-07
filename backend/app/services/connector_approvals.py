@@ -32,7 +32,7 @@ from app.models.connector_approvals import (
     RISK_LEVELS,
     ConnectorApproval,
 )
-from app.services.audit_log import record_audit
+from app.services.audit_log import record_audit_event
 
 
 def _validate_connector_type(connector_type: str) -> None:
@@ -78,7 +78,7 @@ async def request_approval(
     session.add(row)
     await session.flush()
 
-    await record_audit(
+    await record_audit_event(
         session,
         event_type="connector.approval.request",
         category="connector",
@@ -148,7 +148,7 @@ async def _set_status(
     from app.services.audit_log import AuditSeverity
 
     sev = cast(AuditSeverity, audit_severity)
-    await record_audit(
+    await record_audit_event(
         session,
         event_type=audit_event_type,
         category="connector",

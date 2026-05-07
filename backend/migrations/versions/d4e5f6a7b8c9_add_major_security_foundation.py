@@ -1,30 +1,54 @@
-"""Add Major Security foundation (audit, prevention, hardening — consolidated).
+"""Add Major Security foundation (prevention + hardening + audit columns).
 
 Revision ID: d4e5f6a7b8c9
-Revises: g3a8e2c5b709
+Revises: h4b9d3e1c802
 Create Date: 2026-05-07 00:00:00.000000
 
-This migration consolidates the three Major Security migrations that were
-originally authored across Sprints 1, 2, and 3 of the security lane:
+This migration consolidates the Major Security lane (Sprints 1-3) into
+ONE file per PR-policy (``scripts/ci/one_migration_per_pr.sh``), and is
+re-parented onto PR #21's ``h4b9d3e1c802`` head so the post-merge chain
+remains linear.
 
-    a01b2c3d4e5f_add_audit_events.py
-    b12c3d4e5f6a_add_security_prevention_tables.py
-    c23d4e5f6a7b_add_security_hardening_columns.py
+Sprint 1 (audit_events table) is NO LONGER created here. PR #21 already
+creates ``audit_events`` and ``bot_registry`` in
+``h4b9d3e1c802_add_audit_events_and_bot_registry.py``. The Major Security
+lane reuses that single table and adds the columns it needs as nullable
+extras so neither audit-write API constrains the other:
 
-into a single revision so the lane fits the repo policy of one migration
-file per PR (``scripts/ci/one_migration_per_pr.sh``).
+  • ``record_audit`` (PR #21's narrow signature, used by COO/operator/
+    bot workflows) populates ``actor_clerk_user_id``, ``action``,
+    ``target_type``, ``target_id``, ``outcome``, ``safe_summary``,
+    ``payload_hash``.
+  • ``record_audit_event`` (Major Security's structured signature,
+    used by the security gates) ALSO populates the wider columns added
+    here: ``actor_user_id``, ``organization_id``, ``creator_id``,
+    ``event_type``, ``category``, ``result``, ``severity``,
+    ``resource_type``, ``resource_id``, ``request_id``,
+    ``metadata_json``, ``redacted``.
 
-The schema effect is identical to applying the three original migrations
-in order — the upgrade logic below is a verbatim concatenation of their
-``upgrade()`` bodies, in the original sequence:
+The two original Sprint-1 audit-events indexes that overlap with PR
+#21's set (``ix_audit_events_action``, ``ix_audit_events_created_at``)
+are NOT re-added here — PR #21 already created them. The other Major
+Security indexes (organization_id, creator_id, event_type, category,
+result, severity, resource_type, redacted, actor_user_id) are added
+fresh.
 
-    1. ``audit_events`` table + lookup indexes (Sprint 1)
-    2. prevention tables: ``connector_approvals``, ``kill_switches``,
-       ``client_consents``, ``creator_credentials`` (Sprint 2)
-    3. hardening columns: ``gateways.encrypted_token``,
-       ``app_settings.organization_id`` + its index (Sprint 3)
+Sprint 2 prevention tables and Sprint 3 hardening columns continue to
+live in this migration unchanged from the pre-PR-21 design:
 
-The downgrade reverses the upgrade in strict last-in-first-out order.
+    Sprint 2:
+      • connector_approvals + indexes
+      • kill_switches + indexes
+      • client_consents + indexes
+      • creator_credentials + indexes
+
+    Sprint 3:
+      • gateways.encrypted_token
+      • app_settings.organization_id + index
+
+The downgrade reverses the upgrade in strict LIFO order. The audit
+columns are dropped, but the audit_events table itself is left in
+place because PR #21 owns its lifecycle.
 
 Idempotency baked in: every create / add is guarded by an inspector
 check, so re-runs are safe and partially-applied environments converge
@@ -38,7 +62,7 @@ from alembic import op
 
 # revision identifiers, used by Alembic.
 revision = "d4e5f6a7b8c9"
-down_revision = "g3a8e2c5b709"
+down_revision = "h4b9d3e1c802"
 branch_labels = None
 depends_on = None
 
@@ -55,64 +79,98 @@ def _column_names(inspector: sa.Inspector, table: str) -> set[str]:
 
 
 def upgrade() -> None:  # noqa: C901 — flat list of guarded creates
-    """Create the security foundation: audit_events, prevention tables,
-    hardening columns. Idempotent."""
+    """Add Major Security columns to audit_events, create prevention
+    tables, add hardening columns. Idempotent."""
     bind = op.get_bind()
     inspector = sa.inspect(bind)
 
-    # ── Sprint 1: audit_events ──────────────────────────────────────────
-    if not inspector.has_table("audit_events"):
-        op.create_table(
-            "audit_events",
-            sa.Column("id", sa.Uuid(), nullable=False),
-            sa.Column("actor_user_id", sa.Uuid(), nullable=True),
-            sa.Column("actor_email", sa.String(), nullable=True),
-            sa.Column("actor_role", sa.String(), nullable=True),
-            sa.Column("organization_id", sa.Uuid(), nullable=True),
-            sa.Column("creator_id", sa.String(), nullable=True),
-            sa.Column("event_type", sa.String(), nullable=False),
-            sa.Column("category", sa.String(), nullable=False),
-            sa.Column("action", sa.String(), nullable=False),
-            sa.Column("result", sa.String(), nullable=False),
-            sa.Column("severity", sa.String(), nullable=False, server_default="info"),
-            sa.Column("resource_type", sa.String(), nullable=True),
-            sa.Column("resource_id", sa.String(), nullable=True),
-            sa.Column("ip_address", sa.String(), nullable=True),
-            sa.Column("user_agent", sa.String(), nullable=True),
-            sa.Column("request_id", sa.String(), nullable=True),
-            sa.Column(
-                "metadata_json",
-                sa.JSON(),
-                nullable=False,
-                server_default="{}",
-            ),
-            sa.Column(
-                "redacted",
-                sa.Boolean(),
-                nullable=False,
-                server_default=sa.false(),
-            ),
-            sa.Column("created_at", sa.DateTime(), nullable=False),
-            sa.PrimaryKeyConstraint("id"),
-        )
+    # ── Sprint 1 → extension: add Major Security columns to PR #21's
+    #    ``audit_events`` table. All nullable so PR #21's writes still work.
+    if inspector.has_table("audit_events"):
+        cols = _column_names(inspector, "audit_events")
+        # Wider actor / scope.
+        if "actor_user_id" not in cols:
+            op.add_column(
+                "audit_events",
+                sa.Column("actor_user_id", sa.Uuid(), nullable=True),
+            )
+        if "organization_id" not in cols:
+            op.add_column(
+                "audit_events",
+                sa.Column("organization_id", sa.Uuid(), nullable=True),
+            )
+        if "creator_id" not in cols:
+            op.add_column(
+                "audit_events",
+                sa.Column("creator_id", sa.String(), nullable=True),
+            )
+        # Major Security event taxonomy (all nullable — PR #21 callers
+        # leave them ``None``; security callers populate them).
+        if "event_type" not in cols:
+            op.add_column(
+                "audit_events",
+                sa.Column("event_type", sa.String(), nullable=True),
+            )
+        if "category" not in cols:
+            op.add_column(
+                "audit_events",
+                sa.Column("category", sa.String(), nullable=True),
+            )
+        if "result" not in cols:
+            op.add_column(
+                "audit_events",
+                sa.Column("result", sa.String(), nullable=True),
+            )
+        if "severity" not in cols:
+            op.add_column(
+                "audit_events",
+                sa.Column("severity", sa.String(), nullable=True),
+            )
+        # Resource columns — PR #21 has target_type/target_id; security
+        # uses resource_type/resource_id. Both columns coexist; the
+        # service layer populates whichever the call site expects.
+        if "resource_type" not in cols:
+            op.add_column(
+                "audit_events",
+                sa.Column("resource_type", sa.String(), nullable=True),
+            )
+        if "resource_id" not in cols:
+            op.add_column(
+                "audit_events",
+                sa.Column("resource_id", sa.String(), nullable=True),
+            )
+        if "request_id" not in cols:
+            op.add_column(
+                "audit_events",
+                sa.Column("request_id", sa.String(), nullable=True),
+            )
+        if "metadata_json" not in cols:
+            op.add_column(
+                "audit_events",
+                sa.Column("metadata_json", sa.JSON(), nullable=True),
+            )
+        if "redacted" not in cols:
+            op.add_column(
+                "audit_events",
+                sa.Column("redacted", sa.Boolean(), nullable=True),
+            )
 
-    inspector = sa.inspect(bind)
-    indexes = _index_names(inspector, "audit_events")
-    for name, cols in {
-        "ix_audit_events_actor_user_id": ["actor_user_id"],
-        "ix_audit_events_actor_email": ["actor_email"],
-        "ix_audit_events_organization_id": ["organization_id"],
-        "ix_audit_events_creator_id": ["creator_id"],
-        "ix_audit_events_event_type": ["event_type"],
-        "ix_audit_events_category": ["category"],
-        "ix_audit_events_result": ["result"],
-        "ix_audit_events_severity": ["severity"],
-        "ix_audit_events_resource_type": ["resource_type"],
-        "ix_audit_events_redacted": ["redacted"],
-        "ix_audit_events_created_at": ["created_at"],
-    }.items():
-        if name not in indexes:
-            op.create_index(name, "audit_events", cols)
+        # Add the Major Security indexes that PR #21 didn't create.
+        inspector = sa.inspect(bind)
+        idx = _index_names(inspector, "audit_events")
+        for name, cols_for_index in {
+            "ix_audit_events_actor_user_id": ["actor_user_id"],
+            "ix_audit_events_organization_id": ["organization_id"],
+            "ix_audit_events_creator_id": ["creator_id"],
+            "ix_audit_events_event_type": ["event_type"],
+            "ix_audit_events_category": ["category"],
+            "ix_audit_events_result": ["result"],
+            "ix_audit_events_severity": ["severity"],
+            "ix_audit_events_resource_type": ["resource_type"],
+            "ix_audit_events_redacted": ["redacted"],
+        }.items():
+            if name not in idx:
+                op.create_index(name, "audit_events", cols_for_index)
 
     # ── Sprint 2: prevention tables ─────────────────────────────────────
     inspector = sa.inspect(bind)
@@ -294,7 +352,9 @@ def upgrade() -> None:  # noqa: C901 — flat list of guarded creates
 
 def downgrade() -> None:
     """Reverse the upgrade in strict LIFO order: hardening → prevention →
-    audit. Loses all audit history — never run in prod."""
+    audit columns. The ``audit_events`` table itself is NOT dropped — PR
+    #21 owns its lifecycle. We only remove the Major Security extension
+    columns and indexes."""
     bind = op.get_bind()
     inspector = sa.inspect(bind)
 
@@ -328,11 +388,11 @@ def downgrade() -> None:
             op.drop_table(table)
         inspector = sa.inspect(bind)
 
-    # ── Sprint 1: audit_events (reverse) ────────────────────────────────
+    # ── Sprint 1 extension: drop Major Security columns from
+    #    audit_events. Leave the table itself (PR #21 owns it).
     if inspector.has_table("audit_events"):
-        indexes = _index_names(inspector, "audit_events")
+        idx = _index_names(inspector, "audit_events")
         for name in (
-            "ix_audit_events_created_at",
             "ix_audit_events_redacted",
             "ix_audit_events_resource_type",
             "ix_audit_events_severity",
@@ -341,9 +401,24 @@ def downgrade() -> None:
             "ix_audit_events_event_type",
             "ix_audit_events_creator_id",
             "ix_audit_events_organization_id",
-            "ix_audit_events_actor_email",
             "ix_audit_events_actor_user_id",
         ):
-            if name in indexes:
+            if name in idx:
                 op.drop_index(name, table_name="audit_events")
-        op.drop_table("audit_events")
+        cols = _column_names(inspector, "audit_events")
+        for col in (
+            "redacted",
+            "metadata_json",
+            "request_id",
+            "resource_id",
+            "resource_type",
+            "severity",
+            "result",
+            "category",
+            "event_type",
+            "creator_id",
+            "organization_id",
+            "actor_user_id",
+        ):
+            if col in cols:
+                op.drop_column("audit_events", col)

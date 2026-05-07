@@ -44,7 +44,7 @@ from uuid import UUID
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.core.logging import get_logger
-from app.services.audit_log import record_audit
+from app.services.audit_log import record_audit_event
 from app.services.onlymonster_fake_client import (
     FakeClientRefusedInProductionError,
     OnlyMonsterReadOnlyClient,
@@ -128,7 +128,7 @@ async def run_onlymonster_gated_proof(
     except FakeClientRefusedInProductionError:
         # Audit the refusal so a forensic reviewer can see it; then
         # re-raise. This is a structural error, not a normal block.
-        await record_audit(
+        await record_audit_event(
             session,
             event_type="connector.gated_proof.blocked",
             category="connector",
@@ -164,7 +164,7 @@ async def run_onlymonster_gated_proof(
         # Seam returned blocked. The seam's gated wrapper has already
         # written ``connector.run.blocked``; we add a proof-level row
         # so the operator's intent is visible too.
-        proof_row = await record_audit(
+        proof_row = await record_audit_event(
             session,
             event_type="connector.gated_proof.blocked",
             category="connector",
@@ -216,7 +216,7 @@ async def run_onlymonster_gated_proof(
             "read-only path and should never happen. Refusing to audit."
         )
 
-    proof_row = await record_audit(
+    proof_row = await record_audit_event(
         session,
         event_type="connector.gated_proof.success",
         category="connector",

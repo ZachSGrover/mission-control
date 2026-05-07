@@ -37,7 +37,7 @@ from app.core.onlyfans_direct_policy import (
     WRITE_ACTIONS,
     BlockedActionError,
 )
-from app.models.audit_events import AuditEvent
+from app.models.audit_event import AuditEvent
 from app.services.onlyfans_direct_connector import (
     CookieRefusedError,
     DryRunResult,

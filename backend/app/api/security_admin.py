@@ -26,7 +26,7 @@ from app.core.auth import AuthContext, get_auth_context
 from app.core.secrets_store import is_dedicated_encryption_key_configured
 from app.core.time import utcnow
 from app.db.session import get_session
-from app.models.audit_events import AuditEvent
+from app.models.audit_event import AuditEvent
 from app.models.client_consents import ClientConsent
 from app.models.connector_approvals import ConnectorApproval
 from app.models.creator_credentials import CreatorCredential
@@ -237,7 +237,7 @@ from app.core.connector_gate import (  # noqa: E402
 from app.services import connector_approvals as _approvals_svc  # noqa: E402
 from app.services import consent as _consent_svc  # noqa: E402
 from app.services import kill_switch as _kill_switch_svc  # noqa: E402
-from app.services.audit_log import record_audit  # noqa: E402
+from app.services.audit_log import record_audit_event  # noqa: E402
 from app.services.gateway_tokens import migrate_legacy_tokens  # noqa: E402
 
 # ── Kill switches ────────────────────────────────────────────────────────────
@@ -544,7 +544,7 @@ async def migrate_gateway_tokens(
 
     # The migrator only audits *successful* migrations per row. Audit the
     # invocation itself so an operator dry-run is also visible in the trail.
-    await record_audit(
+    await record_audit_event(
         session,
         event_type="gateway.token.migrate.invoke",
         category="credential",
@@ -598,7 +598,7 @@ async def preview_connector_gate(
         creator_id=body.creator_id,
     )
     # Audit the preview attempt so we have a record of who asked.
-    await record_audit(
+    await record_audit_event(
         session,
         event_type="connector.gate.preview",
         category="connector",

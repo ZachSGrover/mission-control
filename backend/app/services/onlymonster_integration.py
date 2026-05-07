@@ -41,7 +41,7 @@ from uuid import UUID
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.core.logging import get_logger
-from app.services.audit_log import record_audit
+from app.services.audit_log import record_audit_event
 from app.services.gated_onlymonster_sync import (
     gated_onlymonster_creator_sync,
 )
@@ -134,7 +134,7 @@ async def fetch_creator_snapshot(
 
     # Allowed path — record the finish event with safe metadata only.
     snapshot = result.value
-    await record_audit(
+    await record_audit_event(
         session,
         event_type="connector.run.finish",
         category="connector",

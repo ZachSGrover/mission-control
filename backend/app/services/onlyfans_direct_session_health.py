@@ -29,7 +29,7 @@ from uuid import UUID
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.core.logging import get_logger
-from app.services.audit_log import record_audit
+from app.services.audit_log import record_audit_event
 
 logger = get_logger(__name__)
 
@@ -124,7 +124,7 @@ async def record_session_challenged(
     }
     metadata.update(extra)
 
-    row = await record_audit(
+    row = await record_audit_event(
         session,
         event_type="connector.session.challenged",
         category="connector",

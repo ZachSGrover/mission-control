@@ -86,9 +86,9 @@ async def gated_onlymonster_creator_sync(
         # Mirror the gate's verdict shape so the caller can branch
         # uniformly on ``result.allowed``.
         from app.core.connector_gate import GateVerdict
-        from app.services.audit_log import record_audit
+        from app.services.audit_log import record_audit_event
 
-        await record_audit(
+        await record_audit_event(
             session,
             event_type="connector.run.blocked",
             category="connector",

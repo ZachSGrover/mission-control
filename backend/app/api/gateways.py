@@ -186,9 +186,9 @@ async def get_gateway(
 
     # Owner-or-admin already gated by ORG_ADMIN_DEP. Audit the explicit
     # opt-in so any plaintext disclosure is on the record.
-    from app.services.audit_log import record_audit
+    from app.services.audit_log import record_audit_event
 
-    await record_audit(
+    await record_audit_event(
         session,
         event_type="gateway.token.exposed",
         category="credential",

@@ -47,7 +47,7 @@ from app.core.onlyfans_direct_rate_policy import (
     describe_session_health,
     is_unhealthy,
 )
-from app.models.audit_events import AuditEvent
+from app.models.audit_event import AuditEvent
 from app.services.onlyfans_direct_connector import (
     CONNECTOR_TYPE,
     ConnectorNotEnabledError,

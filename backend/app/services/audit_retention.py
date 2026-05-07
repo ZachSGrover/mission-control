@@ -33,7 +33,7 @@ from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.core.time import utcnow
-from app.models.audit_events import AuditEvent
+from app.models.audit_event import AuditEvent
 
 # Per-category retention in days. Anything not explicitly listed falls
 # back to ``DEFAULT_RETENTION_DAYS``. Numbers chosen to match security

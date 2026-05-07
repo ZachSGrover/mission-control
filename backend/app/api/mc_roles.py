@@ -59,6 +59,11 @@ async def _resolve_role(clerk_id: str, session: AsyncSession) -> tuple[str, bool
     result = await session.exec(select(MCUserRole).where(MCUserRole.clerk_user_id == clerk_id))
     row = result.first()
     if row:
+        # Owner can never be locked out by a stale ``disabled=true`` flag —
+        # the recovery path requires the owner to be able to act, otherwise
+        # an accidental self-disable becomes unrecoverable from the UI.
+        if row.role == "owner":
+            return "owner", False
         return row.role, row.disabled
 
     # Auto-seed: if the table is empty, first caller becomes owner
@@ -219,6 +224,16 @@ async def set_user_role(
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="You cannot change your own role.",
+        )
+
+    # Prevent owner from disabling their own account.  Combined with the
+    # role-resolution bypass for owner rows, this closes the self-lockout
+    # loophole where a disabled owner could neither act nor recover from
+    # the UI.
+    if clerk_user_id == my_id and body.disabled:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="You cannot disable your own account.",
         )
 
     result = await session.exec(select(MCUserRole).where(MCUserRole.clerk_user_id == clerk_user_id))

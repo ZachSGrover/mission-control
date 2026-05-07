@@ -246,6 +246,13 @@ jobs:
         if: ${{ matrix.run_linux_smoke_tests }}
         env:
           XDG_STATE_HOME: ${{ github.workspace }}/.installer-state
+          # Major Security ``assert_production_encryption_configured`` refuses
+          # to start when ``ENVIRONMENT=prod`` (which the installer sets) and
+          # ``SETTINGS_ENCRYPTION_KEY`` is unset.  The local-mode smoke test
+          # is supposed to exercise the production startup path, so we
+          # provide a deterministic 64-hex CI-only key here.  Real production
+          # deploys still set their own dedicated key.
+          SETTINGS_ENCRYPTION_KEY: ci-smoke-${{ github.run_id }}-0000000000000000000000000000000000000000ci
         run: |
           ./install.sh \
             --mode local \

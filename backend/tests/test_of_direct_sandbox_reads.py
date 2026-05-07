@@ -24,7 +24,6 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
-from typing import Any
 from uuid import uuid4
 
 import pytest
@@ -36,7 +35,6 @@ import app.models  # noqa: F401  — registers tables
 from app.core.onlyfans_direct_credential_ref import CredentialReference
 from app.core.onlyfans_direct_schemas import (
     AccountProfileSummary,
-    AccountStatsSummary,
     RevenueSummary,
     SchemaParseError,
     parse_account_profile,

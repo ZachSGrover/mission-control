@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import os
 from datetime import timedelta
-from uuid import UUID, uuid4
+from uuid import uuid4
 
 import pytest
 from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
@@ -24,7 +24,6 @@ from app.core.startup_guard import (
     is_production,
 )
 from app.core.time import utcnow
-from app.models.app_setting import AppSetting
 from app.models.audit_events import AuditEvent
 from app.models.gateways import Gateway
 

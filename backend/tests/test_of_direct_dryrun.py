@@ -39,7 +39,6 @@ from app.core.onlyfans_direct_policy import (
 )
 from app.models.audit_events import AuditEvent
 from app.services.onlyfans_direct_connector import (
-    CONNECTOR_TYPE,
     CookieRefusedError,
     DryRunResult,
     OnlyFansDirectConnector,

@@ -39,7 +39,6 @@ from app.core.pii_redact import redact_for_llm
 from app.models.audit_events import AuditEvent
 from app.services import connector_approvals as approvals_svc
 from app.services import consent as consent_svc
-from app.services import kill_switch as kill_switch_svc
 from app.services.audit_retention_scheduler import (
     is_dry_run,
     is_scheduler_enabled,

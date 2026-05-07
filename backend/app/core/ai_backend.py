@@ -237,18 +237,21 @@ async def _audit_llm_call(
     added to the caller's session and committed so each call is durable even
     if the request handler later rolls back.
     """
-    # Late import to avoid a hard-coupled module-level dependency for a
-    # belt-and-braces type narrowing.
-    from typing import Literal as _Literal
+    # Late imports to avoid a hard-coupled module-level dependency for a
+    # belt-and-braces type narrowing. The ``AuditResult`` / ``AuditSeverity``
+    # aliases live in ``app.services.audit_log`` so the vocabulary stays
+    # single-sourced; using them here (instead of inline ``Literal[...]``
+    # subscripts) also sidesteps a pyflakes false-positive that misreads
+    # aliased ``Literal`` subscript args as bare names.
     from typing import cast
 
-    safe_result = cast(
-        _Literal["success", "denied", "failed", "blocked", "skipped"],
+    from app.services.audit_log import AuditResult, AuditSeverity
+
+    safe_result: AuditResult = cast(
+        AuditResult,
         result if result in {"success", "denied", "failed", "blocked", "skipped"} else "failed",
     )
-    severity: _Literal["info", "warning", "high", "critical"] = (
-        "info" if safe_result == "success" else "warning"
-    )
+    severity: AuditSeverity = "info" if safe_result == "success" else "warning"
     await record_audit(
         session,
         event_type="llm.call",

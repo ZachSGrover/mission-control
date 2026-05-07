@@ -53,7 +53,6 @@ from app.services.onlyfans_direct_session_health import build_safe_notify_payloa
 from app.services.onlyfans_direct_transport import (
     ENV_REAL_CLIENT_ALLOWED,
     ChallengeDetectedError,
-    CredentialLoader,
     CredentialLoaderError,
     CredentialMaterial,
     RealHTTPTransport,

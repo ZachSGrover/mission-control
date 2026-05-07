@@ -227,7 +227,7 @@ async def _scalar_count(session: AsyncSession, stmt: Any) -> int:
 
 from uuid import UUID  # noqa: E402
 
-from fastapi import HTTPException
+from fastapi import HTTPException  # noqa: E402
 from fastapi import status as _http_status  # noqa: E402
 
 from app.core.connector_gate import (  # noqa: E402

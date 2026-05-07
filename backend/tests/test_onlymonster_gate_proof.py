@@ -25,7 +25,6 @@ What this suite proves end-to-end:
 from __future__ import annotations
 
 import os
-from uuid import uuid4
 
 import pytest
 from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine

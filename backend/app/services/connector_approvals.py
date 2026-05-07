@@ -138,11 +138,16 @@ async def _set_status(
 
     session.add(row)
 
-    # Cast to typed Literals at the call site for record_audit.
-    from typing import Literal as _Literal
+    # Cast to typed Literal at the call site for record_audit. The
+    # ``AuditSeverity`` alias is the single source of truth defined in
+    # ``app.services.audit_log``; importing it here (instead of an inline
+    # ``Literal[...]`` subscript) also sidesteps a pyflakes false-positive
+    # that misreads aliased ``Literal`` subscript args as bare names.
     from typing import cast
 
-    sev = cast(_Literal["info", "warning", "high", "critical"], audit_severity)
+    from app.services.audit_log import AuditSeverity
+
+    sev = cast(AuditSeverity, audit_severity)
     await record_audit(
         session,
         event_type=audit_event_type,

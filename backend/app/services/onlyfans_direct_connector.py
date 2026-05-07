@@ -1041,29 +1041,17 @@ class OnlyFansDirectConnector:
         # through the API because the wrapper here only needs counts.
         field_counts: dict[str, int] = {}
         if action == "account_profile_read":
-            from app.core.onlyfans_direct_schemas import (
-                AccountProfileSummary,
-                parse_account_profile,
-            )
+            from app.core.onlyfans_direct_schemas import parse_account_profile
 
             field_counts = safe_field_counts(parse_account_profile(summary))
-            del AccountProfileSummary
         elif action == "account_stats_read":
-            from app.core.onlyfans_direct_schemas import (
-                AccountStatsSummary,
-                parse_account_stats,
-            )
+            from app.core.onlyfans_direct_schemas import parse_account_stats
 
             field_counts = safe_field_counts(parse_account_stats(summary))
-            del AccountStatsSummary
         elif action == "revenue_summary_read":
-            from app.core.onlyfans_direct_schemas import (
-                RevenueSummary,
-                parse_revenue_summary,
-            )
+            from app.core.onlyfans_direct_schemas import parse_revenue_summary
 
             field_counts = safe_field_counts(parse_revenue_summary(summary))
-            del RevenueSummary
 
         success_row = await record_audit(
             session,

@@ -21,7 +21,6 @@ from app.core.connector_gate import is_connector_action_allowed
 from app.core.time import utcnow
 from app.models.audit_events import AuditEvent
 from app.models.client_consents import ClientConsent
-from app.models.connector_approvals import ConnectorApproval
 from app.models.creator_credentials import CreatorCredential
 from app.models.kill_switches import KillSwitch
 from app.services import connector_approvals as approvals_svc

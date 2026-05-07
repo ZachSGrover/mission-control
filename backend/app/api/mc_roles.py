@@ -203,7 +203,7 @@ async def set_user_role(
     body: SetRoleRequest,
     request: Request,
     auth: AuthContext = AUTH_DEP,
-    _role: str = Depends(require_owner),
+    actor_role: str = Depends(require_owner),
     session: AsyncSession = SESSION_DEP,
 ) -> UserRoleEntry:
     """Create or update a user's role. Owner only."""
@@ -278,7 +278,7 @@ async def remove_user_role(
     clerk_user_id: str,
     request: Request,
     auth: AuthContext = AUTH_DEP,
-    _role: str = Depends(require_owner),
+    actor_role: str = Depends(require_owner),
     session: AsyncSession = SESSION_DEP,
 ) -> None:
     """Remove a user's explicit role (they revert to viewer default)."""

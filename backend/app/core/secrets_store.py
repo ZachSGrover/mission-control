@@ -85,6 +85,33 @@ def _get_fernet() -> Fernet:
     return _fernet
 
 
+def is_dedicated_encryption_key_configured() -> bool:
+    """Return True iff a dedicated ``SETTINGS_ENCRYPTION_KEY`` is set in the env.
+
+    Used by Sprint 2 high-sensitivity flows (creator credential vault) to
+    refuse new writes when the encryption seed would be a rotation-sensitive
+    auth token. Existing flows (provider API keys, integration credentials,
+    GitHub PAT) keep working under fallback for dev convenience.
+    """
+    import os
+
+    return bool(os.environ.get("SETTINGS_ENCRYPTION_KEY", "").strip())
+
+
+def encrypt_value(plaintext: str) -> str:
+    """Public Fernet encrypt helper used by Sprint 2 creator vault."""
+    return _encrypt(plaintext)
+
+
+def decrypt_value(ciphertext: str) -> str:
+    """Public Fernet decrypt helper used by Sprint 2 creator vault.
+
+    Returns an empty string and logs a warning on decrypt failure
+    (mirrors the pattern used by ``get_secret`` for stored API keys).
+    """
+    return _decrypt(ciphertext, db_key="creator_credentials")
+
+
 def _encrypt(plaintext: str) -> str:
     return _get_fernet().encrypt(plaintext.encode()).decode()
 

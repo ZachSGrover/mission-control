@@ -24,6 +24,7 @@ from app.schemas.gateways import (
     GatewayUpdate,
 )
 from app.schemas.pagination import DefaultLimitOffsetPage
+from app.services.gateway_tokens import set_token as set_gateway_token
 from app.services.openclaw.admin_service import GatewayAdminLifecycleService
 from app.services.openclaw.session_service import GatewayTemplateSyncQuery
 
@@ -72,19 +73,44 @@ def _template_sync_query(
 SYNC_QUERY_DEP = Depends(_template_sync_query)
 
 
+def _mask_gateway_token(gateway: Gateway) -> Gateway:
+    """Return a defensive copy of ``gateway`` with the legacy ``token``
+    field nulled. Used by every read path that doesn't explicitly opt
+    into raw-token disclosure.
+    """
+    from copy import copy as _copy
+
+    masked = _copy(gateway)
+    masked.token = None
+    return masked
+
+
 @router.get("", response_model=DefaultLimitOffsetPage[GatewayRead])
 async def list_gateways(
     session: AsyncSession = SESSION_DEP,
     ctx: OrganizationContext = ORG_ADMIN_DEP,
 ) -> LimitOffsetPage[GatewayRead]:
-    """List gateways for the caller's organization."""
+    """List gateways for the caller's organization.
+
+    Sprint 5 cutover: every row's legacy ``token`` field is masked.
+    Use ``GET /{gateway_id}?include_token=1`` for the legitimate
+    edit-page disclosure path.
+    """
     statement = (
         Gateway.objects.filter_by(organization_id=ctx.organization.id)
         .order_by(col(Gateway.created_at).desc())
         .statement
     )
 
-    return await paginate(session, statement)
+    page: LimitOffsetPage[GatewayRead] = await paginate(session, statement)
+    # Mask each row's legacy plaintext token. ``token_configured`` on
+    # GatewayRead is derived in the schema validator and is unaffected.
+    masked_items: list[GatewayRead] = []
+    for g in page.items:
+        gr = g.model_copy(update={"token": None})
+        masked_items.append(gr)
+    page.items = masked_items
+    return page
 
 
 @router.post("", response_model=GatewayRead)
@@ -94,7 +120,12 @@ async def create_gateway(
     auth: AuthContext = AUTH_DEP,
     ctx: OrganizationContext = ORG_ADMIN_DEP,
 ) -> Gateway:
-    """Create a gateway and provision or refresh its main agent."""
+    """Create a gateway and provision or refresh its main agent.
+
+    Sprint 3: the plaintext ``payload.token`` is encrypted via
+    :func:`app.services.gateway_tokens.set_token` immediately after the
+    row is created, so the legacy ``token`` column is never written to.
+    """
     service = GatewayAdminLifecycleService(session)
     await service.assert_gateway_runtime_compatible(
         url=payload.url,
@@ -103,12 +134,22 @@ async def create_gateway(
         disable_device_pairing=payload.disable_device_pairing,
     )
     data = payload.model_dump()
+    plaintext_token = data.pop("token", None)
     gateway_id = uuid4()
     data["id"] = gateway_id
     data["organization_id"] = ctx.organization.id
     gateway = await crud.create(session, Gateway, **data)
+    if plaintext_token:
+        await set_gateway_token(
+            session,
+            gateway,
+            plaintext_token,
+            actor_user_id=auth.user.id if auth.user else None,
+            actor_email=auth.user.email if auth.user else None,
+        )
+        await session.commit()
     await service.ensure_main_agent(gateway, auth, action="provision")
-    return gateway
+    return _mask_gateway_token(gateway)
 
 
 @router.get("/{gateway_id}", response_model=GatewayRead)
@@ -116,13 +157,52 @@ async def get_gateway(
     gateway_id: UUID,
     session: AsyncSession = SESSION_DEP,
     ctx: OrganizationContext = ORG_ADMIN_DEP,
+    auth: AuthContext = AUTH_DEP,
+    include_token: bool = False,
 ) -> Gateway:
-    """Return one gateway by id for the caller's organization."""
+    """Return one gateway by id for the caller's organization.
+
+    Sprint 5 cutover: by default the response masks the legacy ``token``
+    field to ``None`` even when a legacy plaintext value still exists on
+    disk. Pass ``?include_token=1`` to receive it (e.g. for the gateway
+    edit page); this path audits ``gateway.token.exposed`` so every
+    plaintext disclosure is visible in the trail. ``token_configured``
+    on the response is always populated truthfully.
+    """
     service = GatewayAdminLifecycleService(session)
     gateway = await service.require_gateway(
         gateway_id=gateway_id,
         organization_id=ctx.organization.id,
     )
+    if not include_token:
+        # Don't mutate the ORM row; build a defensive read-only copy
+        # for serialisation. ``token_configured`` is derived in the
+        # schema's model_validator.
+        from copy import copy as _copy
+
+        masked = _copy(gateway)
+        masked.token = None
+        return masked
+
+    # Owner-or-admin already gated by ORG_ADMIN_DEP. Audit the explicit
+    # opt-in so any plaintext disclosure is on the record.
+    from app.services.audit_log import record_audit_event
+
+    await record_audit_event(
+        session,
+        event_type="gateway.token.exposed",
+        category="credential",
+        action="read",
+        result="success",
+        severity="warning",
+        actor_user_id=auth.user.id if auth.user else None,
+        actor_email=auth.user.email if auth.user else None,
+        organization_id=gateway.organization_id,
+        resource_type="gateway",
+        resource_id=str(gateway.id),
+        metadata={"reason": "include_token=1"},
+    )
+    await session.commit()
     return gateway
 
 
@@ -141,15 +221,25 @@ async def update_gateway(
         organization_id=ctx.organization.id,
     )
     updates = payload.model_dump(exclude_unset=True)
+    # Sprint 3: extract token from the patch payload so it goes through
+    # ``set_gateway_token`` and lands in ``encrypted_token``, never the
+    # legacy plaintext column.
+    token_change_requested = "token" in updates
+    plaintext_token = updates.pop("token", None)
     if (
         "url" in updates
-        or "token" in updates
+        or token_change_requested
         or "allow_insecure_tls" in updates
         or "disable_device_pairing" in updates
     ):
         raw_next_url = updates.get("url", gateway.url)
         next_url = raw_next_url.strip() if isinstance(raw_next_url, str) else ""
-        next_token = updates.get("token", gateway.token)
+        next_token = (
+            plaintext_token
+            if token_change_requested
+            else (gateway.encrypted_token and "")  # don't leak plaintext to compat check
+            or gateway.token
+        )
         next_allow_insecure_tls = bool(
             updates.get("allow_insecure_tls", gateway.allow_insecure_tls),
         )
@@ -164,8 +254,17 @@ async def update_gateway(
                 disable_device_pairing=next_disable_device_pairing,
             )
     await crud.patch(session, gateway, updates)
+    if token_change_requested:
+        await set_gateway_token(
+            session,
+            gateway,
+            plaintext_token,
+            actor_user_id=auth.user.id if auth.user else None,
+            actor_email=auth.user.email if auth.user else None,
+        )
+        await session.commit()
     await service.ensure_main_agent(gateway, auth, action="update")
-    return gateway
+    return _mask_gateway_token(gateway)
 
 
 @router.post("/{gateway_id}/templates/sync", response_model=GatewayTemplatesSyncResult)
@@ -224,3 +323,62 @@ async def delete_gateway(
     await session.delete(gateway)
     await session.commit()
     return OkResponse()
+
+
+# ── Sprint 6: server-side runtime status ─────────────────────────────────────
+#
+# Returns only safe status fields. The frontend never sees the
+# decrypted token — token resolution happens here and only the
+# observable status flows back. Sprint 5's `?include_token=1` opt-in
+# stays for legitimate edit-form disclosure paths but the runtime
+# status check no longer requires it.
+
+
+from pydantic import BaseModel as _BaseModel  # noqa: E402
+
+
+class GatewayRuntimeStatusResponse(_BaseModel):
+    """Safe runtime-status payload — no token, no preview, no plaintext."""
+
+    gateway_id: str
+    token_configured: bool
+    token_source: str  # "encrypted" | "legacy_plaintext" | "none"
+    url_set: bool
+    allow_insecure_tls: bool
+    disable_device_pairing: bool
+
+
+@router.get("/{gateway_id}/runtime-status", response_model=GatewayRuntimeStatusResponse)
+async def gateway_runtime_status(
+    gateway_id: UUID,
+    session: AsyncSession = SESSION_DEP,
+    ctx: OrganizationContext = ORG_ADMIN_DEP,
+) -> GatewayRuntimeStatusResponse:
+    """Read-only runtime-status snapshot for one gateway.
+
+    Sprint 6: replaces the legacy frontend pattern of fetching the raw
+    token to compute "is this configured." Returns only boolean and
+    enum status fields. ``token_source`` distinguishes the three
+    states an operator might care about (encrypted column populated,
+    legacy plaintext still on disk, or no token at all) without
+    revealing the value.
+    """
+    service = GatewayAdminLifecycleService(session)
+    gateway = await service.require_gateway(
+        gateway_id=gateway_id,
+        organization_id=ctx.organization.id,
+    )
+    if gateway.encrypted_token:
+        token_source = "encrypted"
+    elif gateway.token:
+        token_source = "legacy_plaintext"
+    else:
+        token_source = "none"
+    return GatewayRuntimeStatusResponse(
+        gateway_id=str(gateway.id),
+        token_configured=token_source != "none",
+        token_source=token_source,
+        url_set=bool(gateway.url),
+        allow_insecure_tls=bool(gateway.allow_insecure_tls),
+        disable_device_pairing=bool(gateway.disable_device_pairing),
+    )

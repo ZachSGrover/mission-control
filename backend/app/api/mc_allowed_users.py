@@ -9,7 +9,7 @@ On first sign-in of an email-only row, `clerk_user_id` is backfilled.
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from pydantic import BaseModel, model_validator
 from sqlalchemy import or_
 from sqlmodel import col, select
@@ -22,6 +22,7 @@ from app.core.time import utcnow
 from app.db.session import get_session
 from app.models.mc_allowed_user import MCAllowedUser
 from app.models.mc_role import MCUserRole
+from app.services.audit_log import actor_from_auth, record_audit
 
 router = APIRouter(prefix="/allowed-users", tags=["allowed-users"])
 logger = get_logger(__name__)
@@ -149,6 +150,7 @@ async def list_allowed_users(
 @router.post("", response_model=AllowedUserEntry, status_code=status.HTTP_201_CREATED)
 async def add_allowed_user(
     body: AddAllowedUserRequest,
+    request: Request,
     auth: AuthContext = AUTH_DEP,
     _role: str = Depends(require_owner),
     session: AsyncSession = SESSION_DEP,
@@ -212,6 +214,19 @@ async def add_allowed_user(
                 )
             )
 
+    actor_id, actor_email = actor_from_auth(auth)
+    await record_audit(
+        session,
+        actor_clerk_user_id=actor_id,
+        actor_email=actor_email,
+        actor_role="owner",
+        action="allowlist.add",
+        target_type="allowed_user",
+        target_id=clerk_user_id or (f"email:{email}" if email else "unknown"),
+        outcome="success",
+        safe_summary=f"role={body.role} pending={clerk_user_id is None}",
+        request=request,
+    )
     await session.commit()
     await session.refresh(allowed_row)
 
@@ -228,6 +243,7 @@ async def add_allowed_user(
 @router.delete("/{key}", status_code=status.HTTP_204_NO_CONTENT)
 async def remove_allowed_user(
     key: str,
+    request: Request,
     auth: AuthContext = AUTH_DEP,
     _role: str = Depends(require_owner),
     session: AsyncSession = SESSION_DEP,
@@ -269,6 +285,20 @@ async def remove_allowed_user(
         if role_row:
             await session.delete(role_row)
 
+    actor_id, actor_email = actor_from_auth(auth)
+    await record_audit(
+        session,
+        actor_clerk_user_id=actor_id,
+        actor_email=actor_email,
+        actor_role="owner",
+        action="allowlist.remove",
+        target_type="allowed_user",
+        target_id=clerk_user_id
+        or (f"email:{allowed_row.email}" if allowed_row.email else "unknown"),
+        outcome="success",
+        safe_summary="allowlist row + role removed",
+        request=request,
+    )
     await session.commit()
 
     logger.info(

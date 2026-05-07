@@ -378,6 +378,60 @@ async def test_bot_permissions_invalid_role_rejected() -> None:
         assert res.status_code == 400
 
 
+@pytest.mark.asyncio
+async def test_bot_permissions_owner_cannot_be_removed() -> None:
+    """Owner is always reinstated on the server even if not sent.
+
+    Defends against a future UI bug or a malicious client trying to lock
+    the owner out of their own bot.
+    """
+    async with _make_client(role="owner") as (client, maker):
+        res = await client.patch(
+            "/api/v1/bots/master_control_loop/permissions",
+            json={"permitted_roles": ["operator"]},
+        )
+        assert res.status_code == 200, res.text
+        body = res.json()
+        assert "owner" in body["permitted_roles"]
+        assert "operator" in body["permitted_roles"]
+
+        # Confirm the persisted row also has owner reinstated.
+        async with maker() as session:
+            entry = (
+                await session.exec(
+                    select(BotRegistryEntry).where(
+                        BotRegistryEntry.slug == "master_control_loop",
+                    ),
+                )
+            ).first()
+            assert entry is not None
+            stored = parse_permitted_roles(entry.permitted_roles_json)
+            assert "owner" in stored
+
+
+@pytest.mark.asyncio
+async def test_bot_permissions_response_has_no_secret_fields() -> None:
+    """The PATCH response shape must mirror the GET — no secrets ever."""
+    async with _make_client(role="owner") as (client, _maker):
+        res = await client.patch(
+            "/api/v1/bots/master_control_loop/permissions",
+            json={"permitted_roles": ["owner", "operator"]},
+        )
+        assert res.status_code == 200
+        body = res.json()
+        forbidden = {
+            "token",
+            "secret",
+            "webhook_url",
+            "api_key",
+            "credential",
+            "password",
+            "preview",
+            "message_body",
+        }
+        assert forbidden.isdisjoint(body.keys()), body
+
+
 # ── Phase 4: audit log written for role + allowlist ──────────────────────
 
 

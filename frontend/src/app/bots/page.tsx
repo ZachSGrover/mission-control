@@ -17,9 +17,11 @@ import {
 import { SignedIn, SignedOut } from "@/auth/clerk";
 import { RoleGuard } from "@/components/auth/RoleGuard";
 import { SignedOutPanel } from "@/components/auth/SignedOutPanel";
+import { BotPermissionsEditor } from "@/components/bots/BotPermissionsEditor";
 import { DashboardSidebar } from "@/components/organisms/DashboardSidebar";
 import { DashboardShell } from "@/components/templates/DashboardShell";
 import { useAuthFetch } from "@/hooks/use-auth-fetch";
+import { useRole } from "@/hooks/use-role";
 import { getApiBaseUrl } from "@/lib/api-base";
 import type { MCRole } from "@/lib/roles";
 
@@ -80,6 +82,23 @@ async function stopBot(slug: string, fetchFn: FetchFn): Promise<BotEntry> {
   return (await detailRes.json()) as BotEntry;
 }
 
+async function setBotPermissions(
+  slug: string,
+  permittedRoles: MCRole[],
+  fetchFn: FetchFn,
+): Promise<BotEntry> {
+  const res = await fetchFn(`${getApiBaseUrl()}/api/v1/bots/${slug}/permissions`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ permitted_roles: permittedRoles }),
+  });
+  if (!res.ok) {
+    const body = (await res.json().catch(() => null)) as { detail?: string } | null;
+    throw new Error(body?.detail ?? `HTTP ${res.status}`);
+  }
+  return (await res.json()) as BotEntry;
+}
+
 // ── Visual helpers ────────────────────────────────────────────────────────────
 
 const STATUS_COLORS: Record<string, { bg: string; fg: string }> = {
@@ -120,13 +139,24 @@ function BotRow({
   entry,
   fetchFn,
   onUpdate,
+  viewerRole,
 }: {
   entry: BotEntry;
   fetchFn: FetchFn;
   onUpdate: (next: BotEntry) => void;
+  viewerRole: MCRole | null;
 }) {
   const [busy, setBusy] = useState<"start" | "stop" | null>(null);
   const [error, setError] = useState<string | null>(null);
+
+  const onSavePermissions = useCallback(
+    async (slug: string, roles: MCRole[]): Promise<MCRole[]> => {
+      const next = await setBotPermissions(slug, roles, fetchFn);
+      onUpdate(next);
+      return next.permitted_roles;
+    },
+    [fetchFn, onUpdate],
+  );
 
   const blockedReason = useMemo(() => {
     if (entry.read_only_external) return "Managed externally (launchd / cloudflared)";
@@ -253,6 +283,13 @@ function BotRow({
           )}
         </div>
       </div>
+      <BotPermissionsEditor
+        slug={entry.slug}
+        permittedRoles={entry.permitted_roles}
+        readOnlyExternal={entry.read_only_external}
+        viewerRole={viewerRole}
+        onSave={onSavePermissions}
+      />
     </div>
   );
 }
@@ -265,6 +302,7 @@ function BotsPageContent() {
   const [error, setError] = useState<string | null>(null);
 
   const { fetchWithAuth } = useAuthFetch();
+  const { role: viewerRole } = useRole();
 
   const refresh = useCallback(async () => {
     setLoading(true);
@@ -345,7 +383,13 @@ function BotsPageContent() {
         ) : (
           <div className="space-y-3">
             {bots.map((b) => (
-              <BotRow key={b.slug} entry={b} fetchFn={fetchWithAuth} onUpdate={handleUpdate} />
+              <BotRow
+                key={b.slug}
+                entry={b}
+                fetchFn={fetchWithAuth}
+                onUpdate={handleUpdate}
+                viewerRole={viewerRole}
+              />
             ))}
           </div>
         )}

@@ -20,6 +20,7 @@ import {
   Network,
   Plug,
   Settings,
+  Shield,
   Siren,
   TriangleAlert,
   Users,
@@ -125,6 +126,7 @@ export function DashboardSidebar() {
   const usersActive = pathname.startsWith("/settings/users");
   const integrationsActive = pathname.startsWith("/settings/integrations");
   const guideActive = pathname.startsWith("/guide");
+  const securityActive = pathname.startsWith("/security");
 
   return (
     <aside
@@ -306,6 +308,31 @@ export function DashboardSidebar() {
             >
               <Plug className="h-4 w-4 shrink-0" />
               Integrations
+            </Link>
+          )}
+
+          {role === "owner" && (
+            <Link
+              href="/security"
+              data-testid="nav-security"
+              className={cn(
+                "flex items-center gap-2.5 rounded-lg px-3 py-2 text-sm transition-colors",
+                securityActive ? "font-medium" : "font-normal",
+              )}
+              style={
+                securityActive
+                  ? { background: "var(--accent-soft)", color: "var(--accent-strong)" }
+                  : { color: "var(--text-muted)" }
+              }
+              onMouseEnter={(e) => {
+                if (!securityActive) (e.currentTarget as HTMLElement).style.color = "var(--text)";
+              }}
+              onMouseLeave={(e) => {
+                if (!securityActive) (e.currentTarget as HTMLElement).style.color = "var(--text-muted)";
+              }}
+            >
+              <Shield className="h-4 w-4 shrink-0" />
+              Security
             </Link>
           )}
         </NavSection>

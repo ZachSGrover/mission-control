@@ -107,13 +107,13 @@ def upgrade() -> None:
                 "enabled",
                 sa.Boolean(),
                 nullable=False,
-                server_default=sa.text("0"),
+                server_default=sa.false(),
             ),
             sa.Column(
                 "safe_mode",
                 sa.Boolean(),
                 nullable=False,
-                server_default=sa.text("1"),
+                server_default=sa.true(),
             ),
             sa.Column(
                 "status",

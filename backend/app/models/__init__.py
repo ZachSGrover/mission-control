@@ -13,7 +13,9 @@ from app.models.board_onboarding import BoardOnboardingSession
 from app.models.board_webhook_payloads import BoardWebhookPayload
 from app.models.board_webhooks import BoardWebhook
 from app.models.boards import Board
+from app.models.bot_contact_archive import BotContactArchive
 from app.models.bot_registry import BotRegistryEntry
+from app.models.bot_runs import BotRun, BotRunOutput
 from app.models.client_consents import ClientConsent
 from app.models.connector_approvals import ConnectorApproval
 from app.models.creator_credentials import CreatorCredential
@@ -42,6 +44,7 @@ from app.models.organization_invite_board_access import OrganizationInviteBoardA
 from app.models.organization_invites import OrganizationInvite
 from app.models.organization_members import OrganizationMember
 from app.models.organizations import Organization
+from app.models.safety_events import SafetyEvent
 from app.models.skills import GatewayInstalledSkill, MarketplaceSkill, SkillPack
 from app.models.tag_assignments import TagAssignment
 from app.models.tags import Tag
@@ -61,7 +64,10 @@ __all__ = [
     "ActivityEvent",
     "Agent",
     "AuditEvent",
+    "BotContactArchive",
     "BotRegistryEntry",
+    "BotRun",
+    "BotRunOutput",
     "ApprovalTaskLink",
     "Approval",
     "BoardGroupMemory",
@@ -103,6 +109,7 @@ __all__ = [
     "OrganizationBoardAccess",
     "OrganizationInvite",
     "OrganizationInviteBoardAccess",
+    "SafetyEvent",
     "TaskDependency",
     "Task",
     "TaskFingerprint",

@@ -3,6 +3,7 @@
 export const dynamic = "force-dynamic";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import Link from "next/link";
 import {
   AlertTriangle,
   Bot as BotIcon,
@@ -169,9 +170,13 @@ function BotRow({
         <BotIcon className="h-5 w-5 shrink-0" style={{ color: "var(--text-muted)" }} />
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-2">
-            <p className="truncate text-sm font-medium" style={{ color: "var(--text)" }}>
+            <Link
+              href={`/bots/${entry.slug}`}
+              className="truncate text-sm font-medium underline decoration-dotted underline-offset-2"
+              style={{ color: "var(--text)" }}
+            >
               {entry.name}
-            </p>
+            </Link>
             <span className="text-[10px] font-mono uppercase" style={{ color: "var(--text-quiet)" }}>
               {entry.kind}
             </span>

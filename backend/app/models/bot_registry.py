@@ -98,6 +98,23 @@ class BotRegistryEntry(SQLModel, table=True):
     last_run_at: datetime | None = Field(default=None)
     last_error_summary: str | None = Field(default=None, max_length=256)
 
+    # Sandbox / live-write gates (added for X DM Bot RTxRT MVP).
+    #
+    #   live_writes_enabled — hardcoded ``False`` in MVP for every bot
+    #     that exposes a sandbox/live distinction.  Service + API layers
+    #     refuse any path that would flip this to ``True``.
+    #   sandbox_mode        — when ``True``, run logic must produce only
+    #     dry-run output: no AdsPower calls, no Playwright, no X.com
+    #     navigation, no platform writes.
+    #   kill_switch_active  — when ``True``, queued runs are cancelled
+    #     and new runs are rejected.  Owner-only flip.
+    #   version             — display string for the UI; not a schema
+    #     version.  Free-form ``"1.0.0"``-style.
+    live_writes_enabled: bool = Field(default=False)
+    sandbox_mode: bool = Field(default=True)
+    kill_switch_active: bool = Field(default=False)
+    version: str | None = Field(default=None, max_length=32)
+
     # Permissions — JSON-encoded list of role strings.  We keep this as
     # ``Column(String)`` with JSON-encoded text on SQLite for portability;
     # Postgres production gets the same string type and we json.loads()

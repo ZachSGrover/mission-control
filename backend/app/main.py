@@ -59,6 +59,7 @@ from app.api.telegram import router as telegram_router
 from app.api.usage import router as usage_router
 from app.api.users import router as users_router
 from app.api.workflows import router as workflows_router
+from app.api.x_dm_rtxrt import router as x_dm_rtxrt_router
 from app.core.config import settings
 from app.core.error_handling import install_error_handling
 from app.core.logging import configure_logging, get_logger
@@ -732,6 +733,7 @@ api_v1.include_router(of_intelligence_router)
 api_v1.include_router(of_qc_discord_router)
 api_v1.include_router(of_qc_scheduler_router)
 api_v1.include_router(bots_router)
+api_v1.include_router(x_dm_rtxrt_router)
 app.include_router(api_v1)
 
 add_pagination(app)

@@ -65,6 +65,9 @@ class BotSeed:
     description: str
     permitted_roles: tuple[str, ...]
     safe_mode: bool = True
+    version: str | None = None
+    sandbox_mode: bool = True
+    live_writes_enabled: bool = False
 
 
 # IMPORTANT: keep this list non-sensitive.  No webhook URLs, no tokens,
@@ -149,6 +152,26 @@ SEED_BOTS: tuple[BotSeed, ...] = (
             "outside Mission Control.  Read-only entry."
         ),
         permitted_roles=("owner",),
+    ),
+    # X DM Bot RTxRT — sandbox-first wrapper for the COO's outreach
+    # operations.  Live writes are disabled in MVP at every layer:
+    # the registry seeds ``live_writes_enabled=False`` and the API
+    # enforces 403 ``live_writes_disabled_in_MVP`` on any path that
+    # would attempt a real platform action.  Operators are granted
+    # explicitly so they can view, pause, and reject sandbox runs;
+    # creating/starting runs and changing settings remain owner-only.
+    BotSeed(
+        slug="x-dm-rtxrt",
+        name="X DM Bot RTxRT",
+        kind=BOT_KIND_CONTROL_LOOP,
+        description=(
+            "Sandbox first Mission Control wrapper for RTxRT outreach "
+            "operations. Live platform writes are disabled in MVP."
+        ),
+        permitted_roles=("owner", "operator"),
+        version="1.0.0",
+        sandbox_mode=True,
+        live_writes_enabled=False,
     ),
 )
 
@@ -235,6 +258,10 @@ async def bootstrap_seed(session: "AsyncSession") -> int:
                 else BOT_STATUS_UNKNOWN
             ),
             permitted_roles_json=encode_permitted_roles(seed.permitted_roles),
+            version=seed.version,
+            sandbox_mode=seed.sandbox_mode,
+            live_writes_enabled=seed.live_writes_enabled,
+            kill_switch_active=False,
         )
         session.add(row)
         inserted += 1

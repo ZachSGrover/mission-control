@@ -20,15 +20,9 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 import app.models  # noqa: F401  — registers tables
 from app.api.security_admin import security_status
 from app.core.auth import AuthContext
-from app.services import (
-    connector_approvals as approvals_svc,
-)
-from app.services import (
-    consent as consent_svc,
-)
-from app.services import (
-    kill_switch as kill_switch_svc,
-)
+from app.services import connector_approvals as approvals_svc
+from app.services import consent as consent_svc
+from app.services import kill_switch as kill_switch_svc
 
 
 async def _engine() -> AsyncEngine:

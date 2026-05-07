@@ -24,8 +24,8 @@ from app.core.startup_guard import (
     is_production,
 )
 from app.core.time import utcnow
-from app.models.audit_events import AuditEvent
 from app.models.app_setting import AppSetting
+from app.models.audit_events import AuditEvent
 from app.models.gateways import Gateway
 
 

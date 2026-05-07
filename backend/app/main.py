@@ -16,14 +16,13 @@ from app.api.agents import router as agents_router
 from app.api.app_settings import router as app_settings_router
 from app.api.approvals import router as approvals_router
 from app.api.auth import router as auth_router
-from app.api.clerk_webhooks import router as clerk_webhooks_router
-from app.api.security_admin import router as security_admin_router
 from app.api.board_group_memory import router as board_group_memory_router
 from app.api.board_groups import router as board_groups_router
 from app.api.board_memory import router as board_memory_router
 from app.api.board_onboarding import router as board_onboarding_router
 from app.api.board_webhooks import router as board_webhooks_router
 from app.api.boards import router as boards_router
+from app.api.clerk_webhooks import router as clerk_webhooks_router
 from app.api.control_agents import router as control_agents_router
 from app.api.control_devices import router as control_devices_router
 from app.api.control_tasks import router as control_tasks_router
@@ -47,6 +46,7 @@ from app.api.of_qc_scheduler import router as of_qc_scheduler_router
 from app.api.openai_chat import router as openai_chat_router
 from app.api.operator import router as operator_router
 from app.api.organizations import router as organizations_router
+from app.api.security_admin import router as security_admin_router
 from app.api.skills_marketplace import router as skills_marketplace_router
 from app.api.souls_directory import router as souls_directory_router
 from app.api.synthesize import router as synthesize_router

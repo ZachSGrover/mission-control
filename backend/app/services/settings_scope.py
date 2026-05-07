@@ -32,11 +32,9 @@ from uuid import UUID
 
 from sqlmodel.ext.asyncio.session import AsyncSession
 
-from app.core.secrets_store import (
-    delete_secret as _delete_secret_global,
-    get_secret_with_source as _get_secret_with_source_global,
-    set_secret as _set_secret_global,
-)
+from app.core.secrets_store import delete_secret as _delete_secret_global
+from app.core.secrets_store import get_secret_with_source as _get_secret_with_source_global
+from app.core.secrets_store import set_secret as _set_secret_global
 from app.services.app_settings_scoped import (
     delete_secret_for_org,
     get_secret_for_org,

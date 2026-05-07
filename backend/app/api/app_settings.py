@@ -20,12 +20,12 @@ from app.core.secrets_store import (
     get_secret,
     mask_key,
 )
+from app.db.session import get_session
+from app.services.audit_log import record_audit
 from app.services.settings_scope import (
     delete_secret_scoped,
     set_secret_scoped,
 )
-from app.db.session import get_session
-from app.services.audit_log import record_audit
 
 router = APIRouter(prefix="/settings", tags=["settings"])
 AUTH_DEP = Depends(get_auth_context)

@@ -31,8 +31,8 @@ from app.core.pii_redact import redact_for_llm
 from app.models.audit_events import AuditEvent
 from app.services.gated_onlymonster_sync import (
     gated_onlymonster_creator_sync,
-    is_enabled as is_om_gate_enabled,
 )
+from app.services.gated_onlymonster_sync import is_enabled as is_om_gate_enabled
 from app.services.settings_scope import (
     get_secret_scoped,
     is_org_scope_enabled,

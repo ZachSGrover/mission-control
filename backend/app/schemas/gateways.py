@@ -3,9 +3,8 @@
 from __future__ import annotations
 
 from datetime import datetime
-from uuid import UUID
-
 from typing import Self
+from uuid import UUID
 
 from pydantic import field_validator, model_validator
 from sqlmodel import Field, SQLModel

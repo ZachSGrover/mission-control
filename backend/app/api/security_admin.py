@@ -227,7 +227,8 @@ async def _scalar_count(session: AsyncSession, stmt: Any) -> int:
 
 from uuid import UUID  # noqa: E402
 
-from fastapi import HTTPException, status as _http_status  # noqa: E402
+from fastapi import HTTPException
+from fastapi import status as _http_status  # noqa: E402
 
 from app.core.connector_gate import (  # noqa: E402
     GateVerdict,
@@ -838,12 +839,8 @@ async def onlymonster_gate_status(
     from app.services import connector_approvals as _approvals_svc
     from app.services import consent as _consent_svc
     from app.services import kill_switch as _kill_switch_svc
-    from app.services.gated_onlymonster_sync import (
-        ENV_ENABLED as _OM_ENV_ENABLED,
-    )
-    from app.services.onlymonster_fake_client import (
-        ENV_ALLOW_FAKE_IN_PROD as _OM_ENV_FAKE,
-    )
+    from app.services.gated_onlymonster_sync import ENV_ENABLED as _OM_ENV_ENABLED
+    from app.services.onlymonster_fake_client import ENV_ALLOW_FAKE_IN_PROD as _OM_ENV_FAKE
 
     env_flag = _os.environ.get(_OM_ENV_ENABLED, "0").strip() == "1"
     fake_allowed = _os.environ.get(_OM_ENV_FAKE, "0").strip() == "1"
@@ -1045,9 +1042,7 @@ async def onlyfans_direct_status(
     from app.core.onlyfans_direct_policy import READ_ACTIONS, WRITE_ACTIONS
     from app.core.startup_guard import is_production as _is_production
     from app.services.onlyfans_direct_connector import OnlyFansDirectConnector
-    from app.services.onlyfans_direct_fake_client import (
-        ENV_ALLOW_FAKE_IN_PROD as _OF_ENV_FAKE,
-    )
+    from app.services.onlyfans_direct_fake_client import ENV_ALLOW_FAKE_IN_PROD as _OF_ENV_FAKE
     from app.services.onlyfans_direct_session_health import notify_channel_status
 
     snapshot = OnlyFansDirectConnector().status()
@@ -1059,9 +1054,7 @@ async def onlyfans_direct_status(
     # the boolean to render the readiness state.
     dry_run_available = (not in_prod) or fake_allowed
     # Sprint 8C: sandbox availability + missing-prereq breakdown.
-    from app.services.onlyfans_direct_connector import (
-        ENV_SANDBOX_ALLOWED as _OF_ENV_SANDBOX,
-    )
+    from app.services.onlyfans_direct_connector import ENV_SANDBOX_ALLOWED as _OF_ENV_SANDBOX
 
     sandbox_env_flag_set = _os.environ.get(_OF_ENV_SANDBOX, "0").strip() == "1"
     sandbox_available = sandbox_env_flag_set and (not in_prod)
@@ -1086,9 +1079,7 @@ async def onlyfans_direct_status(
     sandbox_blocked_methods = sorted(set(READ_ACTIONS) - set(sandbox_implemented))
 
     # Sprint 8E: real-client env flag + transport-configurable status.
-    from app.services.onlyfans_direct_transport import (
-        ENV_REAL_CLIENT_ALLOWED as _OF_ENV_REAL,
-    )
+    from app.services.onlyfans_direct_transport import ENV_REAL_CLIENT_ALLOWED as _OF_ENV_REAL
 
     real_client_env_flag_set = _os.environ.get(_OF_ENV_REAL, "0").strip() == "1"
     sandbox_transport_configured = sandbox_env_flag_set and real_client_env_flag_set and not in_prod

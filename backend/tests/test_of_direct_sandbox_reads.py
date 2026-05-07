@@ -249,9 +249,9 @@ def test_real_http_transport_now_has_constructor_args(
     and `credential_loader`. The Sprint 8D no-arg construction
     path no longer exists.
     """
-    from app.services.onlyfans_direct_transport import RealHTTPTransport
-
     import inspect
+
+    from app.services.onlyfans_direct_transport import RealHTTPTransport
 
     sig = inspect.signature(RealHTTPTransport.__init__)
     assert "base_url" in sig.parameters

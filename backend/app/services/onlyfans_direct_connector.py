@@ -732,10 +732,10 @@ class OnlyFansDirectConnector:
         # Default everything to "not yet checked" so the result can
         # surface the prereq snapshot whichever step we exit on.
         env_flag_set = os.environ.get(ENV_SANDBOX_ALLOWED, "0").strip() == "1"
-        from app.core.startup_guard import is_production as _is_production
         from app.core.secrets_store import (
             is_dedicated_encryption_key_configured,
         )
+        from app.core.startup_guard import is_production as _is_production
 
         in_prod = _is_production()
         cred_status_str = "unknown"

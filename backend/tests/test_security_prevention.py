@@ -24,15 +24,9 @@ from app.models.client_consents import ClientConsent
 from app.models.connector_approvals import ConnectorApproval
 from app.models.creator_credentials import CreatorCredential
 from app.models.kill_switches import KillSwitch
-from app.services import (
-    connector_approvals as approvals_svc,
-)
-from app.services import (
-    consent as consent_svc,
-)
-from app.services import (
-    kill_switch as kill_switch_svc,
-)
+from app.services import connector_approvals as approvals_svc
+from app.services import consent as consent_svc
+from app.services import kill_switch as kill_switch_svc
 from app.services.creator_credentials import (
     CredentialVaultUnavailableError,
     create_credential,

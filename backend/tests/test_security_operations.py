@@ -37,15 +37,9 @@ from app.api.security_admin import (
 from app.core.auth import AuthContext
 from app.core.pii_redact import redact_for_llm
 from app.models.audit_events import AuditEvent
-from app.services import (
-    connector_approvals as approvals_svc,
-)
-from app.services import (
-    consent as consent_svc,
-)
-from app.services import (
-    kill_switch as kill_switch_svc,
-)
+from app.services import connector_approvals as approvals_svc
+from app.services import consent as consent_svc
+from app.services import kill_switch as kill_switch_svc
 from app.services.audit_retention_scheduler import (
     is_dry_run,
     is_scheduler_enabled,
@@ -293,8 +287,9 @@ async def test_retention_pass_writes_audit_event() -> None:
     # load time, so we patch the module-level reference directly.
     engine = await _engine()
     try:
-        from app.services import audit_retention_scheduler as scheduler_mod
         from sqlmodel.ext.asyncio.session import AsyncSession as _AS
+
+        from app.services import audit_retention_scheduler as scheduler_mod
 
         original = scheduler_mod.async_session_maker
 

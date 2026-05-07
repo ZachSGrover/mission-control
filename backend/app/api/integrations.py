@@ -19,13 +19,13 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 from app.api.mc_roles import require_owner
 from app.core.auth import AuthContext, get_auth_context
 from app.core.secrets_store import mask_key
+from app.db.session import get_session
+from app.services.audit_log import record_audit
 from app.services.settings_scope import (
     delete_secret_scoped,
     get_secret_scoped,
     set_secret_scoped,
 )
-from app.db.session import get_session
-from app.services.audit_log import record_audit
 
 router = APIRouter(prefix="/integrations", tags=["integrations"])
 AUTH_DEP = Depends(get_auth_context)

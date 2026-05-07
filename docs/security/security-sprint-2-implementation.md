@@ -29,7 +29,7 @@ implementation must use it.
 | Composite "is this allowed?" gate | [`backend/app/core/connector_gate.py`](../../backend/app/core/connector_gate.py) |
 | Vault guardrail (`is_dedicated_encryption_key_configured`) | [`backend/app/core/secrets_store.py`](../../backend/app/core/secrets_store.py) |
 | Read-only security status endpoint | [`backend/app/api/security_admin.py`](../../backend/app/api/security_admin.py) (mounted at `GET /api/v1/security/status`, owner-only) |
-| Combined Alembic migration | [`backend/migrations/versions/b12c3d4e5f6a_add_security_prevention_tables.py`](../../backend/migrations/versions/b12c3d4e5f6a_add_security_prevention_tables.py) |
+| Combined Alembic migration | [`backend/migrations/versions/d4e5f6a7b8c9_add_major_security_foundation.py`](../../backend/migrations/versions/d4e5f6a7b8c9_add_major_security_foundation.py) (consolidated Sprint 1+2+3) |
 | Tests | [`backend/tests/test_security_prevention.py`](../../backend/tests/test_security_prevention.py), [`backend/tests/test_security_admin.py`](../../backend/tests/test_security_admin.py) |
 
 ---

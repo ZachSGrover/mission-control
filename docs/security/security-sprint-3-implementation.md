@@ -19,7 +19,7 @@ and the prior implementation notes:
 | Concern | Where |
 |---|---|
 | Gateway-token encryption (encrypt-on-write, lazy-decrypt-on-read, legacy migrator) | [`backend/app/services/gateway_tokens.py`](../../backend/app/services/gateway_tokens.py) |
-| `gateways.encrypted_token` column + `app_settings.organization_id` column | [`backend/migrations/versions/c23d4e5f6a7b_add_security_hardening_columns.py`](../../backend/migrations/versions/c23d4e5f6a7b_add_security_hardening_columns.py) |
+| `gateways.encrypted_token` column + `app_settings.organization_id` column | [`backend/migrations/versions/d4e5f6a7b8c9_add_major_security_foundation.py`](../../backend/migrations/versions/d4e5f6a7b8c9_add_major_security_foundation.py) (consolidated Sprint 1+2+3) |
 | Gateway create/update routes wired through `set_token` | [`backend/app/api/gateways.py`](../../backend/app/api/gateways.py) |
 | Org-scoped app-settings reads/writes | [`backend/app/services/app_settings_scoped.py`](../../backend/app/services/app_settings_scoped.py) |
 | Production startup guard (refuses to start without `SETTINGS_ENCRYPTION_KEY` in production) | [`backend/app/core/startup_guard.py`](../../backend/app/core/startup_guard.py) (registered in [`backend/app/main.py`](../../backend/app/main.py)) |

@@ -15,11 +15,11 @@ new code should call it.
 
 | Concern | Where | Notes |
 |---|---|---|
-| Audit row schema | [`backend/app/models/audit_events.py`](../../backend/app/models/audit_events.py) | `AuditEvent` SQLModel; soft refs only (no hard FKs) so audit survives user deletion |
+| Audit row schema | [`backend/app/models/audit_event.py`](../../backend/app/models/audit_event.py) | `AuditEvent` SQLModel; soft refs only (no hard FKs) so audit survives user deletion. Reconciled with PR #21's COO/bot audit_events into a single canonical model — narrow PR #21 columns + wider Major Security columns coexist. |
 | Vocabulary frozensets | same file | `AUDIT_CATEGORIES`, `AUDIT_RESULTS`, `AUDIT_SEVERITIES` — single source of truth, mirrored as `Literal` types in the service |
-| Database migration | [`backend/migrations/versions/a01b2c3d4e5f_add_audit_events.py`](../../backend/migrations/versions/a01b2c3d4e5f_add_audit_events.py) | Idempotent create; merges three pre-existing alembic heads as a side benefit |
+| Database migration | [`backend/migrations/versions/d4e5f6a7b8c9_add_major_security_foundation.py`](../../backend/migrations/versions/d4e5f6a7b8c9_add_major_security_foundation.py) | Consolidated Sprint 1+2+3 migration. Re-parented onto PR #21's `h4b9d3e1c802`; PR #21 creates the `audit_events` table, this migration adds the wider Major Security columns + indexes plus the four prevention tables and two hardening columns. Idempotent. |
 | Metadata redactor | [`backend/app/core/redact.py`](../../backend/app/core/redact.py) | `redact_metadata()` — recursive, pure, size-capped, no mutation of input |
-| Audit service | [`backend/app/services/audit_log.py`](../../backend/app/services/audit_log.py) | `record_audit()` — fail-safe by default; `strict=True` for hard-block paths |
+| Audit service | [`backend/app/services/audit_log.py`](../../backend/app/services/audit_log.py) | Unified service: `record_audit()` (PR #21's narrow signature) + `record_audit_event()` (Major Security's structured signature). Both write to the same `audit_events` table. Fail-safe by default; `strict=True` for hard-block paths. |
 | Tests | [`backend/tests/test_redact.py`](../../backend/tests/test_redact.py), [`backend/tests/test_audit_log.py`](../../backend/tests/test_audit_log.py) | Cover redaction edge cases + service happy/sad path |
 
 ---

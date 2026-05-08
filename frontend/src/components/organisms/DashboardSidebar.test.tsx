@@ -36,6 +36,8 @@ const roleMock = vi.hoisted(() => ({ current: "viewer" as MCRole | null }));
 vi.mock("@/hooks/use-role", () => ({
   useRole: () => ({
     role: roleMock.current,
+    realRole: roleMock.current,
+    previewing: false,
     disabled: false,
     loading: false,
     error: null,
@@ -49,37 +51,51 @@ afterEach(() => {
 });
 
 describe("DashboardSidebar", () => {
-  it("hides Bots, Users, Integrations, and Security from viewer role", () => {
+  it("hides Bots, Bot Builder, Users, Integrations, and Security from viewer role", () => {
     roleMock.current = "viewer";
     render(<DashboardSidebar />);
-    expect(screen.queryByText("Bots")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("nav-bots")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("nav-bot-builder")).not.toBeInTheDocument();
     expect(screen.queryByText("Users")).not.toBeInTheDocument();
     expect(screen.queryByText("Integrations")).not.toBeInTheDocument();
     expect(screen.queryByTestId("nav-security")).not.toBeInTheDocument();
   });
 
-  it("shows Bots to operator but still hides Users, Integrations, Security", () => {
+  it("shows Bots and Bot Builder to operator but still hides Users, Integrations, Security", () => {
     roleMock.current = "operator";
     render(<DashboardSidebar />);
-    expect(screen.getByText("Bots")).toBeInTheDocument();
+    expect(screen.getByTestId("nav-bots")).toBeInTheDocument();
+    expect(screen.getByTestId("nav-bot-builder")).toBeInTheDocument();
     expect(screen.queryByText("Users")).not.toBeInTheDocument();
     expect(screen.queryByText("Integrations")).not.toBeInTheDocument();
     expect(screen.queryByTestId("nav-security")).not.toBeInTheDocument();
   });
 
-  it("shows Bots, Users, Integrations, and Security to owner", () => {
+  it("shows Bots, Bot Builder, Users, Integrations, Security, and Usage Tracker to owner", () => {
     roleMock.current = "owner";
     render(<DashboardSidebar />);
-    expect(screen.getByText("Bots")).toBeInTheDocument();
+    expect(screen.getByTestId("nav-bots")).toBeInTheDocument();
+    expect(screen.getByTestId("nav-bot-builder")).toBeInTheDocument();
     expect(screen.getByText("Users")).toBeInTheDocument();
     expect(screen.getByText("Integrations")).toBeInTheDocument();
     expect(screen.getByTestId("nav-security")).toBeInTheDocument();
+    expect(screen.getByTestId("nav-usage")).toBeInTheDocument();
   });
 
-  it("hides Bots from builder", () => {
+  it("hides Bots and Bot Builder from builder role", () => {
     roleMock.current = "builder";
     render(<DashboardSidebar />);
-    expect(screen.queryByText("Bots")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("nav-bots")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("nav-bot-builder")).not.toBeInTheDocument();
     expect(screen.queryByTestId("nav-security")).not.toBeInTheDocument();
+  });
+
+  it("places Usage Tracker inside the System nav (visible to all roles)", () => {
+    for (const role of ["owner", "operator", "builder", "viewer"] as MCRole[]) {
+      roleMock.current = role;
+      const { unmount } = render(<DashboardSidebar />);
+      expect(screen.getByTestId("nav-usage")).toBeInTheDocument();
+      unmount();
+    }
   });
 });

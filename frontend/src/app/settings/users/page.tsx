@@ -5,7 +5,7 @@ export const dynamic = "force-dynamic";
 import { useCallback, useEffect, useState } from "react";
 import { Lock, Shield, ShieldOff, Trash2 } from "lucide-react";
 
-import { SignedIn, SignedOut } from "@/auth/clerk";
+import { SignedIn, SignedOut, useAuth } from "@/auth/clerk";
 import { getApiBaseUrl } from "@/lib/api-base";
 import { RoleGuard } from "@/components/auth/RoleGuard";
 import { SignedOutPanel } from "@/components/auth/SignedOutPanel";
@@ -125,11 +125,19 @@ function UserRow({
   fetchFn,
   onUpdate,
   onRemove,
+  isSelf,
 }: {
   user: UserEntry;
   fetchFn: FetchFn;
   onUpdate: (u: UserEntry) => void;
   onRemove: (id: string) => void;
+  /**
+   * True iff this row represents the currently signed-in owner.  Used to
+   * hide self-disable + self-remove buttons so the owner cannot lock
+   * themselves out of their own account.  Backend already rejects both
+   * — this is the matching UI defence.
+   */
+  isSelf: boolean;
 }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -198,26 +206,41 @@ function UserRow({
         <option value="viewer">Viewer</option>
       </select>
       <RoleBadge role={user.role} />
-      <button
-        type="button"
-        title={user.disabled ? "Enable account" : "Disable account"}
-        disabled={busy}
-        onClick={handleToggleDisabled}
-        className="rounded-lg p-1.5 transition-colors disabled:opacity-40"
-        style={{ background: "var(--surface-muted)", border: "1px solid var(--border-strong)", color: user.disabled ? "#22c55e" : "var(--text-quiet)" }}
-      >
-        {user.disabled ? <Shield className="h-3.5 w-3.5" /> : <ShieldOff className="h-3.5 w-3.5" />}
-      </button>
-      <button
-        type="button"
-        title="Remove role (reverts to viewer default)"
-        disabled={busy}
-        onClick={handleRemove}
-        className="rounded-lg p-1.5 transition-colors disabled:opacity-40"
-        style={{ background: "var(--surface-muted)", border: "1px solid var(--border-strong)", color: "var(--text-quiet)" }}
-      >
-        <Trash2 className="h-3.5 w-3.5" />
-      </button>
+      {isSelf ? (
+        <span
+          data-testid="user-row-self-badge"
+          title="You cannot disable or remove yourself."
+          className="rounded-md px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider"
+          style={{ background: "rgba(168,85,247,0.12)", color: "#c084fc" }}
+        >
+          Current owner
+        </span>
+      ) : (
+        <>
+          <button
+            type="button"
+            title={user.disabled ? "Enable account" : "Disable account"}
+            disabled={busy}
+            onClick={handleToggleDisabled}
+            data-testid="user-row-disable-toggle"
+            className="rounded-lg p-1.5 transition-colors disabled:opacity-40"
+            style={{ background: "var(--surface-muted)", border: "1px solid var(--border-strong)", color: user.disabled ? "#22c55e" : "var(--text-quiet)" }}
+          >
+            {user.disabled ? <Shield className="h-3.5 w-3.5" /> : <ShieldOff className="h-3.5 w-3.5" />}
+          </button>
+          <button
+            type="button"
+            title="Remove role (reverts to viewer default)"
+            disabled={busy}
+            onClick={handleRemove}
+            data-testid="user-row-remove"
+            className="rounded-lg p-1.5 transition-colors disabled:opacity-40"
+            style={{ background: "var(--surface-muted)", border: "1px solid var(--border-strong)", color: "var(--text-quiet)" }}
+          >
+            <Trash2 className="h-3.5 w-3.5" />
+          </button>
+        </>
+      )}
     </div>
   );
 }
@@ -307,6 +330,7 @@ function UserManagementContent() {
   const [loadError, setLoadError] = useState<string | null>(null);
 
   const { fetchWithAuth } = useAuthFetch();
+  const { userId: currentClerkUserId } = useAuth();
 
   useEffect(() => {
     Promise.all([
@@ -451,6 +475,7 @@ function UserManagementContent() {
                 fetchFn={fetchWithAuth}
                 onUpdate={handleUpdate}
                 onRemove={handleRemoveRole}
+                isSelf={u.clerk_user_id === currentClerkUserId}
               />
             ))
           )}

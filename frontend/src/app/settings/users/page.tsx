@@ -3,7 +3,7 @@
 export const dynamic = "force-dynamic";
 
 import { useCallback, useEffect, useState } from "react";
-import { Lock, Shield, ShieldOff, Trash2, UserPlus } from "lucide-react";
+import { Lock, Shield, ShieldOff, Trash2 } from "lucide-react";
 
 import { SignedIn, SignedOut } from "@/auth/clerk";
 import { getApiBaseUrl } from "@/lib/api-base";
@@ -13,6 +13,8 @@ import { DashboardSidebar } from "@/components/organisms/DashboardSidebar";
 import { DashboardShell } from "@/components/templates/DashboardShell";
 import { useAuthFetch } from "@/hooks/use-auth-fetch";
 import type { MCRole } from "@/lib/roles";
+
+import { AddAllowlistPanel } from "./AddAllowlistPanel";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -82,23 +84,6 @@ async function fetchAllowedUsers(fetchFn: FetchFn): Promise<AllowedUserEntry[]> 
   const res = await fetchFn(`${getApiBaseUrl()}/api/v1/allowed-users`);
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
   return res.json() as Promise<AllowedUserEntry[]>;
-}
-
-async function addAllowedUserByEmail(
-  email: string,
-  role: MCRole,
-  fetchFn: FetchFn,
-): Promise<AllowedUserEntry> {
-  const res = await fetchFn(`${getApiBaseUrl()}/api/v1/allowed-users`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ email, role }),
-  });
-  if (!res.ok) {
-    const body = await res.json().catch(() => null) as { detail?: string } | null;
-    throw new Error(body?.detail ?? `HTTP ${res.status}`);
-  }
-  return res.json() as Promise<AllowedUserEntry>;
 }
 
 async function removeAllowedUser(key: string, fetchFn: FetchFn): Promise<void> {
@@ -309,92 +294,6 @@ function AllowedUserRow({
       >
         <Trash2 className="h-3.5 w-3.5" />
       </button>
-    </div>
-  );
-}
-
-// ── Add to allowlist panel ────────────────────────────────────────────────────
-
-function AddAllowlistPanel({
-  fetchFn,
-  onAdded,
-}: {
-  fetchFn: FetchFn;
-  onAdded: (entry: AllowedUserEntry) => void;
-}) {
-  const [email, setEmail] = useState("");
-  const [role, setRole] = useState<MCRole>("viewer");
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  const handleAdd = async () => {
-    const trimmed = email.trim();
-    if (!trimmed) { setError("Enter an email address."); return; }
-    if (!trimmed.includes("@") || !trimmed.includes(".")) {
-      setError("Enter a valid email address.");
-      return;
-    }
-    setBusy(true);
-    setError(null);
-    try {
-      const entry = await addAllowedUserByEmail(trimmed, role, fetchFn);
-      onAdded(entry);
-      setEmail("");
-      // Keep the role selection — owners usually invite several users at the
-      // same tier in a row. Role resets to viewer only if the page reloads.
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "Failed to add user.");
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  return (
-    <div
-      className="rounded-xl p-4 space-y-3"
-      style={{ background: "var(--surface-strong)", border: "1px solid var(--border)" }}
-    >
-      <p className="text-sm font-medium" style={{ color: "var(--text)" }}>Invite by email</p>
-      <p className="text-xs" style={{ color: "var(--text-quiet)" }}>
-        Enter an email address. They&apos;ll be pre-authorized; the invite activates the first time they sign in with that email.
-      </p>
-      <div className="flex gap-2">
-        <input
-          type="email"
-          value={email}
-          onChange={(e) => setEmail(e.target.value)}
-          onKeyDown={(e) => { if (e.key === "Enter") void handleAdd(); }}
-          placeholder="name@example.com"
-          disabled={busy}
-          className="flex-1 rounded-lg px-3 py-2 text-sm focus:outline-none disabled:opacity-50"
-          style={{ background: "var(--surface-muted)", border: "1px solid var(--border-strong)", color: "var(--text)" }}
-        />
-        <select
-          value={role}
-          disabled={busy}
-          onChange={(e) => setRole(e.target.value as MCRole)}
-          className="rounded-lg px-2 py-2 text-sm focus:outline-none disabled:opacity-50"
-          style={{ background: "var(--surface-muted)", border: "1px solid var(--border-strong)", color: "var(--text)" }}
-        >
-          <option value="owner">Owner</option>
-          <option value="builder">Builder</option>
-          <option value="viewer">Viewer</option>
-        </select>
-        <button
-          type="button"
-          onClick={() => void handleAdd()}
-          disabled={busy || !email.trim()}
-          className="flex items-center gap-1.5 rounded-lg px-4 py-2 text-sm font-medium text-white transition-opacity disabled:opacity-40"
-          style={{ background: "var(--accent)" }}
-        >
-          <UserPlus className="h-3.5 w-3.5" />
-          {busy ? "Adding…" : "Invite"}
-        </button>
-      </div>
-      <p className="text-[11px]" style={{ color: "var(--text-quiet)" }}>
-        The selected role is applied automatically on first sign-in. You can still adjust it later from Role assignments.
-      </p>
-      {error && <p className="text-xs" style={{ color: "var(--danger)" }}>{error}</p>}
     </div>
   );
 }

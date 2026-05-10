@@ -295,7 +295,8 @@ async def test_operator_cannot_edit_approved_request() -> None:
             assert row is not None and row.status == STATUS_APPROVED
 
         # Same engine/session, switched role: rebuild app overrides as operator.
-        from fastapi import HTTPException, status as st
+        from fastapi import HTTPException
+        from fastapi import status as st
 
         async def _operator_role() -> str:
             return "operator"
@@ -551,7 +552,8 @@ async def test_list_endpoint_respects_role_visibility() -> None:
             return "operator"
 
         async def _owner_dep_block() -> str:
-            from fastapi import HTTPException, status as st
+            from fastapi import HTTPException
+            from fastapi import status as st
 
             raise HTTPException(status_code=st.HTTP_403_FORBIDDEN, detail="Owner only")
 

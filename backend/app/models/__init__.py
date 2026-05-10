@@ -13,6 +13,7 @@ from app.models.board_onboarding import BoardOnboardingSession
 from app.models.board_webhook_payloads import BoardWebhookPayload
 from app.models.board_webhooks import BoardWebhook
 from app.models.boards import Board
+from app.models.bot_draft import BotDraft
 from app.models.bot_registry import BotRegistryEntry
 from app.models.client_consents import ClientConsent
 from app.models.connector_approvals import ConnectorApproval
@@ -61,6 +62,7 @@ __all__ = [
     "ActivityEvent",
     "Agent",
     "AuditEvent",
+    "BotDraft",
     "BotRegistryEntry",
     "ApprovalTaskLink",
     "Approval",

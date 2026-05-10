@@ -22,6 +22,7 @@ from app.api.board_memory import router as board_memory_router
 from app.api.board_onboarding import router as board_onboarding_router
 from app.api.board_webhooks import router as board_webhooks_router
 from app.api.boards import router as boards_router
+from app.api.bot_drafts import router as bot_drafts_router
 from app.api.bots import router as bots_router
 from app.api.clerk_webhooks import router as clerk_webhooks_router
 from app.api.control_agents import router as control_agents_router
@@ -518,6 +519,18 @@ async def lifespan(_: FastAPI) -> AsyncIterator[None]:
     except Exception as exc:  # pragma: no cover — defensive; never block boot
         logger.warning("app.lifecycle.bot_registry_seed_failed err=%s", exc)
 
+    # Seed the placeholder RT Bot draft.  Idempotent — survives owner edits.
+    try:
+        from app.db.session import async_session_maker
+        from app.services.bot_drafts import bootstrap_seed as _bot_draft_seed
+
+        async with async_session_maker() as _bs_session:
+            inserted = await _bot_draft_seed(_bs_session)
+            if inserted:
+                logger.info("app.lifecycle.bot_drafts_seeded inserted=%d", inserted)
+    except Exception as exc:  # pragma: no cover — defensive; never block boot
+        logger.warning("app.lifecycle.bot_drafts_seed_failed err=%s", exc)
+
     if settings.rate_limit_backend == RateLimitBackend.REDIS:
         validate_rate_limit_redis(settings.rate_limit_redis_url)
         logger.info("app.lifecycle.rate_limit backend=redis")
@@ -732,6 +745,7 @@ api_v1.include_router(of_intelligence_router)
 api_v1.include_router(of_qc_discord_router)
 api_v1.include_router(of_qc_scheduler_router)
 api_v1.include_router(bots_router)
+api_v1.include_router(bot_drafts_router)
 app.include_router(api_v1)
 
 add_pagination(app)

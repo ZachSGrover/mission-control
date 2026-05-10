@@ -8,6 +8,7 @@ import { Eye, EyeOff, X } from "lucide-react";
 import { SignedIn, SignedOut } from "@/auth/clerk";
 import { getApiBaseUrl } from "@/lib/api-base";
 import { RoleGuard } from "@/components/auth/RoleGuard";
+import { RolePreviewControl } from "@/components/system/RolePreviewControl";
 import { SignedOutPanel } from "@/components/auth/SignedOutPanel";
 import { DashboardSidebar } from "@/components/organisms/DashboardSidebar";
 import { DashboardShell } from "@/components/templates/DashboardShell";
@@ -847,6 +848,9 @@ export default function SettingsPage() {
                 {loadError}
               </div>
             )}
+
+            {/* Role preview — owner only, no-op for everyone else */}
+            <RolePreviewControl />
 
             {/* Credentials — owner only */}
             <RoleGuard

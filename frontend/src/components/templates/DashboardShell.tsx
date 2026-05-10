@@ -6,6 +6,7 @@ import { usePathname } from "next/navigation";
 import { Menu, X } from "lucide-react";
 
 import { BrandMark } from "@/components/atoms/BrandMark";
+import { RolePreviewBanner } from "@/components/system/RolePreviewBanner";
 
 // `-webkit-app-region` is a non-standard Electron/Chrome CSS property that
 // flags an element as OS-level window drag surface (or `no-drag` for
@@ -103,6 +104,8 @@ export function DashboardShell({ children }: { children: ReactNode }) {
           data-cy="sidebar-backdrop"
         />
       )}
+
+      <RolePreviewBanner />
 
       {/* ── Body ───────────────────────────────────────────────────────── */}
       <div className="flex flex-1 overflow-hidden">

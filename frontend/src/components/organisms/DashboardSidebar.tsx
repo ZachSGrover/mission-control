@@ -13,6 +13,7 @@ import {
   FolderOpen,
   Gauge,
   GitBranch,
+  Hammer,
   Heart,
   Layout,
   Loader2,
@@ -59,11 +60,16 @@ function NavLink({
   label,
   Icon,
   exact = false,
+  description,
+  testId,
 }: {
   href: string;
   label: string;
   Icon: React.ElementType;
   exact?: boolean;
+  /** Hover tooltip describing what this surface does. */
+  description?: string;
+  testId?: string;
 }) {
   const pathname = usePathname();
   const active = exact ? pathname === href : pathname.startsWith(href);
@@ -71,6 +77,8 @@ function NavLink({
   return (
     <Link
       href={href}
+      title={description}
+      data-testid={testId}
       className={cn(
         "flex items-center gap-2.5 rounded-lg px-3 py-2 text-sm transition-colors",
         active ? "font-medium" : "font-normal",
@@ -127,6 +135,7 @@ export function DashboardSidebar() {
   const integrationsActive = pathname.startsWith("/settings/integrations");
   const guideActive = pathname.startsWith("/guide");
   const securityActive = pathname.startsWith("/security");
+  const usageActive = pathname.startsWith("/usage");
 
   return (
     <aside
@@ -149,30 +158,100 @@ export function DashboardSidebar() {
 
         {/* Memory */}
         <NavSection label="Memory">
-          <NavLink href="/projects" label="Projects" Icon={FolderOpen} />
-          <NavLink href="/memory"   label="Memory"   Icon={Brain} exact />
-          <NavLink href="/calendar" label="Calendar" Icon={CalendarDays} />
+          <NavLink
+            href="/projects"
+            label="Projects"
+            Icon={FolderOpen}
+            description="Active initiatives, briefs, and ongoing work."
+          />
+          <NavLink
+            href="/memory"
+            label="Memory"
+            Icon={Brain}
+            exact
+            description="Long-term notes the assistant should remember."
+          />
+          <NavLink
+            href="/calendar"
+            label="Calendar"
+            Icon={CalendarDays}
+            description="Time-based view of upcoming work and deadlines."
+          />
         </NavSection>
 
         {/* Automation */}
         <NavSection label="Automation">
-          <NavLink href="/hermes"    label="Hermes"    Icon={Siren} />
-          <NavLink href="/boards"    label="Boards"    Icon={Layout} />
-          <NavLink href="/agents"    label="Agents"    Icon={Bot} />
-          <NavLink href="/control"   label="Control"   Icon={Network} />
-          <NavLink href="/workflows" label="Workflows" Icon={GitBranch} />
-          <NavLink href="/skills"    label="Skills"    Icon={Wrench} />
+          <NavLink
+            href="/hermes"
+            label="Hermes"
+            Icon={Siren}
+            description="System guardian — alerts, health checks, on-call wiring."
+          />
+          <NavLink
+            href="/boards"
+            label="Boards"
+            Icon={Layout}
+            description="Planning and task boards (kanban-style)."
+          />
+          <NavLink
+            href="/agents"
+            label="Agents"
+            Icon={Bot}
+            description="AI workers that reason, build, or execute internal tasks."
+          />
+          <NavLink
+            href="/control"
+            label="Control"
+            Icon={Network}
+            description="Distributed device + agent control plane."
+          />
+          <NavLink
+            href="/workflows"
+            label="Workflows"
+            Icon={GitBranch}
+            description="Repeatable process flows and automations."
+          />
+          <NavLink
+            href="/skills"
+            label="Skills"
+            Icon={Wrench}
+            description="Reusable capability packs the assistant can install."
+          />
           {/* Bots — operator role surface.  Visible to owner + operator only. */}
           {(role === "owner" || role === "operator") && (
-            <NavLink href="/bots" label="Bots" Icon={Bot} />
+            <NavLink
+              href="/bots"
+              label="Bots"
+              Icon={Bot}
+              description="Operational automations that run agency tasks."
+              testId="nav-bots"
+            />
           )}
-          <NavLink href="/activity"  label="Logs"      Icon={Activity} />
+          {(role === "owner" || role === "operator") && (
+            <NavLink
+              href="/bots/builder"
+              label="Bot Builder"
+              Icon={Hammer}
+              description="Author bot specs (sandbox-only) for owner approval."
+              testId="nav-bot-builder"
+            />
+          )}
+          <NavLink
+            href="/activity"
+            label="Logs"
+            Icon={Activity}
+            description="Audit-friendly log feed.  Empty until events flow in."
+          />
         </NavSection>
 
         {/* Business / Intelligence — analytics + spend products. */}
         <NavSection label="Business / Intelligence">
-          <NavLink href="/of-intelligence" label="OnlyFans Intelligence" Icon={Heart} />
-          <NavLink href="/usage"           label="Usage Tracker"         Icon={Gauge} />
+          <NavLink
+            href="/of-intelligence"
+            label="OnlyFans Intelligence"
+            Icon={Heart}
+            description="OF chatter QC + analytics."
+          />
         </NavSection>
 
         {/* System */}
@@ -261,6 +340,30 @@ export function DashboardSidebar() {
           >
             <Settings className="h-4 w-4 shrink-0" />
             Settings
+          </Link>
+
+          <Link
+            href="/usage"
+            data-testid="nav-usage"
+            title="Token spend, model usage, and cost ceilings."
+            className={cn(
+              "flex items-center gap-2.5 rounded-lg px-3 py-2 text-sm transition-colors",
+              usageActive ? "font-medium" : "font-normal",
+            )}
+            style={
+              usageActive
+                ? { background: "var(--accent-soft)", color: "var(--accent-strong)" }
+                : { color: "var(--text-muted)" }
+            }
+            onMouseEnter={(e) => {
+              if (!usageActive) (e.currentTarget as HTMLElement).style.color = "var(--text)";
+            }}
+            onMouseLeave={(e) => {
+              if (!usageActive) (e.currentTarget as HTMLElement).style.color = "var(--text-muted)";
+            }}
+          >
+            <Gauge className="h-4 w-4 shrink-0" />
+            Usage Tracker
           </Link>
 
           {role === "owner" && (

@@ -9,6 +9,7 @@ import {
   Brain,
   CalendarDays,
   Check,
+  ClipboardCheck,
   CloudUpload,
   FolderOpen,
   Gauge,
@@ -234,6 +235,15 @@ export function DashboardSidebar() {
               Icon={Hammer}
               description="Author bot specs (sandbox-only) for owner approval."
               testId="nav-bot-builder"
+            />
+          )}
+          {(role === "owner" || role === "operator" || role === "builder") && (
+            <NavLink
+              href="/build-requests"
+              label="Build Requests"
+              Icon={ClipboardCheck}
+              description="Submit and review build requests.  Owner approval required."
+              testId="nav-build-requests"
             />
           )}
           <NavLink

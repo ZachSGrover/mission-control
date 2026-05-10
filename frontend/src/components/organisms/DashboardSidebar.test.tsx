@@ -56,6 +56,7 @@ describe("DashboardSidebar", () => {
     render(<DashboardSidebar />);
     expect(screen.queryByTestId("nav-bots")).not.toBeInTheDocument();
     expect(screen.queryByTestId("nav-bot-builder")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("nav-build-requests")).not.toBeInTheDocument();
     expect(screen.queryByText("Users")).not.toBeInTheDocument();
     expect(screen.queryByText("Integrations")).not.toBeInTheDocument();
     expect(screen.queryByTestId("nav-security")).not.toBeInTheDocument();
@@ -66,6 +67,7 @@ describe("DashboardSidebar", () => {
     render(<DashboardSidebar />);
     expect(screen.getByTestId("nav-bots")).toBeInTheDocument();
     expect(screen.getByTestId("nav-bot-builder")).toBeInTheDocument();
+    expect(screen.getByTestId("nav-build-requests")).toBeInTheDocument();
     expect(screen.queryByText("Users")).not.toBeInTheDocument();
     expect(screen.queryByText("Integrations")).not.toBeInTheDocument();
     expect(screen.queryByTestId("nav-security")).not.toBeInTheDocument();
@@ -76,18 +78,26 @@ describe("DashboardSidebar", () => {
     render(<DashboardSidebar />);
     expect(screen.getByTestId("nav-bots")).toBeInTheDocument();
     expect(screen.getByTestId("nav-bot-builder")).toBeInTheDocument();
+    expect(screen.getByTestId("nav-build-requests")).toBeInTheDocument();
     expect(screen.getByText("Users")).toBeInTheDocument();
     expect(screen.getByText("Integrations")).toBeInTheDocument();
     expect(screen.getByTestId("nav-security")).toBeInTheDocument();
     expect(screen.getByTestId("nav-usage")).toBeInTheDocument();
   });
 
-  it("hides Bots and Bot Builder from builder role", () => {
+  it("hides Bots and Bot Builder from builder role but shows Build Requests", () => {
     roleMock.current = "builder";
     render(<DashboardSidebar />);
     expect(screen.queryByTestId("nav-bots")).not.toBeInTheDocument();
     expect(screen.queryByTestId("nav-bot-builder")).not.toBeInTheDocument();
+    expect(screen.getByTestId("nav-build-requests")).toBeInTheDocument();
     expect(screen.queryByTestId("nav-security")).not.toBeInTheDocument();
+  });
+
+  it("hides Build Requests from viewer role", () => {
+    roleMock.current = "viewer";
+    render(<DashboardSidebar />);
+    expect(screen.queryByTestId("nav-build-requests")).not.toBeInTheDocument();
   });
 
   it("places Usage Tracker inside the System nav (visible to all roles)", () => {

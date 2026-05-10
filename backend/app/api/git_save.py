@@ -12,14 +12,14 @@ from fastapi import APIRouter, Depends
 from pydantic import BaseModel
 from sqlmodel.ext.asyncio.session import AsyncSession
 
-from app.core.auth import AuthContext, get_auth_context
+from app.api.mc_roles import require_owner
 from app.core.config import settings
 from app.core.logging import get_logger
 from app.core.secrets_store import GITHUB_KEYS, get_secret
 from app.db.session import get_session
 
 router = APIRouter(prefix="/git", tags=["git"])
-AUTH_DEP = Depends(get_auth_context)
+OWNER_DEP = Depends(require_owner)
 SESSION_DEP = Depends(get_session)
 logger = get_logger(__name__)
 
@@ -71,10 +71,15 @@ def _push_url(pat: str, username: str, repo: str) -> str:
 
 @router.post("/save", response_model=SaveResponse)
 async def git_save(
-    _auth: AuthContext = AUTH_DEP,
+    _role: str = OWNER_DEP,
     session: AsyncSession = SESSION_DEP,
 ) -> SaveResponse:
-    """Stage all safe changes, commit with timestamp, and push to origin/main."""
+    """Stage all safe changes, commit with timestamp, and push to origin/main.
+
+    Owner-only: this endpoint commits and pushes to origin/main. Until a proper
+    build-request and approval flow exists, only the owner may trigger it.
+    Operator, builder, viewer, and unauthenticated users are denied at the gate.
+    """
     # Resolve credentials: DB takes priority over .env
     pat = await get_secret(session, GITHUB_KEYS["github_pat"], fallback=settings.github_pat)
     username = await get_secret(

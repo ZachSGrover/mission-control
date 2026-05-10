@@ -266,46 +266,53 @@ export function DashboardSidebar() {
 
         {/* System */}
         <NavSection label="System">
-          {/* Save — action button styled to match nav links */}
-          <button
-            type="button"
-            onClick={() => {
-              if (gitSave.status === "error") gitSave.reset();
-              else void gitSave.save();
-            }}
-            disabled={gitSave.status === "saving"}
-            className={cn(
-              "w-full flex items-center gap-2.5 rounded-lg px-3 py-2 text-sm font-normal transition-colors disabled:opacity-60",
-            )}
-            style={{
-              color:
-                gitSave.status === "saved"  ? "var(--accent-strong)" :
-                gitSave.status === "error"  ? "rgb(248 113 113)" :
-                "var(--text-muted)",
-            }}
-            onMouseEnter={(e) => {
-              if (gitSave.status === "idle")
-                (e.currentTarget as HTMLElement).style.color = "var(--text)";
-            }}
-            onMouseLeave={(e) => {
-              if (gitSave.status === "idle")
-                (e.currentTarget as HTMLElement).style.color = "var(--text-muted)";
-            }}
-            title={gitSave.message || "Save to GitHub"}
-          >
-            {gitSave.status === "saving" && <Loader2 className="h-4 w-4 shrink-0 animate-spin" />}
-            {gitSave.status === "saved"  && <Check className="h-4 w-4 shrink-0" />}
-            {gitSave.status === "error"  && <TriangleAlert className="h-4 w-4 shrink-0" />}
-            {gitSave.status === "idle"   && <CloudUpload className="h-4 w-4 shrink-0" />}
-            <span className="truncate text-left">
-              {gitSave.status === "saving" ? "Saving…" :
-               gitSave.status === "saved"  ? "Saved" :
-               gitSave.status === "error"  ? "Save failed — tap to dismiss" :
-               "Save"}
-            </span>
-          </button>
-          {gitSave.status === "error" && gitSave.message && (
-            <p className="px-3 text-[11px] leading-snug text-red-400">{gitSave.message}</p>
+          {/* Save — owner-only. The endpoint commits + pushes to origin/main
+              and PR #27 locked it down to require_owner. Hiding the button
+              from non-owners avoids the confusing 403 they'd otherwise hit. */}
+          {role === "owner" && (
+            <>
+              <button
+                type="button"
+                onClick={() => {
+                  if (gitSave.status === "error") gitSave.reset();
+                  else void gitSave.save();
+                }}
+                disabled={gitSave.status === "saving"}
+                data-testid="nav-save"
+                className={cn(
+                  "w-full flex items-center gap-2.5 rounded-lg px-3 py-2 text-sm font-normal transition-colors disabled:opacity-60",
+                )}
+                style={{
+                  color:
+                    gitSave.status === "saved"  ? "var(--accent-strong)" :
+                    gitSave.status === "error"  ? "rgb(248 113 113)" :
+                    "var(--text-muted)",
+                }}
+                onMouseEnter={(e) => {
+                  if (gitSave.status === "idle")
+                    (e.currentTarget as HTMLElement).style.color = "var(--text)";
+                }}
+                onMouseLeave={(e) => {
+                  if (gitSave.status === "idle")
+                    (e.currentTarget as HTMLElement).style.color = "var(--text-muted)";
+                }}
+                title={gitSave.message || "Save to GitHub"}
+              >
+                {gitSave.status === "saving" && <Loader2 className="h-4 w-4 shrink-0 animate-spin" />}
+                {gitSave.status === "saved"  && <Check className="h-4 w-4 shrink-0" />}
+                {gitSave.status === "error"  && <TriangleAlert className="h-4 w-4 shrink-0" />}
+                {gitSave.status === "idle"   && <CloudUpload className="h-4 w-4 shrink-0" />}
+                <span className="truncate text-left">
+                  {gitSave.status === "saving" ? "Saving…" :
+                   gitSave.status === "saved"  ? "Saved" :
+                   gitSave.status === "error"  ? "Save failed — tap to dismiss" :
+                   "Save"}
+                </span>
+              </button>
+              {gitSave.status === "error" && gitSave.message && (
+                <p className="px-3 text-[11px] leading-snug text-red-400">{gitSave.message}</p>
+              )}
+            </>
           )}
 
           <Link

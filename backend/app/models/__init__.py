@@ -15,6 +15,7 @@ from app.models.board_webhooks import BoardWebhook
 from app.models.boards import Board
 from app.models.bot_draft import BotDraft
 from app.models.bot_registry import BotRegistryEntry
+from app.models.build_request import BuildRequest
 from app.models.client_consents import ClientConsent
 from app.models.connector_approvals import ConnectorApproval
 from app.models.creator_credentials import CreatorCredential
@@ -64,6 +65,7 @@ __all__ = [
     "AuditEvent",
     "BotDraft",
     "BotRegistryEntry",
+    "BuildRequest",
     "ApprovalTaskLink",
     "Approval",
     "BoardGroupMemory",

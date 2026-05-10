@@ -24,6 +24,7 @@ from app.api.board_webhooks import router as board_webhooks_router
 from app.api.boards import router as boards_router
 from app.api.bot_drafts import router as bot_drafts_router
 from app.api.bots import router as bots_router
+from app.api.build_requests import router as build_requests_router
 from app.api.clerk_webhooks import router as clerk_webhooks_router
 from app.api.control_agents import router as control_agents_router
 from app.api.control_devices import router as control_devices_router
@@ -746,6 +747,7 @@ api_v1.include_router(of_qc_discord_router)
 api_v1.include_router(of_qc_scheduler_router)
 api_v1.include_router(bots_router)
 api_v1.include_router(bot_drafts_router)
+api_v1.include_router(build_requests_router)
 app.include_router(api_v1)
 
 add_pagination(app)

@@ -1,13 +1,24 @@
 "use client";
 
+import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Mic } from "lucide-react";
+import { Mic, RefreshCw } from "lucide-react";
 
 import { Markdown } from "@/components/atoms/Markdown";
 import { DashboardSidebar } from "@/components/organisms/DashboardSidebar";
 import { DashboardShell } from "@/components/templates/DashboardShell";
 import type { ChatMessage } from "@/hooks/use-openclaw-chat";
+import {
+  deriveClawdiusViewState,
+  type ClawdiusTone,
+  type ClawdiusViewState,
+} from "@/lib/clawdius-status";
 import type { ConnectionStatus } from "@/lib/openclaw-client";
+import {
+  isGatewayConfigured,
+  isGatewayTokenConfigured,
+  resetGatewayConnection,
+} from "@/lib/openclaw-singleton";
 
 // ── Shared chat state interface ────────────────────────────────────────────
 
@@ -52,21 +63,62 @@ function ModelSelector({
 }
 
 // ── Status dot ─────────────────────────────────────────────────────────────
+//
+// Mission Control can be online while the OpenClaw gateway is not. The pill
+// distinguishes "Online", "Connecting", "Gateway not configured", "Gateway
+// token missing", "Gateway unreachable", and "Ready" so the operator can tell
+// what to do (paste a token, click Reconnect, re-auth Cloudflare Access) when
+// chat is not reachable. Inputs come from the singleton getters; the derive
+// is a pure helper covered by clawdius-status.test.ts.
 
-function StatusDot({ status }: { status: ConnectionStatus }) {
-  const map: Record<ConnectionStatus, { color: string; label: string }> = {
-    idle:         { color: "bg-slate-400",               label: "Ready" },
-    connecting:   { color: "bg-yellow-400 animate-pulse", label: "Connecting…" },
-    connected:    { color: "bg-emerald-500",              label: "Online" },
-    disconnected: { color: "bg-slate-400",               label: "Offline" },
-    error:        { color: "bg-red-500",                 label: "Reconnecting" },
-  };
-  const { color, label } = map[status];
+const TONE_DOT: Record<ClawdiusTone, string> = {
+  ok:      "bg-emerald-500",
+  pending: "bg-yellow-400 animate-pulse",
+  warn:    "bg-amber-500",
+  error:   "bg-rose-500",
+  muted:   "bg-slate-400",
+};
+
+function ClawdiusStatusPill({
+  view,
+  onReconnect,
+}: {
+  view: ClawdiusViewState;
+  onReconnect: () => void;
+}) {
   return (
-    <span className="flex items-center gap-1.5 text-xs text-slate-500">
-      <span className={`inline-block h-2 w-2 rounded-full ${color}`} />
-      {label}
-    </span>
+    <div className="flex items-center gap-2">
+      <span
+        title={view.hint}
+        className="flex items-center gap-1.5 text-xs text-slate-500"
+        data-testid="clawdius-status"
+        data-status-kind={view.kind}
+      >
+        <span className={`inline-block h-2 w-2 rounded-full ${TONE_DOT[view.tone]}`} />
+        {view.label}
+      </span>
+      {view.needsSettings && (
+        <Link
+          href="/settings"
+          data-testid="clawdius-status-settings"
+          className="text-xs text-blue-600 hover:underline"
+        >
+          Open Settings
+        </Link>
+      )}
+      {view.canReconnect && (
+        <button
+          type="button"
+          onClick={onReconnect}
+          data-testid="clawdius-status-reconnect"
+          className="flex items-center gap-1 rounded-md border border-slate-200 px-2 py-0.5 text-xs text-slate-500 hover:text-slate-700 hover:border-slate-300 transition-colors"
+          title="Reset the OpenClaw connection and try again"
+        >
+          <RefreshCw className="h-3 w-3" />
+          Reconnect
+        </button>
+      )}
+    </div>
   );
 }
 
@@ -194,6 +246,30 @@ function AiChatContent({
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
 
+  // Recompute the gateway config snapshot on the client only — the singleton
+  // getters read window.location and localStorage, both unavailable in SSR.
+  // The status callback fires whenever the user saves a token (via
+  // resetGatewayConnection → "idle"), so we re-read on each status change.
+  const [gatewayConfigured, setGatewayConfigured] = useState(false);
+  const [tokenConfigured, setTokenConfigured] = useState(false);
+  useEffect(() => {
+    // Reading the singleton getters requires window / localStorage, so we
+    // cannot do it during SSR render. Same SSR-bridge pattern as ClawChatPage.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setGatewayConfigured(isGatewayConfigured());
+    setTokenConfigured(isGatewayTokenConfigured());
+  }, [status]);
+
+  const view = deriveClawdiusViewState({
+    status,
+    gatewayConfigured,
+    tokenConfigured,
+  });
+
+  const handleReconnect = useCallback(() => {
+    resetGatewayConnection();
+  }, []);
+
   return (
     <main className="flex flex-col overflow-hidden h-full flex-1">
       {/* Header */}
@@ -223,7 +299,7 @@ function AiChatContent({
               {isReconnected ? "Reconnected" : "Running…"}
             </span>
           )}
-          <StatusDot status={status} />
+          <ClawdiusStatusPill view={view} onReconnect={handleReconnect} />
           {messages.length > 0 && (
             <button
               onClick={clearMessages}
@@ -249,9 +325,12 @@ function AiChatContent({
             <div className="text-center text-slate-400">
               <p className="text-2xl mb-2">💬</p>
               <p className="text-sm font-medium">
-                {status === "error"
-                  ? `${provider} is reconnecting. Try again in a moment.`
-                  : `Send a message to ${provider}`}
+                {view.kind === "connected" || view.kind === "idle"
+                  ? `Send a message to ${provider}`
+                  : view.label}
+              </p>
+              <p className="mt-1 text-xs text-slate-400 max-w-sm mx-auto">
+                {view.hint}
               </p>
             </div>
           </div>
@@ -277,7 +356,7 @@ function AiChatContent({
           <AiChatInput
             placeholder={`Message ${provider}…`}
             isSending={isSending}
-            disabled={status !== "connected"}
+            disabled={!view.canSend}
             onSend={sendMessage}
           />
         </div>

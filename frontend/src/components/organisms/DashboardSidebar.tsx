@@ -10,6 +10,7 @@ import {
   CalendarDays,
   Check,
   ClipboardCheck,
+  ClipboardList,
   CloudUpload,
   FolderOpen,
   Gauge,
@@ -164,6 +165,13 @@ export function DashboardSidebar() {
             label="Projects"
             Icon={FolderOpen}
             description="Active initiatives, briefs, and ongoing work."
+          />
+          <NavLink
+            href="/memory/sops"
+            label="SOPs"
+            Icon={ClipboardList}
+            description="Standard operating procedures and Claude prompt library."
+            testId="nav-sops"
           />
           <NavLink
             href="/memory"

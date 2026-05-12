@@ -1,23 +1,36 @@
 "use client";
 
-import { useState } from "react";
-import { ChevronDown, ChevronRight } from "lucide-react";
+import { ArrowDown } from "lucide-react";
 
 import { CopyButton } from "@/components/hermes/CopyButton";
 
-import type { Prompt, Sop, SopBlock } from "./sops-content";
+import type {
+  DeveloperStep,
+  Prompt,
+  SimpleSop,
+  SopBlock,
+  SopGalleryCard,
+} from "./sops-content";
 
 // ── Shared atoms ─────────────────────────────────────────────────────────────
 
-function CategoryBadge({ label }: { label: string }) {
+function Badge({ label, tone = "muted" }: { label: string; tone?: "muted" | "accent" }) {
   return (
     <span
       className="inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-widest"
-      style={{
-        background: "var(--accent-soft)",
-        color: "var(--accent-strong)",
-        border: "1px solid var(--border)",
-      }}
+      style={
+        tone === "accent"
+          ? {
+              background: "var(--accent-soft)",
+              color: "var(--accent-strong)",
+              border: "1px solid var(--border)",
+            }
+          : {
+              background: "var(--surface-strong)",
+              color: "var(--text-muted)",
+              border: "1px solid var(--border)",
+            }
+      }
     >
       {label}
     </span>
@@ -32,11 +45,7 @@ function UpdatedLabel({ date }: { date: string }) {
   );
 }
 
-// ── SOP block renderer ───────────────────────────────────────────────────────
-//
-// Normal SOPs render as readable prose: short paragraphs, sub-headings,
-// numbered steps, and simple bullet lists. Never a monospace code block —
-// SOPs are for the COO to read, not paste.
+// ── Block renderer (paragraph / heading / numbered / bullets) ────────────────
 
 export function SopBlocks({ blocks }: { blocks: SopBlock[] }) {
   return (
@@ -94,33 +103,160 @@ export function SopBlocks({ blocks }: { blocks: SopBlock[] }) {
   );
 }
 
-// ── SOP card ─────────────────────────────────────────────────────────────────
+// ── Top-of-page SOP gallery card ─────────────────────────────────────────────
 //
-// Notion-style gallery card. Click "View SOP" to expand. SOP cards do NOT
-// have copy buttons — they're meant to be read, not copied. Copy is only on
-// Claude prompt cards below.
+// Clicking the card anchor-jumps to the detail section below. No copy button —
+// these are navigation entries, not the canonical content.
 
-export function SopCard({ sop }: { sop: Sop }) {
-  const [open, setOpen] = useState(false);
-
+export function GalleryCard({ card }: { card: SopGalleryCard }) {
   return (
-    <article
-      className="rounded-2xl p-5 transition-colors"
+    <a
+      href={card.anchor}
+      className="block rounded-2xl p-5 transition-colors hover:bg-white/5"
       style={{
         background: "var(--surface)",
         border: "1px solid var(--border)",
       }}
-      data-testid={`sop-card-${sop.id}`}
+      data-testid={`gallery-card-${card.id}`}
     >
-      <header className="flex items-center justify-between gap-3">
-        <CategoryBadge label={sop.category} />
-        <UpdatedLabel date={sop.updated} />
-      </header>
-
-      <h3
-        className="mt-3 text-base font-semibold"
-        style={{ color: "var(--text)" }}
+      <h3 className="text-base font-semibold" style={{ color: "var(--text)" }}>
+        {card.title}
+      </h3>
+      <p
+        className="mt-2 text-sm leading-relaxed"
+        style={{ color: "var(--text-muted)" }}
       >
+        {card.description}
+      </p>
+      <p
+        className="mt-3 inline-flex items-center gap-1 text-xs font-medium"
+        style={{ color: "var(--accent-strong)" }}
+      >
+        Jump to SOP
+        <ArrowDown className="h-3 w-3" />
+      </p>
+    </a>
+  );
+}
+
+// ── Developer SOP step block ─────────────────────────────────────────────────
+//
+// Each Developer SOP step shows: numbered badge, title, purpose, and a small
+// inline prompt reference with the matching Copy button. The compact ref keeps
+// the page scannable; the bottom Prompt Library has the full card with preview.
+
+export function StepBlock({
+  step,
+  prompt,
+}: {
+  step: DeveloperStep;
+  prompt: Prompt;
+}) {
+  return (
+    <article
+      className="rounded-2xl p-5"
+      style={{
+        background: "var(--surface)",
+        border: "1px solid var(--border)",
+      }}
+      data-testid={`step-${step.number}`}
+    >
+      <div className="flex items-center gap-3">
+        <span
+          className="flex h-7 w-7 items-center justify-center rounded-full text-xs font-semibold"
+          style={{
+            background: "var(--accent-soft)",
+            color: "var(--accent-strong)",
+            border: "1px solid var(--border)",
+          }}
+        >
+          {step.number}
+        </span>
+        <h3 className="text-base font-semibold" style={{ color: "var(--text)" }}>
+          Step {step.number}: {step.title}
+        </h3>
+      </div>
+
+      <p
+        className="mt-3 text-sm leading-relaxed"
+        style={{ color: "var(--text-muted)" }}
+      >
+        {step.purpose}
+      </p>
+
+      <CompactPromptRef prompt={prompt} stepNumber={step.number} />
+    </article>
+  );
+}
+
+// ── Inline prompt reference (compact) ────────────────────────────────────────
+//
+// A small "use this prompt" callout shown inside a Step or a SimpleSopBlock.
+// Shows only the title + copy button — the full card with preview lives in
+// the Prompt Library section.
+
+export function CompactPromptRef({
+  prompt,
+  stepNumber,
+}: {
+  prompt: Prompt;
+  stepNumber?: number;
+}) {
+  const refLabel = stepNumber !== undefined ? `Step ${stepNumber} prompt` : "Prompt";
+  return (
+    <div
+      className="mt-4 flex flex-wrap items-center justify-between gap-3 rounded-xl px-4 py-3"
+      style={{
+        background: "var(--surface-strong)",
+        border: "1px solid var(--border)",
+      }}
+      data-testid={`compact-prompt-${prompt.id}`}
+    >
+      <div className="min-w-0">
+        <p
+          className="text-[10px] font-semibold uppercase tracking-widest"
+          style={{ color: "var(--text-quiet)" }}
+        >
+          {refLabel}
+        </p>
+        <p
+          className="mt-0.5 text-sm font-medium truncate"
+          style={{ color: "var(--text)" }}
+        >
+          {prompt.title}
+        </p>
+      </div>
+      <CopyButton
+        text={prompt.body}
+        label="Copy prompt"
+        ariaLabel={`Copy ${prompt.title}`}
+      />
+    </div>
+  );
+}
+
+// ── Simple SOP block (Import / Emergency) ────────────────────────────────────
+//
+// Title + description + numbered substeps + a single CompactPromptRef.
+
+export function SimpleSopBlock({
+  sop,
+  prompt,
+}: {
+  sop: SimpleSop;
+  prompt: Prompt;
+}) {
+  return (
+    <article
+      id={sop.id}
+      className="rounded-2xl p-5"
+      style={{
+        background: "var(--surface)",
+        border: "1px solid var(--border)",
+      }}
+      data-testid={`simple-sop-${sop.id}`}
+    >
+      <h3 className="text-base font-semibold" style={{ color: "var(--text)" }}>
         {sop.title}
       </h3>
       <p
@@ -129,47 +265,63 @@ export function SopCard({ sop }: { sop: Sop }) {
       >
         {sop.description}
       </p>
-
-      <button
-        type="button"
-        onClick={() => setOpen((prev) => !prev)}
-        aria-expanded={open}
-        data-testid={`sop-toggle-${sop.id}`}
-        className="mt-4 inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1 text-xs font-medium transition-colors hover:bg-white/5"
-        style={{
-          borderColor: "var(--border)",
-          color: open ? "var(--accent-strong)" : "var(--text-muted)",
-        }}
+      <ol
+        className="mt-4 list-decimal pl-5 space-y-1.5 text-sm leading-relaxed"
+        style={{ color: "var(--text-muted)" }}
       >
-        {open ? (
-          <ChevronDown className="h-3.5 w-3.5" />
-        ) : (
-          <ChevronRight className="h-3.5 w-3.5" />
-        )}
-        {open ? "Hide SOP" : "View SOP"}
-      </button>
-
-      {open && (
-        <div
-          className="mt-5 rounded-xl p-4"
-          style={{
-            background: "var(--surface-strong)",
-            border: "1px solid var(--border)",
-          }}
-          data-testid={`sop-body-${sop.id}`}
-        >
-          <SopBlocks blocks={sop.blocks} />
-        </div>
-      )}
+        {sop.steps.map((step, i) => (
+          <li key={i}>{step}</li>
+        ))}
+      </ol>
+      <CompactPromptRef prompt={prompt} />
     </article>
   );
 }
 
-// ── Prompt card ──────────────────────────────────────────────────────────────
+// ── Security and Live Action Rules block ─────────────────────────────────────
 //
-// Only prompt cards expose a Copy button. The full prompt is on the clipboard
-// after click; the card itself only shows a preview so the gallery stays
-// scannable. Copy failure handling is inherited from the shared CopyButton.
+// Plain readable prose. No copy button. Reuses SopBlocks for the actual content.
+
+export function SecurityRulesBlock({
+  title,
+  description,
+  blocks,
+}: {
+  title: string;
+  description: string;
+  blocks: SopBlock[];
+}) {
+  return (
+    <article
+      id="security-rules"
+      className="rounded-2xl p-5"
+      style={{
+        background: "var(--surface)",
+        border: "1px solid var(--border)",
+      }}
+      data-testid="security-rules-block"
+    >
+      <h3 className="text-base font-semibold" style={{ color: "var(--text)" }}>
+        {title}
+      </h3>
+      <p
+        className="mt-1.5 text-sm leading-relaxed"
+        style={{ color: "var(--text-muted)" }}
+      >
+        {description}
+      </p>
+      <div className="mt-4">
+        <SopBlocks blocks={blocks} />
+      </div>
+    </article>
+  );
+}
+
+// ── Full prompt card (used in the Claude Prompt Library section) ─────────────
+//
+// Step number badge (when applicable) + title + when-to-use + description +
+// two-line preview + Copy button. SOPs / step blocks / security do NOT render
+// this — only the bottom library.
 
 export function PromptCard({ prompt }: { prompt: Prompt }) {
   return (
@@ -182,7 +334,10 @@ export function PromptCard({ prompt }: { prompt: Prompt }) {
       data-testid={`prompt-card-${prompt.id}`}
     >
       <header className="flex items-center justify-between gap-3">
-        <CategoryBadge label="Prompt" />
+        <div className="flex items-center gap-2">
+          {prompt.step !== undefined && <Badge label={`Step ${prompt.step}`} tone="accent" />}
+          <Badge label="Prompt" />
+        </div>
         <CopyButton
           text={prompt.body}
           label="Copy prompt"
@@ -190,10 +345,7 @@ export function PromptCard({ prompt }: { prompt: Prompt }) {
         />
       </header>
 
-      <h3
-        className="mt-3 text-base font-semibold"
-        style={{ color: "var(--text)" }}
-      >
+      <h3 className="mt-3 text-base font-semibold" style={{ color: "var(--text)" }}>
         {prompt.title}
       </h3>
 

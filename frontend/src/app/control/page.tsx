@@ -6,6 +6,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { Bot, Cpu, ListChecks, Play, Plus, RefreshCw, Trash2 } from "lucide-react";
 
 import { SignedIn, SignedOut } from "@/auth/clerk";
+import { RoleGuard } from "@/components/auth/RoleGuard";
 import { SignedOutPanel } from "@/components/auth/SignedOutPanel";
 import { DashboardSidebar } from "@/components/organisms/DashboardSidebar";
 import { DashboardShell } from "@/components/templates/DashboardShell";
@@ -584,9 +585,24 @@ export default function ControlPage() {
       </SignedOut>
       <SignedIn>
         <DashboardSidebar />
-        <main className="flex-1 overflow-y-auto bg-slate-50">
-          <ControlBody />
-        </main>
+        {/* Control is the distributed device + agent control plane. The
+            sidebar no longer surfaces it, but the route is still reachable
+            by direct URL. Gate it to owner only so operator/builder/viewer
+            cannot drive the control plane even if they hit the URL. */}
+        <RoleGuard
+          require="owner"
+          denied={
+            <main className="flex-1 flex items-center justify-center" style={{ background: "var(--bg)" }}>
+              <p className="text-sm" style={{ color: "var(--text-quiet)" }}>
+                Owner access required.
+              </p>
+            </main>
+          }
+        >
+          <main className="flex-1 overflow-y-auto bg-slate-50">
+            <ControlBody />
+          </main>
+        </RoleGuard>
       </SignedIn>
     </DashboardShell>
   );

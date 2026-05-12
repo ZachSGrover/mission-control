@@ -101,7 +101,12 @@ async function fetchList(fetchFn: FetchFn, status?: string): Promise<BuildReques
   if (status) url.searchParams.set("status", status);
   const res = await fetchFn(url.toString());
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
-  return (await res.json()) as BuildRequest[];
+  // The backend returns a JSON array, but a misconfigured proxy, an HTML
+  // error page slipping through `res.ok`, or a future change could produce
+  // null / object / undefined. Coerce to an array so callers (`.length`,
+  // `.map`, `rows[0]`) never crash on shape drift.
+  const data = (await res.json()) as unknown;
+  return Array.isArray(data) ? (data as BuildRequest[]) : [];
 }
 
 async function postBody<T>(
@@ -174,8 +179,8 @@ function formFromRow(r: BuildRequest): FormState {
     requested_branch_name: r.requested_branch_name ?? "",
     external_actions_requested: r.external_actions_requested,
     secrets_required: r.secrets_required,
-    platforms_requested: (r.platforms_requested ?? []).join(", "),
-    acceptance_criteria: (r.acceptance_criteria ?? []).join("\n"),
+    platforms_requested: (Array.isArray(r.platforms_requested) ? r.platforms_requested : []).join(", "),
+    acceptance_criteria: (Array.isArray(r.acceptance_criteria) ? r.acceptance_criteria : []).join("\n"),
   };
 }
 
@@ -689,7 +694,7 @@ function DetailPanel({
         </section>
       )}
 
-      {row.acceptance_criteria && row.acceptance_criteria.length > 0 && (
+      {Array.isArray(row.acceptance_criteria) && row.acceptance_criteria.length > 0 && (
         <section className="space-y-1">
           <p className="text-[10px] uppercase tracking-wider" style={{ color: "var(--text-quiet)" }}>
             Acceptance criteria
@@ -702,7 +707,7 @@ function DetailPanel({
         </section>
       )}
 
-      {row.platforms_requested && row.platforms_requested.length > 0 && (
+      {Array.isArray(row.platforms_requested) && row.platforms_requested.length > 0 && (
         <section className="flex flex-wrap gap-1.5">
           {row.platforms_requested.map((p) => (
             <span

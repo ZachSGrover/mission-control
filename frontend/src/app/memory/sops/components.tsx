@@ -1,42 +1,61 @@
 "use client";
 
-import { useState } from "react";
-import { ChevronDown, ChevronRight } from "lucide-react";
+import { ArrowDown } from "lucide-react";
 
 import { CopyButton } from "@/components/hermes/CopyButton";
 
-import type { Prompt, Sop, SopBlock } from "./sops-content";
+import type {
+  BuildStep,
+  IntroFolder,
+  Prompt,
+  SopBlock,
+  SopGalleryCard,
+} from "./sops-content";
 
 // ── Shared atoms ─────────────────────────────────────────────────────────────
 
-function CategoryBadge({ label }: { label: string }) {
+function Badge({ label, tone = "muted" }: { label: string; tone?: "muted" | "accent" }) {
   return (
     <span
       className="inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-widest"
-      style={{
-        background: "var(--accent-soft)",
-        color: "var(--accent-strong)",
-        border: "1px solid var(--border)",
-      }}
+      style={
+        tone === "accent"
+          ? {
+              background: "var(--accent-soft)",
+              color: "var(--accent-strong)",
+              border: "1px solid var(--border)",
+            }
+          : {
+              background: "var(--surface-strong)",
+              color: "var(--text-muted)",
+              border: "1px solid var(--border)",
+            }
+      }
     >
       {label}
     </span>
   );
 }
 
-function UpdatedLabel({ date }: { date: string }) {
+function StepNumber({ n }: { n: number }) {
   return (
-    <span className="text-[11px]" style={{ color: "var(--text-quiet)" }}>
-      Updated {date}
+    <span
+      className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-xs font-semibold"
+      style={{
+        background: "var(--accent-soft)",
+        color: "var(--accent-strong)",
+        border: "1px solid var(--border)",
+      }}
+    >
+      {n}
     </span>
   );
 }
 
-// ── SOP block renderer ───────────────────────────────────────────────────────
+// ── Block renderer (paragraph / heading / numbered / bullets) ────────────────
 //
-// Normal SOPs render as readable prose: short paragraphs, sub-headings,
-// numbered steps, and simple bullet lists. Never a monospace code block —
-// SOPs are for the COO to read, not paste.
+// Reused by the Safety Rules section. Never renders <pre> — SOPs are read,
+// not pasted.
 
 export function SopBlocks({ blocks }: { blocks: SopBlock[] }) {
   return (
@@ -94,139 +113,289 @@ export function SopBlocks({ blocks }: { blocks: SopBlock[] }) {
   );
 }
 
-// ── SOP card ─────────────────────────────────────────────────────────────────
+// ── Top-of-page folder card ──────────────────────────────────────────────────
 //
-// Notion-style gallery card. Click "View SOP" to expand. SOP cards do NOT
-// have copy buttons — they're meant to be read, not copied. Copy is only on
-// Claude prompt cards below.
+// Notion-style folder card. Clicking anchor-jumps to the matching detail
+// section. No copy button — these are navigation entries.
 
-export function SopCard({ sop }: { sop: Sop }) {
-  const [open, setOpen] = useState(false);
-
+export function GalleryCard({ card }: { card: SopGalleryCard }) {
   return (
-    <article
-      className="rounded-2xl p-5 transition-colors"
+    <a
+      href={card.anchor}
+      className="block rounded-2xl p-5 transition-colors hover:bg-white/5"
       style={{
         background: "var(--surface)",
         border: "1px solid var(--border)",
       }}
-      data-testid={`sop-card-${sop.id}`}
+      data-testid={`gallery-card-${card.id}`}
     >
-      <header className="flex items-center justify-between gap-3">
-        <CategoryBadge label={sop.category} />
-        <UpdatedLabel date={sop.updated} />
-      </header>
-
-      <h3
-        className="mt-3 text-base font-semibold"
-        style={{ color: "var(--text)" }}
-      >
-        {sop.title}
+      <h3 className="text-base font-semibold" style={{ color: "var(--text)" }}>
+        {card.title}
       </h3>
       <p
-        className="mt-1.5 text-sm leading-relaxed"
+        className="mt-2 text-sm leading-relaxed"
         style={{ color: "var(--text-muted)" }}
       >
-        {sop.description}
+        {card.description}
       </p>
-
-      <button
-        type="button"
-        onClick={() => setOpen((prev) => !prev)}
-        aria-expanded={open}
-        data-testid={`sop-toggle-${sop.id}`}
-        className="mt-4 inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1 text-xs font-medium transition-colors hover:bg-white/5"
-        style={{
-          borderColor: "var(--border)",
-          color: open ? "var(--accent-strong)" : "var(--text-muted)",
-        }}
+      <p
+        className="mt-3 inline-flex items-center gap-1 text-xs font-medium"
+        style={{ color: "var(--accent-strong)" }}
       >
-        {open ? (
-          <ChevronDown className="h-3.5 w-3.5" />
-        ) : (
-          <ChevronRight className="h-3.5 w-3.5" />
-        )}
-        {open ? "Hide SOP" : "View SOP"}
-      </button>
-
-      {open && (
-        <div
-          className="mt-5 rounded-xl p-4"
-          style={{
-            background: "var(--surface-strong)",
-            border: "1px solid var(--border)",
-          }}
-          data-testid={`sop-body-${sop.id}`}
-        >
-          <SopBlocks blocks={sop.blocks} />
-        </div>
-      )}
-    </article>
+        Open folder
+        <ArrowDown className="h-3 w-3" />
+      </p>
+    </a>
   );
 }
 
-// ── Prompt card ──────────────────────────────────────────────────────────────
+// ── Build step card (Mission Control Build main steps + extras) ──────────────
 //
-// Only prompt cards expose a Copy button. The full prompt is on the clipboard
-// after click; the card itself only shows a preview so the gallery stays
-// scannable. Copy failure handling is inherited from the shared CopyButton.
+// One unified card type for both numbered main steps (1–5) and the smaller
+// extra cards (Open PR, Fix failed checks, Continue later). The card carries:
+//   - step number badge (only if step.number is set)
+//   - title and purpose (plain English for the COO)
+//   - small prompt preview (no full body)
+//   - Copy button (copies the full prompt body)
+//
+// Identical visual hierarchy across the two so the page feels consistent.
 
-export function PromptCard({ prompt }: { prompt: Prompt }) {
+export function BuildStepCard({
+  step,
+  prompt,
+  ariaLabelPrefix,
+}: {
+  step: BuildStep;
+  prompt: Prompt;
+  /** Optional override for tests / extras — defaults to "Step N: <title>". */
+  ariaLabelPrefix?: string;
+}) {
+  const heading =
+    ariaLabelPrefix ??
+    (step.number !== undefined
+      ? `Step ${step.number}: ${step.title}`
+      : step.title);
+
   return (
     <article
-      className="rounded-2xl p-5 transition-colors"
+      className="rounded-2xl p-5"
       style={{
         background: "var(--surface)",
         border: "1px solid var(--border)",
       }}
-      data-testid={`prompt-card-${prompt.id}`}
+      data-testid={`build-step-${prompt.id}`}
     >
-      <header className="flex items-center justify-between gap-3">
-        <CategoryBadge label="Prompt" />
+      <header className="flex items-start gap-3">
+        {step.number !== undefined && <StepNumber n={step.number} />}
+        <div className="flex-1 min-w-0">
+          <h3 className="text-base font-semibold" style={{ color: "var(--text)" }}>
+            {heading}
+          </h3>
+          <p
+            className="mt-1.5 text-sm leading-relaxed"
+            style={{ color: "var(--text-muted)" }}
+          >
+            {step.purpose}
+          </p>
+        </div>
+      </header>
+
+      <div
+        className="mt-4 flex flex-wrap items-center justify-between gap-3 rounded-xl px-4 py-3"
+        style={{
+          background: "var(--surface-strong)",
+          border: "1px solid var(--border)",
+        }}
+      >
+        <div className="min-w-0">
+          <p
+            className="text-[10px] font-semibold uppercase tracking-widest"
+            style={{ color: "var(--text-quiet)" }}
+          >
+            Prompt
+          </p>
+          <p
+            className="mt-0.5 text-sm font-medium truncate"
+            style={{ color: "var(--text)" }}
+          >
+            {prompt.title}
+          </p>
+        </div>
         <CopyButton
           text={prompt.body}
           label="Copy prompt"
           ariaLabel={`Copy ${prompt.title}`}
         />
-      </header>
-
-      <h3
-        className="mt-3 text-base font-semibold"
-        style={{ color: "var(--text)" }}
-      >
-        {prompt.title}
-      </h3>
-
-      <p
-        className="mt-1.5 text-xs italic"
-        style={{ color: "var(--text-quiet)" }}
-      >
-        When to use: {prompt.whenToUse}
-      </p>
-
-      <p
-        className="mt-2 text-sm leading-relaxed"
-        style={{ color: "var(--text-muted)" }}
-      >
-        {prompt.description}
-      </p>
+      </div>
 
       <pre
-        className="mt-4 overflow-x-auto rounded-lg p-3 text-[11px] leading-relaxed whitespace-pre-wrap font-mono"
+        className="mt-3 overflow-x-auto rounded-lg p-3 text-[11px] leading-relaxed whitespace-pre-wrap font-mono"
         style={{
           background: "var(--surface-strong)",
           border: "1px solid var(--border)",
           color: "var(--text-muted)",
         }}
-        data-testid={`prompt-preview-${prompt.id}`}
+        data-testid={`build-step-preview-${prompt.id}`}
       >
         {prompt.preview}
         {"\n…"}
       </pre>
-
-      <footer className="mt-3">
-        <UpdatedLabel date={prompt.updated} />
-      </footer>
     </article>
   );
 }
+
+// ── Intro + prompt folder (Import + Emergency) ───────────────────────────────
+//
+// A folder with a single prompt. Same visual language as a BuildStepCard
+// (so the page reads consistently) but with the folder title as the heading
+// and the folder intro under it.
+
+export function IntroFolderBlock({
+  folder,
+  prompt,
+}: {
+  folder: IntroFolder;
+  prompt: Prompt;
+}) {
+  return (
+    <article
+      id={folder.id}
+      className="rounded-2xl p-5 scroll-mt-20"
+      style={{
+        background: "var(--surface)",
+        border: "1px solid var(--border)",
+      }}
+      data-testid={`intro-folder-${folder.id}`}
+    >
+      <h3 className="text-base font-semibold" style={{ color: "var(--text)" }}>
+        {folder.title}
+      </h3>
+      <p
+        className="mt-1.5 text-sm leading-relaxed"
+        style={{ color: "var(--text-muted)" }}
+      >
+        {folder.description}
+      </p>
+      <p
+        className="mt-3 text-sm leading-relaxed"
+        style={{ color: "var(--text-muted)" }}
+      >
+        {folder.intro}
+      </p>
+
+      <div
+        className="mt-4 flex flex-wrap items-center justify-between gap-3 rounded-xl px-4 py-3"
+        style={{
+          background: "var(--surface-strong)",
+          border: "1px solid var(--border)",
+        }}
+      >
+        <div className="min-w-0">
+          <p
+            className="text-[10px] font-semibold uppercase tracking-widest"
+            style={{ color: "var(--text-quiet)" }}
+          >
+            Prompt
+          </p>
+          <p
+            className="mt-0.5 text-sm font-medium truncate"
+            style={{ color: "var(--text)" }}
+          >
+            {prompt.title}
+          </p>
+        </div>
+        <CopyButton
+          text={prompt.body}
+          label="Copy prompt"
+          ariaLabel={`Copy ${prompt.title}`}
+        />
+      </div>
+
+      <pre
+        className="mt-3 overflow-x-auto rounded-lg p-3 text-[11px] leading-relaxed whitespace-pre-wrap font-mono"
+        style={{
+          background: "var(--surface-strong)",
+          border: "1px solid var(--border)",
+          color: "var(--text-muted)",
+        }}
+        data-testid={`intro-folder-preview-${folder.id}`}
+      >
+        {prompt.preview}
+        {"\n…"}
+      </pre>
+    </article>
+  );
+}
+
+// ── Safety Rules block ───────────────────────────────────────────────────────
+//
+// Readable structured prose. Explicitly NO copy button. The block also has no
+// "Prompt" pill — this is the only folder where the content is meant to be
+// read and never copied.
+
+export function SafetyRulesBlock({
+  title,
+  description,
+  blocks,
+}: {
+  title: string;
+  description: string;
+  blocks: SopBlock[];
+}) {
+  return (
+    <article
+      id="safety-rules"
+      className="rounded-2xl p-5 scroll-mt-20"
+      style={{
+        background: "var(--surface)",
+        border: "1px solid var(--border)",
+      }}
+      data-testid="safety-rules-block"
+    >
+      <h3 className="text-base font-semibold" style={{ color: "var(--text)" }}>
+        {title}
+      </h3>
+      <p
+        className="mt-1.5 text-sm leading-relaxed"
+        style={{ color: "var(--text-muted)" }}
+      >
+        {description}
+      </p>
+      <div className="mt-4">
+        <SopBlocks blocks={blocks} />
+      </div>
+    </article>
+  );
+}
+
+// ── Extra-step sub-section header (for "When ready for PR" etc.) ────────────
+//
+// A small label rendered above a single BuildStepCard so the three extras
+// inside Mission Control Build feel like grouped follow-ups rather than
+// random sixth/seventh/eighth steps.
+
+export function ExtraStepGroup({
+  label,
+  step,
+  prompt,
+}: {
+  label: string;
+  step: BuildStep;
+  prompt: Prompt;
+}) {
+  return (
+    <div className="space-y-2" data-testid={`extra-group-${prompt.id}`}>
+      <h4
+        className="text-[10px] font-semibold uppercase tracking-widest"
+        style={{ color: "var(--text-quiet)" }}
+      >
+        {label}
+      </h4>
+      <BuildStepCard step={step} prompt={prompt} />
+    </div>
+  );
+}
+
+// ── (Re-export the badge for ad-hoc use) ─────────────────────────────────────
+
+export { Badge };

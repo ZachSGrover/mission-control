@@ -3,10 +3,12 @@
 export const dynamic = "force-dynamic";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import Link from "next/link";
 import {
   AlertTriangle,
   Bot as BotIcon,
   CheckCircle2,
+  Hammer,
   Loader2,
   Lock,
   Pause,
@@ -339,15 +341,35 @@ function BotsPageContent() {
               its existing safe-mode loop.
             </p>
           </div>
-          <button
-            type="button"
-            onClick={() => void refresh()}
-            className="flex items-center gap-1 rounded-lg px-3 py-1.5 text-xs"
-            style={{ background: "var(--surface-strong)", border: "1px solid var(--border)", color: "var(--text-muted)" }}
-          >
-            <RefreshCw className="h-3.5 w-3.5" />
-            Refresh
-          </button>
+          <div className="flex items-center gap-2 shrink-0">
+            {/* Bot Builder lives at /bots/builder. The sidebar no longer
+                shows it as a separate entry — Bots is the entry point and
+                this CTA opens the builder. Same role gate as the Bots page
+                itself (RoleGuard require=operator wraps the content). */}
+            <Link
+              href="/bots/builder"
+              data-testid="bots-new-bot-cta"
+              className="flex items-center gap-1 rounded-lg px-3 py-1.5 text-xs"
+              style={{
+                background: "var(--accent-soft)",
+                border: "1px solid var(--border)",
+                color: "var(--accent-strong)",
+              }}
+              title="Open Bot Builder to draft a new bot spec (sandbox-only)"
+            >
+              <Hammer className="h-3.5 w-3.5" />
+              New Bot
+            </Link>
+            <button
+              type="button"
+              onClick={() => void refresh()}
+              className="flex items-center gap-1 rounded-lg px-3 py-1.5 text-xs"
+              style={{ background: "var(--surface-strong)", border: "1px solid var(--border)", color: "var(--text-muted)" }}
+            >
+              <RefreshCw className="h-3.5 w-3.5" />
+              Refresh
+            </button>
+          </div>
         </div>
 
         <div

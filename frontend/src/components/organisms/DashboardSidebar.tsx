@@ -4,27 +4,20 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
   Activity,
-  BookOpen,
   Bot,
   Brain,
   CalendarDays,
   Check,
-  ClipboardCheck,
   ClipboardList,
   CloudUpload,
   FolderOpen,
   Gauge,
   GitBranch,
-  Hammer,
   Heart,
-  Layout,
   Loader2,
   MessageSquare,
-  Network,
   Plug,
   Settings,
-  Shield,
-  Siren,
   TriangleAlert,
   Users,
   Wrench,
@@ -56,6 +49,13 @@ function NavSection({ label, children }: { label: string; children: React.ReactN
 }
 
 // ── Top-level nav link ────────────────────────────────────────────────────────
+//
+// Active matching:
+//   exact === true  → pathname must equal href.
+//   exact === false → pathname equals href, OR pathname begins with `href + "/"`.
+//
+// The second clause is "section match with a slash boundary" so /bots highlights
+// for /bots and /bots/builder, but never falsely highlights for /bots-anything.
 
 function NavLink({
   href,
@@ -74,7 +74,9 @@ function NavLink({
   testId?: string;
 }) {
   const pathname = usePathname();
-  const active = exact ? pathname === href : pathname.startsWith(href);
+  const active = exact
+    ? pathname === href
+    : pathname === href || pathname.startsWith(`${href}/`);
 
   return (
     <Link
@@ -104,6 +106,24 @@ function NavLink({
 }
 
 // ── Sidebar ───────────────────────────────────────────────────────────────────
+//
+// Visible structure (cleanup v1):
+//
+//   CHAT                  → Chat
+//   MEMORY                → Projects · SOPs · Memory · Calendar
+//   WORKSPACE             → Workflows · Bots (owner+operator) · Agents · Tools
+//   MODERN SALES AGENCY   → OnlyFans Intelligence
+//   SYSTEM                → Logs · Settings · Usage Tracker · Users (owner)
+//                           · Integrations (owner) · Save (owner)
+//
+// Hidden from sidebar but still reachable by direct URL:
+//   /hermes  /boards  /control (owner-only RoleGuard)
+//   /bots/builder (entered via Bots page CTA)
+//   /build-requests  /guide  /security
+//
+// Renames:
+//   "Business / Intelligence"  →  "Modern Sales Agency"
+//   "Skills"                   →  "Tools" (route still /skills)
 
 export function DashboardSidebar() {
   const pathname = usePathname();
@@ -127,17 +147,17 @@ export function DashboardSidebar() {
   const gitSave = useGitSave();
   const { role } = useRole();
 
+  // Settings still has owner-only sub-pages (Users, Integrations) but those are
+  // dedicated sidebar entries in this layout; /settings itself is the catch-all.
   const settingsActive =
     pathname === "/settings" ||
-    (pathname.startsWith("/settings") &&
+    (pathname.startsWith("/settings/") &&
       !pathname.startsWith("/settings/users") &&
       !pathname.startsWith("/settings/integrations"));
 
   const usersActive = pathname.startsWith("/settings/users");
   const integrationsActive = pathname.startsWith("/settings/integrations");
-  const guideActive = pathname.startsWith("/guide");
-  const securityActive = pathname.startsWith("/security");
-  const usageActive = pathname.startsWith("/usage");
+  const usageActive = pathname === "/usage" || pathname.startsWith("/usage/");
 
   return (
     <aside
@@ -153,12 +173,12 @@ export function DashboardSidebar() {
       {/* ── Scrollable nav ───────────────────────────────────────────── */}
       <div className="flex-1 overflow-y-auto px-3 py-5 space-y-5">
 
-        {/* Chat — one unified assistant */}
+        {/* CHAT */}
         <NavSection label="Chat">
           <NavLink href="/chat" label="Chat" Icon={MessageSquare} exact />
         </NavSection>
 
-        {/* Memory */}
+        {/* MEMORY */}
         <NavSection label="Memory">
           <NavLink
             href="/projects"
@@ -188,20 +208,26 @@ export function DashboardSidebar() {
           />
         </NavSection>
 
-        {/* Automation */}
-        <NavSection label="Automation">
+        {/* WORKSPACE */}
+        <NavSection label="Workspace">
           <NavLink
-            href="/hermes"
-            label="Hermes"
-            Icon={Siren}
-            description="System guardian — alerts, health checks, on-call wiring."
+            href="/workflows"
+            label="Workflows"
+            Icon={GitBranch}
+            description="Repeatable process flows and automations."
           />
-          <NavLink
-            href="/boards"
-            label="Boards"
-            Icon={Layout}
-            description="Planning and task boards (kanban-style)."
-          />
+          {/* Bots — operator role surface; visible to owner + operator only.
+              The section match makes /bots/builder also highlight Bots so no
+              separate Bot Builder sidebar entry is needed. */}
+          {(role === "owner" || role === "operator") && (
+            <NavLink
+              href="/bots"
+              label="Bots"
+              Icon={Bot}
+              description="Operational automations. Use the Bots page to build a new one."
+              testId="nav-bots"
+            />
+          )}
           <NavLink
             href="/agents"
             label="Agents"
@@ -209,61 +235,16 @@ export function DashboardSidebar() {
             description="AI workers that reason, build, or execute internal tasks."
           />
           <NavLink
-            href="/control"
-            label="Control"
-            Icon={Network}
-            description="Distributed device + agent control plane."
-          />
-          <NavLink
-            href="/workflows"
-            label="Workflows"
-            Icon={GitBranch}
-            description="Repeatable process flows and automations."
-          />
-          <NavLink
             href="/skills"
-            label="Skills"
+            label="Tools"
             Icon={Wrench}
             description="Reusable capability packs the assistant can install."
-          />
-          {/* Bots — operator role surface.  Visible to owner + operator only. */}
-          {(role === "owner" || role === "operator") && (
-            <NavLink
-              href="/bots"
-              label="Bots"
-              Icon={Bot}
-              description="Operational automations that run agency tasks."
-              testId="nav-bots"
-            />
-          )}
-          {(role === "owner" || role === "operator") && (
-            <NavLink
-              href="/bots/builder"
-              label="Bot Builder"
-              Icon={Hammer}
-              description="Author bot specs (sandbox-only) for owner approval."
-              testId="nav-bot-builder"
-            />
-          )}
-          {(role === "owner" || role === "operator" || role === "builder") && (
-            <NavLink
-              href="/build-requests"
-              label="Build Requests"
-              Icon={ClipboardCheck}
-              description="Submit and review build requests.  Owner approval required."
-              testId="nav-build-requests"
-            />
-          )}
-          <NavLink
-            href="/activity"
-            label="Logs"
-            Icon={Activity}
-            description="Audit-friendly log feed.  Empty until events flow in."
+            testId="nav-tools"
           />
         </NavSection>
 
-        {/* Business / Intelligence — analytics + spend products. */}
-        <NavSection label="Business / Intelligence">
+        {/* MODERN SALES AGENCY */}
+        <NavSection label="Modern Sales Agency">
           <NavLink
             href="/of-intelligence"
             label="OnlyFans Intelligence"
@@ -272,81 +253,18 @@ export function DashboardSidebar() {
           />
         </NavSection>
 
-        {/* System */}
+        {/* SYSTEM */}
         <NavSection label="System">
-          {/* Save — owner-only. The endpoint commits + pushes to origin/main
-              and PR #27 locked it down to require_owner. Hiding the button
-              from non-owners avoids the confusing 403 they'd otherwise hit. */}
-          {role === "owner" && (
-            <>
-              <button
-                type="button"
-                onClick={() => {
-                  if (gitSave.status === "error") gitSave.reset();
-                  else void gitSave.save();
-                }}
-                disabled={gitSave.status === "saving"}
-                data-testid="nav-save"
-                className={cn(
-                  "w-full flex items-center gap-2.5 rounded-lg px-3 py-2 text-sm font-normal transition-colors disabled:opacity-60",
-                )}
-                style={{
-                  color:
-                    gitSave.status === "saved"  ? "var(--accent-strong)" :
-                    gitSave.status === "error"  ? "rgb(248 113 113)" :
-                    "var(--text-muted)",
-                }}
-                onMouseEnter={(e) => {
-                  if (gitSave.status === "idle")
-                    (e.currentTarget as HTMLElement).style.color = "var(--text)";
-                }}
-                onMouseLeave={(e) => {
-                  if (gitSave.status === "idle")
-                    (e.currentTarget as HTMLElement).style.color = "var(--text-muted)";
-                }}
-                title={gitSave.message || "Save to GitHub"}
-              >
-                {gitSave.status === "saving" && <Loader2 className="h-4 w-4 shrink-0 animate-spin" />}
-                {gitSave.status === "saved"  && <Check className="h-4 w-4 shrink-0" />}
-                {gitSave.status === "error"  && <TriangleAlert className="h-4 w-4 shrink-0" />}
-                {gitSave.status === "idle"   && <CloudUpload className="h-4 w-4 shrink-0" />}
-                <span className="truncate text-left">
-                  {gitSave.status === "saving" ? "Saving…" :
-                   gitSave.status === "saved"  ? "Saved" :
-                   gitSave.status === "error"  ? "Save failed — tap to dismiss" :
-                   "Save"}
-                </span>
-              </button>
-              {gitSave.status === "error" && gitSave.message && (
-                <p className="px-3 text-[11px] leading-snug text-red-400">{gitSave.message}</p>
-              )}
-            </>
-          )}
-
-          <Link
-            href="/guide"
-            className={cn(
-              "flex items-center gap-2.5 rounded-lg px-3 py-2 text-sm transition-colors",
-              guideActive ? "font-medium" : "font-normal",
-            )}
-            style={
-              guideActive
-                ? { background: "var(--accent-soft)", color: "var(--accent-strong)" }
-                : { color: "var(--text-muted)" }
-            }
-            onMouseEnter={(e) => {
-              if (!guideActive) (e.currentTarget as HTMLElement).style.color = "var(--text)";
-            }}
-            onMouseLeave={(e) => {
-              if (!guideActive) (e.currentTarget as HTMLElement).style.color = "var(--text-muted)";
-            }}
-          >
-            <BookOpen className="h-4 w-4 shrink-0" />
-            Guide
-          </Link>
+          <NavLink
+            href="/activity"
+            label="Logs"
+            Icon={Activity}
+            description="Audit-friendly log feed.  Empty until events flow in."
+          />
 
           <Link
             href="/settings"
+            data-testid="nav-settings"
             className={cn(
               "flex items-center gap-2.5 rounded-lg px-3 py-2 text-sm transition-colors",
               settingsActive ? "font-medium" : "font-normal",
@@ -394,6 +312,7 @@ export function DashboardSidebar() {
           {role === "owner" && (
             <Link
               href="/settings/users"
+              data-testid="nav-users"
               className={cn(
                 "flex items-center gap-2.5 rounded-lg px-3 py-2 text-sm transition-colors",
                 usersActive ? "font-medium" : "font-normal",
@@ -418,6 +337,7 @@ export function DashboardSidebar() {
           {role === "owner" && (
             <Link
               href="/settings/integrations"
+              data-testid="nav-integrations"
               className={cn(
                 "flex items-center gap-2.5 rounded-lg px-3 py-2 text-sm transition-colors",
                 integrationsActive ? "font-medium" : "font-normal",
@@ -439,29 +359,53 @@ export function DashboardSidebar() {
             </Link>
           )}
 
+          {/* Save — owner-only. The endpoint commits + pushes to origin/main
+              (PR #27 locked it down to require_owner); hiding the button from
+              non-owners avoids the confusing 403 they'd otherwise hit. */}
           {role === "owner" && (
-            <Link
-              href="/security"
-              data-testid="nav-security"
-              className={cn(
-                "flex items-center gap-2.5 rounded-lg px-3 py-2 text-sm transition-colors",
-                securityActive ? "font-medium" : "font-normal",
+            <>
+              <button
+                type="button"
+                onClick={() => {
+                  if (gitSave.status === "error") gitSave.reset();
+                  else void gitSave.save();
+                }}
+                disabled={gitSave.status === "saving"}
+                data-testid="nav-save"
+                className={cn(
+                  "w-full flex items-center gap-2.5 rounded-lg px-3 py-2 text-sm font-normal transition-colors disabled:opacity-60",
+                )}
+                style={{
+                  color:
+                    gitSave.status === "saved"  ? "var(--accent-strong)" :
+                    gitSave.status === "error"  ? "rgb(248 113 113)" :
+                    "var(--text-muted)",
+                }}
+                onMouseEnter={(e) => {
+                  if (gitSave.status === "idle")
+                    (e.currentTarget as HTMLElement).style.color = "var(--text)";
+                }}
+                onMouseLeave={(e) => {
+                  if (gitSave.status === "idle")
+                    (e.currentTarget as HTMLElement).style.color = "var(--text-muted)";
+                }}
+                title={gitSave.message || "Save to GitHub"}
+              >
+                {gitSave.status === "saving" && <Loader2 className="h-4 w-4 shrink-0 animate-spin" />}
+                {gitSave.status === "saved"  && <Check className="h-4 w-4 shrink-0" />}
+                {gitSave.status === "error"  && <TriangleAlert className="h-4 w-4 shrink-0" />}
+                {gitSave.status === "idle"   && <CloudUpload className="h-4 w-4 shrink-0" />}
+                <span className="truncate text-left">
+                  {gitSave.status === "saving" ? "Saving…" :
+                   gitSave.status === "saved"  ? "Saved" :
+                   gitSave.status === "error"  ? "Save failed — tap to dismiss" :
+                   "Save"}
+                </span>
+              </button>
+              {gitSave.status === "error" && gitSave.message && (
+                <p className="px-3 text-[11px] leading-snug text-red-400">{gitSave.message}</p>
               )}
-              style={
-                securityActive
-                  ? { background: "var(--accent-soft)", color: "var(--accent-strong)" }
-                  : { color: "var(--text-muted)" }
-              }
-              onMouseEnter={(e) => {
-                if (!securityActive) (e.currentTarget as HTMLElement).style.color = "var(--text)";
-              }}
-              onMouseLeave={(e) => {
-                if (!securityActive) (e.currentTarget as HTMLElement).style.color = "var(--text-muted)";
-              }}
-            >
-              <Shield className="h-4 w-4 shrink-0" />
-              Security
-            </Link>
+            </>
           )}
         </NavSection>
 

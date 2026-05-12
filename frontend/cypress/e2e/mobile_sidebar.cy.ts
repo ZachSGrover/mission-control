@@ -129,9 +129,12 @@ describe("/dashboard - mobile sidebar", () => {
     cy.get("[data-sidebar]").should("have.attr", "data-sidebar", "open");
     cy.get("aside").should("be.visible");
 
-    // Click a navigation link inside the sidebar
+    // Click a navigation link inside the sidebar. Workflows is an always-
+    // visible entry in the Workspace section with no role gate. The previous
+    // target "Boards" was removed from the visible sidebar by the sidebar
+    // cleanup; the /boards route still exists via direct URL.
     cy.get("aside").within(() => {
-      cy.contains("a", "Boards").click();
+      cy.contains("a", "Workflows").click();
     });
 
     // Sidebar should close after navigation

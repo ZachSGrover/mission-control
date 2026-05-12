@@ -148,6 +148,13 @@ def send_message_in_chat(page, message: str) -> bool:
     Versucht die Nachricht in den aktuell offenen Chat zu senden.
     Gibt True zurück wenn erfolgreich.
     """
+    # Safety hook: dry-run logs, live counts. See safety_guard.py.
+    import safety_guard
+    snippet = (message or "")[:60].replace("\n", " ")
+    if safety_guard.is_dry_run():
+        safety_guard.dry_run_log(f"would send DM (msg: {snippet!r}…)")
+        return True
+    safety_guard.record_action_or_exit(f"DM (msg: {snippet!r}…)")
     composer = find_composer(page)
     if composer is None:
         return False
@@ -468,7 +475,45 @@ def main():
     print(f"{'═'*55}\n")
 
 
+def _dry_run_walkthrough():
+    """
+    Print what main() would do — config only, no browser / AdsPower / Playwright.
+    dm_bot discovers actual DM targets live (by scrolling x.com chat list), so
+    per-DM walkthrough isn't possible from config alone. We log per-account.
+    """
+    import safety_guard
+    print(f"\n{'═'*55}")
+    print(f"  dm_bot — DRY-RUN walkthrough (no browser, no AdsPower)")
+    print(f"{'═'*55}")
+
+    auftrag = load_json(AUFTRAG_PATH)
+    if not auftrag or not auftrag.get("accounts"):
+        print(f"  ⏭  auftrag.json missing/empty — no DMs would be sent.")
+        print(f"     Expected at: {AUFTRAG_PATH}")
+        return
+
+    accounts  = auftrag.get("accounts", [])
+    max_chats = auftrag.get("max_chats", 50)
+    message   = auftrag.get("message", "")
+
+    print(f"  Accounts : {len(accounts)} sender(s)")
+    print(f"  max_chats: {max_chats} DM(s) per account")
+    print(f"  Message  : {message[:60]}{'…' if len(message) > 60 else ''}")
+    print(f"  Note     : targets are discovered live by scrolling x.com — not listable here.")
+    if not accounts:
+        print(f"  ⏭  No accounts — nothing would be sent.")
+        return
+
+    for acc in accounts:
+        name = acc.get("name") or acc.get("user_id") or "?"
+        safety_guard.dry_run_log(f"would process account {name} (up to {max_chats} DMs)")
+    print(f"  ✓ Walkthrough complete. No DM was sent.")
+
+
 if __name__ == "__main__":
-    from safety_guard import require_live_or_exit
+    from safety_guard import require_live_or_exit, is_dry_run
     require_live_or_exit("dm_bot")
+    if is_dry_run():
+        _dry_run_walkthrough()
+        raise SystemExit(0)
     main()

@@ -153,6 +153,12 @@ def do_repost(page, link: str) -> tuple:
       'login'              → nicht eingeloggt
       <other>              → Fehler-Reason
     """
+    # Safety hook: dry-run logs, live counts. See safety_guard.py.
+    import safety_guard
+    if safety_guard.is_dry_run():
+        safety_guard.dry_run_log(f"would repost {link}")
+        return "ok", "dry-run"
+    safety_guard.record_action_or_exit(f"repost {link}")
     try:
         page.goto(link, wait_until="domcontentloaded", timeout=25000)
     except Exception as e:
@@ -431,7 +437,62 @@ def main():
     print(f"\n  ✅ {summary}\n")
 
 
+def _dry_run_walkthrough():
+    """
+    Print what main() would do — config only, no browser / AdsPower / Playwright.
+    repost_bot iterates (account, link) pairs from repost_auftrag.json.
+    """
+    import safety_guard
+    print(f"\n{'═'*55}")
+    print(f"  repost_bot — DRY-RUN walkthrough (no browser, no AdsPower)")
+    print(f"{'═'*55}")
+
+    auftrag = load_json(AUFTRAG_PATH, {})
+    accounts  = auftrag.get("accounts") or []
+    links     = auftrag.get("links") or []
+    preflight = bool(auftrag.get("preflight"))
+
+    if not accounts:
+        print(f"  ⏭  No accounts in repost_auftrag.json — nothing would be done.")
+        print(f"     Expected at: {AUFTRAG_PATH}")
+        return
+
+    if preflight:
+        print(f"  Mode     : PREFLIGHT (login/state check only)")
+        print(f"  Accounts : {len(accounts)}")
+        for acc in accounts:
+            safety_guard.dry_run_log(f"would preflight account {acc.get('name') or acc.get('user_id')}")
+        print(f"  ✓ Walkthrough complete. No repost was made.")
+        return
+
+    print(f"  Accounts : {len(accounts)} reposter(s)")
+    print(f"  Links    : {len(links)} tweet(s) to repost")
+    total = len(accounts) * len(links)
+    print(f"  Total pairs (accounts × links): up to {total}")
+    if total == 0:
+        print(f"  ⏭  Nothing to repost.")
+        return
+
+    cap = 10
+    print(f"  Showing first {min(cap, total)} as samples:")
+    shown = 0
+    for acc in accounts:
+        for link in links:
+            if shown >= cap:
+                break
+            safety_guard.dry_run_log(f"would repost {link} from {acc.get('name') or acc.get('user_id')}")
+            shown += 1
+        if shown >= cap:
+            break
+    if total > cap:
+        print(f"  … and {total - cap} more pair(s) skipped from log.")
+    print(f"  ✓ Walkthrough complete. No repost was made.")
+
+
 if __name__ == "__main__":
-    from safety_guard import require_live_or_exit
+    from safety_guard import require_live_or_exit, is_dry_run
     require_live_or_exit("repost_bot")
+    if is_dry_run():
+        _dry_run_walkthrough()
+        raise SystemExit(0)
     main()

@@ -125,6 +125,12 @@ def detect_own_handle(page) -> str:
 # ═══════════════════════════════════════════════════════
 def scrape_followers_js(page) -> list:
     """Scrapt sichtbare User-Cells aus dem Followers-Page-DOM."""
+    # Safety hook: dry-run returns empty, live counts. See safety_guard.py.
+    import safety_guard
+    if safety_guard.is_dry_run():
+        safety_guard.dry_run_log("would scrape visible follower cells")
+        return []
+    safety_guard.record_action_or_exit("scrape follower cells")
     try:
         return page.evaluate("""
             () => {
@@ -490,7 +496,38 @@ def main():
     print(f"\n  ✅ {summary}\n")
 
 
+def _dry_run_walkthrough():
+    """
+    Print what main() would do — config only, no browser / AdsPower / Playwright.
+    builder_bot scrapes follower/chat lists live, so per-item walkthrough isn't
+    possible from config alone. We log the planned operation.
+    """
+    import safety_guard
+    print(f"\n{'═'*55}")
+    print(f"  builder_bot — DRY-RUN walkthrough (no browser, no AdsPower)")
+    print(f"{'═'*55}")
+
+    auftrag = load_json(AUFTRAG_PATH, {})
+    if not auftrag or not auftrag.get("mode") or not auftrag.get("user_id"):
+        print(f"  ⏭  builder_auftrag.json missing/empty — nothing would be scraped.")
+        print(f"     Expected at: {AUFTRAG_PATH}")
+        return
+
+    mode    = auftrag.get("mode")
+    user_id = auftrag.get("user_id")
+    name    = auftrag.get("name") or user_id
+
+    print(f"  Mode     : {mode}")
+    print(f"  Account  : {name} (user_id={user_id})")
+    print(f"  Note     : targets are discovered live by scrolling x.com — not listable here.")
+    safety_guard.dry_run_log(f"would scrape {mode} for {name}")
+    print(f"  ✓ Walkthrough complete. No scrape was performed.")
+
+
 if __name__ == "__main__":
-    from safety_guard import require_live_or_exit
+    from safety_guard import require_live_or_exit, is_dry_run
     require_live_or_exit("builder_bot")
+    if is_dry_run():
+        _dry_run_walkthrough()
+        raise SystemExit(0)
     main()

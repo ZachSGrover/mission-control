@@ -606,6 +606,13 @@ def send_via_profile(page, handle: str, message: str) -> tuple:
 
 def send_dm_to_recipient(page, recipient: dict, message: str) -> tuple:
     """Dispatcher: nutzt compose-URL bei recipient_id, Profil-Klick bei handle."""
+    # Safety hook: dry-run logs, live counts. See safety_guard.py.
+    import safety_guard
+    target = recipient.get("handle") or recipient.get("recipient_id") or "?"
+    if safety_guard.is_dry_run():
+        safety_guard.dry_run_log(f"would DM @{target}")
+        return True, "dry-run"
+    safety_guard.record_action_or_exit(f"DM @{target}")
     if recipient.get("recipient_id"):
         return send_via_compose_url(page, recipient["recipient_id"], message)
     if recipient.get("handle"):
@@ -991,7 +998,73 @@ def main():
     print(f"{'═'*55}\n")
 
 
+def _dry_run_walkthrough():
+    """
+    Print what main() would do — config only, no browser / AdsPower / Playwright.
+    Reads the same JSON files as main(): blast_auftrag.json, contacts.json,
+    follower_lists.json. For each (account, recipient) pair it would target,
+    calls safety_guard.dry_run_log(). Caps the per-target log so giant lists
+    don't drown the console.
+    """
+    import safety_guard
+    print(f"\n{'═'*55}")
+    print(f"  blast_bot — DRY-RUN walkthrough (no browser, no AdsPower)")
+    print(f"{'═'*55}")
+
+    auftrag = load_json(AUFTRAG_PATH, {})
+    if not auftrag or not auftrag.get("accounts") or not auftrag.get("source_user_id"):
+        print(f"  ⏭  blast_auftrag.json missing/empty — nothing would be sent.")
+        print(f"     Expected at: {AUFTRAG_PATH}")
+        return
+
+    source       = auftrag["source_user_id"]
+    source_type  = (auftrag.get("source_type") or "contacts").lower()
+    accounts_raw = auftrag.get("accounts", [])
+    accounts = [a for a in accounts_raw if (a.get("name") or "").strip().upper() != "AVAILABLE"]
+    message = auftrag.get("message", "")
+
+    if source_type == "followers":
+        follower_lists = load_json(FOLLOWERS_PATH, {})
+        recipients = build_recipient_list_from_followers(follower_lists, source) or []
+        pool_label = f"{len(recipients)} followers (handle-based)"
+    else:
+        contacts = load_json(CONTACTS_PATH, {})
+        recipients = build_recipient_list_from_contacts(contacts, source) or []
+        pool_label = f"{len(recipients)} chats (id-based)"
+
+    print(f"  Source pool : {pool_label} from [{source}]")
+    print(f"  Accounts    : {len(accounts)} sender(s)")
+    print(f"  Message     : {message[:60]}{'…' if len(message) > 60 else ''}")
+    if not recipients:
+        print(f"  ⏭  No recipients — nothing would be sent.")
+        return
+    if not accounts:
+        print(f"  ⏭  No accounts — nothing would be sent.")
+        return
+
+    cap = 10  # cap log lines to keep console readable on large lists
+    total = len(recipients) * len(accounts)
+    print(f"  Total target pairs (recipients × accounts): up to {total}")
+    print(f"  Showing first {min(cap, total)} as samples:")
+    shown = 0
+    for acc in accounts:
+        for r in recipients:
+            if shown >= cap:
+                break
+            target = r.get("handle") or r.get("recipient_id") or "?"
+            safety_guard.dry_run_log(f"would DM @{target} from {acc.get('name') or acc.get('user_id')}")
+            shown += 1
+        if shown >= cap:
+            break
+    if total > cap:
+        print(f"  … and {total - cap} more pair(s) skipped from log.")
+    print(f"  ✓ Walkthrough complete. No DM was sent.")
+
+
 if __name__ == "__main__":
-    from safety_guard import require_live_or_exit
+    from safety_guard import require_live_or_exit, is_dry_run
     require_live_or_exit("blast_bot")
+    if is_dry_run():
+        _dry_run_walkthrough()
+        raise SystemExit(0)
     main()

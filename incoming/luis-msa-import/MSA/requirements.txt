@@ -1,0 +1,13 @@
+# MSA runtime dependencies.
+#
+# After `pip install -r requirements.txt`, also run:
+#   playwright install chromium
+# Playwright needs its browser binaries downloaded separately from the pip package.
+#
+# Notion is called directly via urllib.request in notion_sync.py, so no notion-client.
+# anthropic is a lazy import inside server.py's /analyze handler; only needed if you
+# hit that endpoint.
+
+requests
+playwright
+anthropic

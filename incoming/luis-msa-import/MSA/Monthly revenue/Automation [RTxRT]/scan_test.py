@@ -130,6 +130,12 @@ def scroll_list(page):
     """)
 
 def scan_only(page, user_id, contacts):
+    # Safety hook: dry-run skips, live counts. See safety_guard.py.
+    import safety_guard
+    if safety_guard.is_dry_run():
+        safety_guard.dry_run_log(f"would scan chat list for user_id={user_id}")
+        return
+    safety_guard.record_action_or_exit(f"scan chat list for {user_id}")
     seen_urls = set()
     all_urls  = []
     filtered  = []
@@ -207,7 +213,37 @@ def main():
             browser.close()
         ads_close(user_id)
 
+def _dry_run_walkthrough():
+    """
+    Print what main() would do — config only, no browser / AdsPower / Playwright.
+    scan_test scans the chat list live, so per-chat walkthrough isn't possible
+    from config alone. We log per account.
+    """
+    import safety_guard
+    print(f"\n{'═'*55}")
+    print(f"  scan_test — DRY-RUN walkthrough (no browser, no AdsPower)")
+    print(f"{'═'*55}")
+
+    auftrag  = json.loads(AUFTRAG_PATH.read_text(encoding="utf-8")) if AUFTRAG_PATH.exists() else {}
+    accounts = auftrag.get("accounts", [])
+
+    if not accounts:
+        print(f"  ⏭  No accounts in auftrag.json — nothing would be scanned.")
+        print(f"     Expected at: {AUFTRAG_PATH}")
+        return
+
+    print(f"  Accounts : {len(accounts)} to scan")
+    print(f"  Note     : chat list is discovered live by scrolling x.com — not listable here.")
+    for acc in accounts:
+        name = acc.get("name") or acc.get("user_id") or "?"
+        safety_guard.dry_run_log(f"would scan chat list for account {name}")
+    print(f"  ✓ Walkthrough complete. No scan was performed.")
+
+
 if __name__ == "__main__":
-    from safety_guard import require_live_or_exit
+    from safety_guard import require_live_or_exit, is_dry_run
     require_live_or_exit("scan_test")
+    if is_dry_run():
+        _dry_run_walkthrough()
+        raise SystemExit(0)
     main()

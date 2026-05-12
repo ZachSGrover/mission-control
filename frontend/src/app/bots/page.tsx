@@ -385,6 +385,41 @@ function BotsPageContent() {
           their lifecycle is owned by launchd.
         </div>
 
+        {/* MSA RT/X Automation Bot — Claw-runner-driven. The bot is not yet
+            in the bot_registry (waiting on the backend bridge), so we
+            surface a direct link to its dedicated control panel page. */}
+        <Link
+          href="/bots/msa-rtxrt"
+          data-testid="bots-msa-rtxrt-link"
+          className="flex items-center justify-between gap-3 rounded-xl px-4 py-3 transition-colors hover:bg-white/5"
+          style={{
+            background: "var(--surface)",
+            border: "1px solid var(--border)",
+          }}
+        >
+          <div className="min-w-0">
+            <p className="text-sm font-medium" style={{ color: "var(--text)" }}>
+              MSA RT/X Automation Bot
+            </p>
+            <p
+              className="mt-0.5 text-xs leading-relaxed"
+              style={{ color: "var(--text-muted)" }}
+            >
+              Claw-runner-driven. Dry-run by default. Live-one gated to owner.
+            </p>
+          </div>
+          <span
+            className="shrink-0 rounded-md px-2 py-0.5 text-[10px] font-semibold uppercase tracking-widest"
+            style={{
+              background: "var(--accent-soft)",
+              color: "var(--accent-strong)",
+              border: "1px solid var(--border)",
+            }}
+          >
+            Open
+          </span>
+        </Link>
+
         {error && (
           <div
             className="rounded-xl px-4 py-3 text-sm"

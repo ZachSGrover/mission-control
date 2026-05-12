@@ -5,9 +5,9 @@ import { ArrowDown } from "lucide-react";
 import { CopyButton } from "@/components/hermes/CopyButton";
 
 import type {
-  DeveloperStep,
+  BuildStep,
+  IntroFolder,
   Prompt,
-  SimpleSop,
   SopBlock,
   SopGalleryCard,
 } from "./sops-content";
@@ -37,15 +37,25 @@ function Badge({ label, tone = "muted" }: { label: string; tone?: "muted" | "acc
   );
 }
 
-function UpdatedLabel({ date }: { date: string }) {
+function StepNumber({ n }: { n: number }) {
   return (
-    <span className="text-[11px]" style={{ color: "var(--text-quiet)" }}>
-      Updated {date}
+    <span
+      className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-xs font-semibold"
+      style={{
+        background: "var(--accent-soft)",
+        color: "var(--accent-strong)",
+        border: "1px solid var(--border)",
+      }}
+    >
+      {n}
     </span>
   );
 }
 
 // ── Block renderer (paragraph / heading / numbered / bullets) ────────────────
+//
+// Reused by the Safety Rules section. Never renders <pre> — SOPs are read,
+// not pasted.
 
 export function SopBlocks({ blocks }: { blocks: SopBlock[] }) {
   return (
@@ -103,10 +113,10 @@ export function SopBlocks({ blocks }: { blocks: SopBlock[] }) {
   );
 }
 
-// ── Top-of-page SOP gallery card ─────────────────────────────────────────────
+// ── Top-of-page folder card ──────────────────────────────────────────────────
 //
-// Clicking the card anchor-jumps to the detail section below. No copy button —
-// these are navigation entries, not the canonical content.
+// Notion-style folder card. Clicking anchor-jumps to the matching detail
+// section. No copy button — these are navigation entries.
 
 export function GalleryCard({ card }: { card: SopGalleryCard }) {
   return (
@@ -132,26 +142,40 @@ export function GalleryCard({ card }: { card: SopGalleryCard }) {
         className="mt-3 inline-flex items-center gap-1 text-xs font-medium"
         style={{ color: "var(--accent-strong)" }}
       >
-        Jump to SOP
+        Open folder
         <ArrowDown className="h-3 w-3" />
       </p>
     </a>
   );
 }
 
-// ── Developer SOP step block ─────────────────────────────────────────────────
+// ── Build step card (Mission Control Build main steps + extras) ──────────────
 //
-// Each Developer SOP step shows: numbered badge, title, purpose, and a small
-// inline prompt reference with the matching Copy button. The compact ref keeps
-// the page scannable; the bottom Prompt Library has the full card with preview.
+// One unified card type for both numbered main steps (1–5) and the smaller
+// extra cards (Open PR, Fix failed checks, Continue later). The card carries:
+//   - step number badge (only if step.number is set)
+//   - title and purpose (plain English for the COO)
+//   - small prompt preview (no full body)
+//   - Copy button (copies the full prompt body)
+//
+// Identical visual hierarchy across the two so the page feels consistent.
 
-export function StepBlock({
+export function BuildStepCard({
   step,
   prompt,
+  ariaLabelPrefix,
 }: {
-  step: DeveloperStep;
+  step: BuildStep;
   prompt: Prompt;
+  /** Optional override for tests / extras — defaults to "Step N: <title>". */
+  ariaLabelPrefix?: string;
 }) {
+  const heading =
+    ariaLabelPrefix ??
+    (step.number !== undefined
+      ? `Step ${step.number}: ${step.title}`
+      : step.title);
+
   return (
     <article
       className="rounded-2xl p-5"
@@ -159,130 +183,157 @@ export function StepBlock({
         background: "var(--surface)",
         border: "1px solid var(--border)",
       }}
-      data-testid={`step-${step.number}`}
+      data-testid={`build-step-${prompt.id}`}
     >
-      <div className="flex items-center gap-3">
-        <span
-          className="flex h-7 w-7 items-center justify-center rounded-full text-xs font-semibold"
-          style={{
-            background: "var(--accent-soft)",
-            color: "var(--accent-strong)",
-            border: "1px solid var(--border)",
-          }}
-        >
-          {step.number}
-        </span>
-        <h3 className="text-base font-semibold" style={{ color: "var(--text)" }}>
-          Step {step.number}: {step.title}
-        </h3>
+      <header className="flex items-start gap-3">
+        {step.number !== undefined && <StepNumber n={step.number} />}
+        <div className="flex-1 min-w-0">
+          <h3 className="text-base font-semibold" style={{ color: "var(--text)" }}>
+            {heading}
+          </h3>
+          <p
+            className="mt-1.5 text-sm leading-relaxed"
+            style={{ color: "var(--text-muted)" }}
+          >
+            {step.purpose}
+          </p>
+        </div>
+      </header>
+
+      <div
+        className="mt-4 flex flex-wrap items-center justify-between gap-3 rounded-xl px-4 py-3"
+        style={{
+          background: "var(--surface-strong)",
+          border: "1px solid var(--border)",
+        }}
+      >
+        <div className="min-w-0">
+          <p
+            className="text-[10px] font-semibold uppercase tracking-widest"
+            style={{ color: "var(--text-quiet)" }}
+          >
+            Prompt
+          </p>
+          <p
+            className="mt-0.5 text-sm font-medium truncate"
+            style={{ color: "var(--text)" }}
+          >
+            {prompt.title}
+          </p>
+        </div>
+        <CopyButton
+          text={prompt.body}
+          label="Copy prompt"
+          ariaLabel={`Copy ${prompt.title}`}
+        />
       </div>
 
-      <p
-        className="mt-3 text-sm leading-relaxed"
-        style={{ color: "var(--text-muted)" }}
+      <pre
+        className="mt-3 overflow-x-auto rounded-lg p-3 text-[11px] leading-relaxed whitespace-pre-wrap font-mono"
+        style={{
+          background: "var(--surface-strong)",
+          border: "1px solid var(--border)",
+          color: "var(--text-muted)",
+        }}
+        data-testid={`build-step-preview-${prompt.id}`}
       >
-        {step.purpose}
-      </p>
-
-      <CompactPromptRef prompt={prompt} stepNumber={step.number} />
+        {prompt.preview}
+        {"\n…"}
+      </pre>
     </article>
   );
 }
 
-// ── Inline prompt reference (compact) ────────────────────────────────────────
+// ── Intro + prompt folder (Import + Emergency) ───────────────────────────────
 //
-// A small "use this prompt" callout shown inside a Step or a SimpleSopBlock.
-// Shows only the title + copy button — the full card with preview lives in
-// the Prompt Library section.
+// A folder with a single prompt. Same visual language as a BuildStepCard
+// (so the page reads consistently) but with the folder title as the heading
+// and the folder intro under it.
 
-export function CompactPromptRef({
-  prompt,
-  stepNumber,
-}: {
-  prompt: Prompt;
-  stepNumber?: number;
-}) {
-  const refLabel = stepNumber !== undefined ? `Step ${stepNumber} prompt` : "Prompt";
-  return (
-    <div
-      className="mt-4 flex flex-wrap items-center justify-between gap-3 rounded-xl px-4 py-3"
-      style={{
-        background: "var(--surface-strong)",
-        border: "1px solid var(--border)",
-      }}
-      data-testid={`compact-prompt-${prompt.id}`}
-    >
-      <div className="min-w-0">
-        <p
-          className="text-[10px] font-semibold uppercase tracking-widest"
-          style={{ color: "var(--text-quiet)" }}
-        >
-          {refLabel}
-        </p>
-        <p
-          className="mt-0.5 text-sm font-medium truncate"
-          style={{ color: "var(--text)" }}
-        >
-          {prompt.title}
-        </p>
-      </div>
-      <CopyButton
-        text={prompt.body}
-        label="Copy prompt"
-        ariaLabel={`Copy ${prompt.title}`}
-      />
-    </div>
-  );
-}
-
-// ── Simple SOP block (Import / Emergency) ────────────────────────────────────
-//
-// Title + description + numbered substeps + a single CompactPromptRef.
-
-export function SimpleSopBlock({
-  sop,
+export function IntroFolderBlock({
+  folder,
   prompt,
 }: {
-  sop: SimpleSop;
+  folder: IntroFolder;
   prompt: Prompt;
 }) {
   return (
     <article
-      id={sop.id}
-      className="rounded-2xl p-5"
+      id={folder.id}
+      className="rounded-2xl p-5 scroll-mt-20"
       style={{
         background: "var(--surface)",
         border: "1px solid var(--border)",
       }}
-      data-testid={`simple-sop-${sop.id}`}
+      data-testid={`intro-folder-${folder.id}`}
     >
       <h3 className="text-base font-semibold" style={{ color: "var(--text)" }}>
-        {sop.title}
+        {folder.title}
       </h3>
       <p
         className="mt-1.5 text-sm leading-relaxed"
         style={{ color: "var(--text-muted)" }}
       >
-        {sop.description}
+        {folder.description}
       </p>
-      <ol
-        className="mt-4 list-decimal pl-5 space-y-1.5 text-sm leading-relaxed"
+      <p
+        className="mt-3 text-sm leading-relaxed"
         style={{ color: "var(--text-muted)" }}
       >
-        {sop.steps.map((step, i) => (
-          <li key={i}>{step}</li>
-        ))}
-      </ol>
-      <CompactPromptRef prompt={prompt} />
+        {folder.intro}
+      </p>
+
+      <div
+        className="mt-4 flex flex-wrap items-center justify-between gap-3 rounded-xl px-4 py-3"
+        style={{
+          background: "var(--surface-strong)",
+          border: "1px solid var(--border)",
+        }}
+      >
+        <div className="min-w-0">
+          <p
+            className="text-[10px] font-semibold uppercase tracking-widest"
+            style={{ color: "var(--text-quiet)" }}
+          >
+            Prompt
+          </p>
+          <p
+            className="mt-0.5 text-sm font-medium truncate"
+            style={{ color: "var(--text)" }}
+          >
+            {prompt.title}
+          </p>
+        </div>
+        <CopyButton
+          text={prompt.body}
+          label="Copy prompt"
+          ariaLabel={`Copy ${prompt.title}`}
+        />
+      </div>
+
+      <pre
+        className="mt-3 overflow-x-auto rounded-lg p-3 text-[11px] leading-relaxed whitespace-pre-wrap font-mono"
+        style={{
+          background: "var(--surface-strong)",
+          border: "1px solid var(--border)",
+          color: "var(--text-muted)",
+        }}
+        data-testid={`intro-folder-preview-${folder.id}`}
+      >
+        {prompt.preview}
+        {"\n…"}
+      </pre>
     </article>
   );
 }
 
-// ── Security and Live Action Rules block ─────────────────────────────────────
+// ── Safety Rules block ───────────────────────────────────────────────────────
 //
-// Plain readable prose. No copy button. Reuses SopBlocks for the actual content.
+// Readable structured prose. Explicitly NO copy button. The block also has no
+// "Prompt" pill — this is the only folder where the content is meant to be
+// read and never copied.
 
-export function SecurityRulesBlock({
+export function SafetyRulesBlock({
   title,
   description,
   blocks,
@@ -293,13 +344,13 @@ export function SecurityRulesBlock({
 }) {
   return (
     <article
-      id="security-rules"
-      className="rounded-2xl p-5"
+      id="safety-rules"
+      className="rounded-2xl p-5 scroll-mt-20"
       style={{
         background: "var(--surface)",
         border: "1px solid var(--border)",
       }}
-      data-testid="security-rules-block"
+      data-testid="safety-rules-block"
     >
       <h3 className="text-base font-semibold" style={{ color: "var(--text)" }}>
         {title}
@@ -317,68 +368,34 @@ export function SecurityRulesBlock({
   );
 }
 
-// ── Full prompt card (used in the Claude Prompt Library section) ─────────────
+// ── Extra-step sub-section header (for "When ready for PR" etc.) ────────────
 //
-// Step number badge (when applicable) + title + when-to-use + description +
-// two-line preview + Copy button. SOPs / step blocks / security do NOT render
-// this — only the bottom library.
+// A small label rendered above a single BuildStepCard so the three extras
+// inside Mission Control Build feel like grouped follow-ups rather than
+// random sixth/seventh/eighth steps.
 
-export function PromptCard({ prompt }: { prompt: Prompt }) {
+export function ExtraStepGroup({
+  label,
+  step,
+  prompt,
+}: {
+  label: string;
+  step: BuildStep;
+  prompt: Prompt;
+}) {
   return (
-    <article
-      className="rounded-2xl p-5 transition-colors"
-      style={{
-        background: "var(--surface)",
-        border: "1px solid var(--border)",
-      }}
-      data-testid={`prompt-card-${prompt.id}`}
-    >
-      <header className="flex items-center justify-between gap-3">
-        <div className="flex items-center gap-2">
-          {prompt.step !== undefined && <Badge label={`Step ${prompt.step}`} tone="accent" />}
-          <Badge label="Prompt" />
-        </div>
-        <CopyButton
-          text={prompt.body}
-          label="Copy prompt"
-          ariaLabel={`Copy ${prompt.title}`}
-        />
-      </header>
-
-      <h3 className="mt-3 text-base font-semibold" style={{ color: "var(--text)" }}>
-        {prompt.title}
-      </h3>
-
-      <p
-        className="mt-1.5 text-xs italic"
+    <div className="space-y-2" data-testid={`extra-group-${prompt.id}`}>
+      <h4
+        className="text-[10px] font-semibold uppercase tracking-widest"
         style={{ color: "var(--text-quiet)" }}
       >
-        When to use: {prompt.whenToUse}
-      </p>
-
-      <p
-        className="mt-2 text-sm leading-relaxed"
-        style={{ color: "var(--text-muted)" }}
-      >
-        {prompt.description}
-      </p>
-
-      <pre
-        className="mt-4 overflow-x-auto rounded-lg p-3 text-[11px] leading-relaxed whitespace-pre-wrap font-mono"
-        style={{
-          background: "var(--surface-strong)",
-          border: "1px solid var(--border)",
-          color: "var(--text-muted)",
-        }}
-        data-testid={`prompt-preview-${prompt.id}`}
-      >
-        {prompt.preview}
-        {"\n…"}
-      </pre>
-
-      <footer className="mt-3">
-        <UpdatedLabel date={prompt.updated} />
-      </footer>
-    </article>
+        {label}
+      </h4>
+      <BuildStepCard step={step} prompt={prompt} />
+    </div>
   );
 }
+
+// ── (Re-export the badge for ad-hoc use) ─────────────────────────────────────
+
+export { Badge };

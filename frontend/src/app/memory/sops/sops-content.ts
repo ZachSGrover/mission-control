@@ -1,17 +1,17 @@
-// SOP and Claude-prompt content for the Memory → SOPs page (v3 step-flow).
+// SOP and Claude-prompt content for the Memory → SOPs page (v4 folder layout).
 //
-// Shape: one main step-by-step "Mission Control Developer SOP" walks Luis
-// through every build from setup → push → PR → fixing checks → resuming.
-// Three smaller SOPs (Import / Emergency / Security) sit alongside it. Below
-// them, the Claude Prompt Library lists all ten prompts in the same order as
-// the SOP flow, each with its own copy button.
+// Shape: four top-level "folders" (Mission Control Build, Import Existing
+// Code, Safety Rules, Emergency Debug). Mission Control Build is the main
+// operating manual — five numbered steps plus three smaller "what's next"
+// cards (Open PR, Fix failed checks, Continue later). The other three folders
+// each have an intro block plus a single prompt card.
 //
-// Data lives in this file so the page stays thin and so the unit tests can
+// Data lives in this file so the page stays thin and the unit tests can
 // assert structure without rendering the Clerk-wrapped page shell.
 
 const LAST_UPDATED = "2026-05-12";
 
-// ── Block content (reused by Security Rules) ────────────────────────────────
+// ── Block content (used by the Safety Rules section) ────────────────────────
 
 export type SopBlock =
   | { type: "paragraph"; text: string }
@@ -19,184 +19,185 @@ export type SopBlock =
   | { type: "numbered"; items: string[] }
   | { type: "bullets"; items: string[] };
 
-// ── SOP gallery (top-of-page overview cards) ────────────────────────────────
+// ── Top-of-page SOP gallery (four folder cards) ─────────────────────────────
 
 export interface SopGalleryCard {
   id: string;
   title: string;
   description: string;
-  /** In-page anchor the card links to. */
+  /** In-page anchor the card scrolls to. */
   anchor: string;
 }
 
 export const SOP_GALLERY: SopGalleryCard[] = [
   {
-    id: "developer",
-    title: "Mission Control Developer SOP",
+    id: "mission-control-build",
+    title: "Mission Control Build",
     description:
-      "The complete step-by-step workflow for starting a build, creating the right branch, building safely, testing, pushing, and opening a PR.",
-    anchor: "#developer-sop",
+      "The main operating manual. Five steps from setup to a pushed branch, plus what to do when it's time for a PR, when checks fail, or when you come back later.",
+    anchor: "#mission-control-build",
   },
   {
-    id: "import",
-    title: "Import Existing Code SOP",
+    id: "import-existing-code",
+    title: "Import Existing Code",
     description:
-      "Use when a bot, script, dashboard, or tool was built outside Mission Control and needs to be moved into the repo safely.",
-    anchor: "#import-sop",
+      "Move a bot, script, dashboard, or tool that was built outside Mission Control into the repo without leaking secrets or running it unsafely.",
+    anchor: "#import-existing-code",
   },
   {
-    id: "emergency",
-    title: "Emergency Debug SOP",
-    description:
-      "Use when something breaks and Claude needs to diagnose and fix the smallest safe issue.",
-    anchor: "#emergency-sop",
-  },
-  {
-    id: "security",
-    title: "Security and Live Action Rules",
+    id: "safety-rules",
+    title: "Safety Rules",
     description:
       "Rules for secrets, client data, external platforms, dry-run mode, and owner-only actions.",
-    anchor: "#security-rules",
+    anchor: "#safety-rules",
+  },
+  {
+    id: "emergency-debug",
+    title: "Emergency Debug",
+    description:
+      "When something breaks: stop, diagnose, make the smallest safe fix, push only if safe.",
+    anchor: "#emergency-debug",
   },
 ];
 
-// ── Mission Control Developer SOP (the main step flow) ──────────────────────
+// ── Mission Control Build — five main steps + three extras ──────────────────
+//
+// The five-step flow is the spine. The three extras are smaller "what's next"
+// cards that share the same shape (title, purpose, prompt) but don't get a
+// step number — they're rendered under sub-headings instead.
 
-export interface DeveloperStep {
-  number: number;
+export interface BuildStep {
+  /** 1–5 for the main flow; undefined for extras. */
+  number?: number;
   title: string;
   purpose: string;
-  /** Prompt to use at this step. References a PROMPT_LIBRARY entry by id. */
+  /** Prompt id; references a PROMPT_LIBRARY entry. */
   promptId: string;
 }
 
-export interface DeveloperSop {
+export interface MissionControlBuild {
   title: string;
   description: string;
-  steps: DeveloperStep[];
+  steps: BuildStep[];
+  extras: {
+    label: string;
+    step: BuildStep;
+  }[];
 }
 
-export const DEVELOPER_SOP: DeveloperSop = {
-  title: "Mission Control Developer SOP",
+export const MISSION_CONTROL_BUILD: MissionControlBuild = {
+  title: "Mission Control Build",
   description:
-    "Eight steps from idea to merged PR. Run each prompt in order — they are designed to stack.",
+    "Five steps every build follows. Copy the prompt at each step into Claude Code and run it before moving on.",
   steps: [
     {
       number: 1,
-      title: "Start Every Build Safely",
+      title: "Start Safe",
       purpose:
-        "Make sure Claude Code is in the right repo, not on main, on a fresh branch, and knows where the work belongs.",
-      promptId: "start-every-build-safely",
+        "Open Mission Control in Claude Code, confirm the repo, confirm the branch, create or continue the correct branch, and decide where the work belongs.",
+      promptId: "start-mission-control-build",
     },
     {
       number: 2,
-      title: "Build in the Right Place",
+      title: "Build",
       purpose:
-        "Tell Claude what Luis is building and make sure it goes into the correct Mission Control area.",
-      promptId: "build-safe",
+        "Build the bot, tool, page, workflow, agent, or feature in the right place without touching production or secrets.",
+      promptId: "build-inside-mission-control",
     },
     {
       number: 3,
-      title: "Test Locally",
-      purpose:
-        "Run safe local tests without deploying or triggering live external actions.",
-      promptId: "test-build",
+      title: "Test",
+      purpose: "Run safe local checks and confirm nothing broke.",
+      promptId: "test-mission-control-build",
     },
     {
       number: 4,
-      title: "Run Safety Check Before Pushing",
+      title: "Safety Check",
       purpose:
-        "Check secrets, env files, client data, external actions, branch, changed files, and risky areas before pushing.",
-      promptId: "run-safety-check",
+        "Check branch, changed files, secrets, env files, private data, external actions, and dry-run/live-mode before pushing.",
+      promptId: "run-pre-push-safety-check",
     },
     {
       number: 5,
-      title: "Push Branch Safely",
+      title: "Push Branch",
       purpose:
-        "Push the feature branch to GitHub without pushing to main.",
+        "Commit and push the branch to GitHub without pushing to main or deploying.",
       promptId: "push-branch-safely",
     },
+  ],
+  extras: [
     {
-      number: 6,
-      title: "Open Pull Request",
-      purpose:
-        "Create a clean PR summary so GitHub checks can run and the change can be reviewed if needed.",
-      promptId: "open-pr-summary",
+      label: "When ready for PR",
+      step: {
+        title: "Open Pull Request",
+        purpose:
+          "Produce a clean PR summary so GitHub checks can run and the change can be reviewed if needed.",
+        promptId: "open-pull-request-summary",
+      },
     },
     {
-      number: 7,
-      title: "Fix Failed Checks",
-      purpose:
-        "If GitHub checks fail, fix only the failing issue and do not make random changes.",
-      promptId: "fix-failed-checks",
+      label: "If checks fail",
+      step: {
+        title: "Fix Failed Checks",
+        purpose:
+          "Fix only the failing issue. Smallest safe fix, no unrelated changes.",
+        promptId: "fix-failed-github-checks",
+      },
     },
     {
-      number: 8,
-      title: "Continue Existing Branch",
-      purpose:
-        "If Luis comes back later, resume work on the right branch safely.",
-      promptId: "continue-existing-build",
+      label: "Continue later",
+      step: {
+        title: "Resume This Branch",
+        purpose:
+          "Come back to a branch later and pick up where you left off — repo state, branch summary, and the next safe step.",
+        promptId: "continue-existing-mission-control-build",
+      },
     },
   ],
 };
 
-// ── Smaller SOPs (Import + Emergency) ───────────────────────────────────────
+// ── Import / Emergency folders (intro + single prompt each) ─────────────────
 
-export interface SimpleSop {
+export interface IntroFolder {
   id: string;
   title: string;
   description: string;
-  steps: string[];
+  intro: string;
   promptId: string;
 }
 
-export const IMPORT_SOP: SimpleSop = {
-  id: "import-sop",
-  title: "Import Existing Code SOP",
+export const IMPORT_FOLDER: IntroFolder = {
+  id: "import-existing-code",
+  title: "Import Existing Code",
   description:
-    "Move a script, dashboard, bot, or tool that was built outside Mission Control into the repo without leaking secrets or running it unsafely.",
-  steps: [
-    "Put existing code in a folder or zip.",
-    "Use the import prompt.",
-    "Import into incoming/coo-import.",
-    "Inspect before running.",
-    "Move secrets to env.",
-    "Keep real client data out of GitHub if appropriate.",
-    "Add dry-run for live actions.",
-    "Continue building on the branch.",
-  ],
-  promptId: "import-existing-code",
+    "Move outside-built code into the repo safely. Real API keys may be used at runtime but never committed; real client data may be used internally but raw dumps must not be committed; live external actions need explicit dry-run / live-mode gates.",
+  intro:
+    "Use the prompt below to drop a script, dashboard, bot, or tool into incoming/coo-import/ and audit it before anything runs.",
+  promptId: "import-existing-code-into-mission-control",
 };
 
-export const EMERGENCY_SOP: SimpleSop = {
-  id: "emergency-sop",
-  title: "Emergency Debug SOP",
+export const EMERGENCY_FOLDER: IntroFolder = {
+  id: "emergency-debug",
+  title: "Emergency Debug",
   description:
-    "Something broke. Stop, diagnose, make the smallest safe fix, push only if safe. Do not panic-deploy.",
-  steps: [
-    "Stop changing things.",
-    "Do not deploy.",
-    "Do not push to main.",
-    "Identify exact error.",
-    "Fix smallest possible issue.",
-    "Run local checks.",
-    "Push only if safe.",
-  ],
-  promptId: "emergency-debug",
+    "Stop the bleed first, fix the exact issue second. Smallest safe fix only.",
+  intro:
+    "Paste this prompt into Claude Code when something breaks. It forces find-the-exact-file, smallest-safe-fix posture and never rebuilds from scratch.",
+  promptId: "emergency-debug-prompt",
 };
 
-// ── Security and Live Action Rules (readable prose, no copy button) ─────────
+// ── Safety Rules (readable prose, no copy button) ───────────────────────────
 
-export interface SecurityRules {
+export interface SafetyRules {
   id: string;
   title: string;
   description: string;
   blocks: SopBlock[];
 }
 
-export const SECURITY_RULES: SecurityRules = {
-  id: "security-rules",
-  title: "Security and Live Action Rules",
+export const SAFETY_RULES: SafetyRules = {
+  id: "safety-rules",
+  title: "Safety Rules",
   description:
     "Rules for secrets, client data, external platforms, dry-run mode, and owner-only actions. Read once, reference whenever.",
   blocks: [
@@ -261,90 +262,81 @@ export const SECURITY_RULES: SecurityRules = {
 
 // ── Claude prompt library ───────────────────────────────────────────────────
 //
-// Order matches the Developer SOP flow, with Import and Emergency at the end.
-// Each prompt's `step` field (if present) links it to a Developer SOP step.
+// Order matches the SOP flow:
+//   1–5  → Mission Control Build main steps
+//   6–8  → Mission Control Build extras (PR, fix failed, continue later)
+//   9    → Import Existing Code
+//   10   → Emergency Debug
+//
+// Each prompt's optional `step` field is the Mission Control Build step
+// number (1–5). Extras and Import/Emergency do not carry a step.
 
 export interface Prompt {
   id: string;
-  /** Developer SOP step number (1–8). Omitted for Import (9) and Emergency (10). */
   step?: number;
   title: string;
   whenToUse: string;
   description: string;
-  /** First two short lines of the prompt shown in the card (no copy). */
+  /** First two short lines of the prompt shown in the step / folder card. */
   preview: string;
-  /** Full prompt copied by the Copy button. */
+  /** Full prompt body — what the Copy button puts on the clipboard. */
   body: string;
   updated: string;
 }
 
 export const PROMPT_LIBRARY: Prompt[] = [
   {
-    id: "start-every-build-safely",
+    id: "start-mission-control-build",
     step: 1,
-    title: "Start Every Mission Control Build Safely",
-    whenToUse:
-      "Paste this into Claude Code before building any bot, agent, workflow, tool, page, import, or bug fix.",
+    title: "Start Mission Control Build",
+    whenToUse: "Paste this first before building anything.",
     description:
-      "Checks repo, branch, safety, correct placement, risk level, and dry-run requirements before any code changes happen.",
+      "Sets up the repo, branch, build plan, placement, and safety classification. Returns a setup report and waits for your confirmation before coding.",
     updated: LAST_UPDATED,
     preview:
-      "You are helping me build inside the Mission Control / Digidle OS repo safely.\nThis prompt must run BEFORE any coding starts.",
-    body: `You are helping me build inside the Mission Control / Digidle OS repo safely.
+      "You are helping me build inside the Mission Control / Digidle OS repo.\nThis is the required startup prompt before any coding.",
+    body: `You are helping me build inside the Mission Control / Digidle OS repo.
 
-This prompt must run BEFORE any coding starts.
+This is the required startup prompt before any coding.
 
 Do not write code yet.
 Do not deploy.
 Do not push to main.
+Do not open a pull request yet.
 Do not touch secrets.
-Do not change production env vars.
+Do not print secrets.
 Do not change Render, Clerk, Cloudflare, DNS, billing, auth, roles, production database, or production settings.
 Do not connect real OnlyFans.
 Do not connect real OnlyMonster.
 Do not run live external actions.
-Do not send messages, post, scrape, log in, delete, or touch external platforms unless dry-run mode is planned first.
+Do not send messages, post, scrape, log in, delete, repost, or touch external platforms unless dry-run mode is planned first.
 
 Goal:
-Prepare a safe workspace for the build and tell me exactly where this work should live inside Mission Control.
+Set up the correct branch and build plan so I can work safely inside Mission Control.
 
 Step 1:
-Confirm I am inside the Mission Control / Digidle OS repo.
+Confirm this folder is the Mission Control / Digidle OS repo.
 
-Run checks to identify:
+Check:
 current folder
-current git branch
+git remote
+current branch
 git status
-remote origin
-latest main status
+
+If this is not the Mission Control repo, stop and tell me to open the correct folder.
 
 Step 2:
-If current branch is main, stop and create a new feature branch before doing any work.
+Fetch latest GitHub state.
 
-Ask me what I am building if I have not already said it.
+Run:
+git fetch origin
 
 Step 3:
-Classify the build type.
+If I am on main, do not build on main.
 
-Choose one:
-Bot
-Agent
-Tool
-Workflow
-Dashboard
-Python Script
-HTML Tool
-Modern Sales Agency Feature
-OnlyFans Intelligence Feature
-Chat QC Feature
-Bug Fix
-UI Cleanup
-Other
+Ask what I am building if I have not already said it.
 
-Step 4:
-Create a safe branch name based on the build.
-
-Use this format:
+Then create a new branch from latest main using this format:
 coo/name-of-build
 
 Examples:
@@ -359,13 +351,33 @@ coo/import-existing-code
 If the branch already exists, use:
 coo/name-of-build-v2
 
-Step 5:
-Pull latest main before creating the branch.
+Step 4:
+If I am already on a coo/* feature branch, ask whether I want to continue this branch or create a new one.
 
-Then create or switch to the correct feature branch.
+Do not switch branches if there are uncommitted changes.
+First explain what is changed.
+
+Step 5:
+Classify what I am building.
+
+Choose one:
+Bot
+Agent
+Tool
+Workflow
+Dashboard
+Python Script
+HTML Tool
+Modern Sales Agency Feature
+OnlyFans Intelligence Feature
+Chat QC Feature
+Bug Fix
+UI Cleanup
+Import Existing Code
+Other
 
 Step 6:
-Inspect the repo and choose the correct place to build.
+Decide where the work belongs inside Mission Control.
 
 Use this placement logic:
 Bots go under the existing Bots system.
@@ -381,23 +393,6 @@ incoming/coo-import/
 Do not invent a new structure unless the existing structure clearly has no place for it.
 
 Step 7:
-Before coding, create a short build plan.
-
-Include:
-1. What I am building
-2. Where it will live
-3. Files likely to change
-4. Whether it needs frontend
-5. Whether it needs backend
-6. Whether it needs a database or migration
-7. Whether it touches external services
-8. Whether it uses client data
-9. Whether it needs API keys
-10. Whether it needs dry-run mode
-11. What is safe to do now
-12. What is blocked until owner approval
-
-Step 8:
 Apply safety classification.
 
 SAFE:
@@ -435,8 +430,8 @@ real OnlyMonster connection
 live sending/posting/scraping without dry-run
 production deploy settings
 
-Step 9:
-If the build touches external systems, plan dry-run mode first.
+Step 8:
+If this touches external systems, plan dry-run mode first.
 
 External systems include:
 AdsPower
@@ -458,33 +453,32 @@ Default rule:
 DRY_RUN=true
 ALLOW_LIVE_EXTERNAL_ACTIONS=false
 
-Step 10:
-Do not start coding until you return this setup report:
+Step 9:
+Return this setup report before coding:
 
 A. Repo confirmed
 B. Current branch before setup
-C. New branch created or selected
+C. Branch selected or created
 D. Build type
 E. Recommended Mission Control location
 F. Files likely to change
 G. Risk level
 H. Dry-run requirements
 I. Blocked actions
-J. Exact next build plan
+J. Exact build plan
 
-After returning the setup report, wait for me to confirm before making code changes.`,
+Wait for me to confirm before making code changes.`,
   },
   {
-    id: "build-safe",
+    id: "build-inside-mission-control",
     step: 2,
-    title: "Build a Safe Bot, Tool, Agent, Workflow, or Page",
-    whenToUse:
-      "After the setup prompt has identified the correct Mission Control location.",
+    title: "Build Inside Mission Control",
+    whenToUse: "Use after the Start Safe prompt gives the branch and build plan.",
     description:
-      "Builds in the right existing section with dry-run defaults, no secret exposure, and clear setup/test instructions. Stops before merge or deploy.",
+      "Builds in the right existing section with dry-run defaults, no secret exposure, clear setup/test instructions, and stops before merge or deploy.",
     updated: LAST_UPDATED,
     preview:
-      "You are building inside Mission Control / Digidle OS.\nBuild this in the correct existing Mission Control section.",
+      "You are building inside Mission Control / Digidle OS.\nBuild this in the correct existing Mission Control section based on the setup plan.",
     body: `You are building inside Mission Control / Digidle OS.
 
 Do not rebuild from scratch.
@@ -496,7 +490,7 @@ Do not connect real OnlyFans.
 Do not connect real OnlyMonster.
 Do not send Discord, Telegram, X, Reddit, OnlyFans, or OnlyMonster messages unless live mode has been explicitly approved.
 
-Build this in the correct existing Mission Control section.
+Build this in the correct existing Mission Control section based on the setup plan.
 
 Requirements:
 1. Preserve existing architecture.
@@ -521,10 +515,10 @@ E. What is blocked
 F. Whether ready for safety check`,
   },
   {
-    id: "test-build",
+    id: "test-mission-control-build",
     step: 3,
-    title: "Test This Build Safely",
-    whenToUse: "After Claude has built the feature on the branch.",
+    title: "Test Mission Control Build",
+    whenToUse: "Use after building, before pushing.",
     description:
       "Runs typecheck, lint, unit tests, and (if safe) the relevant e2e checks. Confirms no secrets are exposed and no live external actions ran.",
     updated: LAST_UPDATED,
@@ -560,13 +554,13 @@ A. Tests run
 B. Results
 C. Any failures
 D. Exact fix needed if failed
-E. Whether safe to push branch`,
+E. Whether safe to run pre-push safety check`,
   },
   {
-    id: "run-safety-check",
+    id: "run-pre-push-safety-check",
     step: 4,
-    title: "Run Safety Check Before Pushing",
-    whenToUse: "Right before pushing your branch to GitHub.",
+    title: "Run Pre-Push Safety Check",
+    whenToUse: "Use right before pushing anything to GitHub.",
     description:
       "Audits the branch for secrets, env files, auth/security drift, external-platform code, and client data before you push.",
     updated: LAST_UPDATED,
@@ -609,8 +603,9 @@ whether this can be merged to main`,
   {
     id: "push-branch-safely",
     step: 5,
-    title: "Push This Branch Safely",
-    whenToUse: "After the safety check returns SAFE or you have resolved REVIEW NEEDED.",
+    title: "Push Branch Safely",
+    whenToUse:
+      "Use only after the safety check says SAFE or REVIEW NEEDED with acceptable notes.",
     description:
       "Commits the intended files, pushes the feature branch to origin, and reports what to do next. Never pushes to main, never deploys.",
     updated: LAST_UPDATED,
@@ -626,7 +621,7 @@ Before pushing:
 1. Confirm current branch is not main.
 2. Confirm working tree is clean or only intended commits exist.
 3. Confirm safety check is SAFE or explain REVIEW NEEDED.
-4. Confirm no env files, secrets, client data dumps, logs, cookies, or sessions are staged.
+4. Confirm no env files, secrets, private client data dumps, logs, cookies, or sessions are staged.
 5. Confirm commit message is clear.
 
 Then:
@@ -644,10 +639,9 @@ E. Whether GitHub checks started
 F. Anything that needs review`,
   },
   {
-    id: "open-pr-summary",
-    step: 6,
+    id: "open-pull-request-summary",
     title: "Open Pull Request Summary",
-    whenToUse: "Right before opening a pull request into main.",
+    whenToUse: "Use when the branch is ready to propose into main.",
     description:
       "Produces a clean PR summary covering what changed, how to test, and the full safety posture.",
     updated: LAST_UPDATED,
@@ -672,10 +666,9 @@ Include:
 Keep it clear and short.`,
   },
   {
-    id: "fix-failed-checks",
-    step: 7,
+    id: "fix-failed-github-checks",
     title: "Fix Failed GitHub Checks",
-    whenToUse: "When CI on the PR fails and you need the smallest safe fix.",
+    whenToUse: "Use when GitHub checks fail after pushing a branch.",
     description:
       "Identifies the exact failing check, the root-cause file, and applies the smallest fix. Never rebuilds from scratch.",
     updated: LAST_UPDATED,
@@ -710,11 +703,9 @@ F. Commit hash
 G. Whether checks restarted`,
   },
   {
-    id: "continue-existing-build",
-    step: 8,
+    id: "continue-existing-mission-control-build",
     title: "Continue Existing Mission Control Build",
-    whenToUse:
-      "When Luis returns to a branch later and needs to pick up where he left off.",
+    whenToUse: "Use when returning to a branch that already exists.",
     description:
       "Confirms repo + branch state, summarizes what the branch is building, identifies the next safe step. No coding until the continuation plan is shown.",
     updated: LAST_UPDATED,
@@ -746,16 +737,16 @@ E. Next safe step
 F. Risks or blockers`,
   },
   {
-    id: "import-existing-code",
+    id: "import-existing-code-into-mission-control",
     title: "Import Existing Code Into Mission Control",
     whenToUse:
-      "When a bot, script, dashboard, or tool was built outside Mission Control and needs to move into the repo safely.",
+      "Use when code was built outside Mission Control and needs to be moved in.",
     description:
-      "Eleven-step import flow: branch + folder + audit + README + dry-run. Real API keys may be used at runtime but never committed; real client data may be used internally but not committed as raw dumps; live external actions require explicit dry-run/live mode gates.",
+      "Eleven-step import flow. Real API keys may be used at runtime but never committed; raw client data dumps stay out of the repo; live external actions require dry-run and live-mode gates.",
     updated: LAST_UPDATED,
     preview:
-      "You are helping move my existing code into the Mission Control / Digidle OS GitHub repo safely.\nDo not push to main. Do not deploy. Do not touch secrets.",
-    body: `You are helping move my existing code into the Mission Control / Digidle OS GitHub repo safely.
+      "You are importing existing code into Mission Control safely.\nDo not push to main. Do not deploy. Do not touch secrets.",
+    body: `You are importing existing code into Mission Control safely.
 
 Do not push to main.
 Do not deploy.
@@ -766,19 +757,14 @@ Do not connect real OnlyFans.
 Do not connect real OnlyMonster.
 Do not send messages, post, scrape, log in, delete, or touch external platforms unless dry-run mode is added first.
 
-Safety model for imports:
-Real API keys may be used at runtime, but they must never be committed — keep them in .env (gitignored).
-Real client data may be used internally for testing, but raw dumps must not be committed to the repo.
-Any live external action must sit behind an explicit dry-run / live mode gate (DRY_RUN=true by default).
-
 Goal:
-Move my existing code into the correct Mission Control branch and folder so I can continue building it safely.
+Move existing code into the correct Mission Control branch and folder so I can continue building it safely.
 
 Step 1:
 Confirm I am inside the Mission Control repo.
 
 Step 2:
-Pull latest main.
+Fetch latest main.
 
 Step 3:
 Create a new branch named:
@@ -792,7 +778,7 @@ Create this folder:
 incoming/coo-import/
 
 Step 5:
-Move or copy my existing code into:
+Move or copy the existing code into:
 incoming/coo-import/
 
 If the code is somewhere else on my computer, ask me for the file path.
@@ -804,21 +790,25 @@ Tell me:
 1. What files were imported
 2. What language it uses
 3. What the code does
-4. How it currently runs
+4. How it runs
 5. What inputs it needs
 6. What outputs it creates
 7. Whether it uses API keys
 8. Whether it touches client data
-9. Whether it sends, posts, scrapes, logs in, deletes, or touches any external platform
-10. Whether it should become a Tool, Bot, Workflow, Agent, or Modern Sales Agency page inside Mission Control
+9. Whether it sends, posts, scrapes, logs in, deletes, or touches external platforms
+10. Whether it should become a Tool, Bot, Workflow, Agent, Modern Sales Agency page, OnlyFans Intelligence feature, or other
 
 Step 7:
+Real API keys may be used at runtime, but must never be committed.
+Real client data may be used internally, but raw dumps must not be committed.
+Live external actions require explicit dry-run and live-mode gates.
+
+Step 8:
 Do not run the code unless it is clearly safe.
 If it can send, post, scrape, log in, delete, or touch client data, do not run it yet.
 
-Step 8:
-Create a README.md inside:
-incoming/coo-import/
+Step 9:
+Create a README.md inside the import folder.
 
 The README must explain:
 1. What this code does
@@ -830,18 +820,8 @@ The README must explain:
 7. What risks exist
 8. What still needs to be done
 
-Step 9:
-Add dry-run mode if the code touches any external service.
-
 Step 10:
-After the audit, recommend the right final place inside Mission Control:
-Tools
-Bots
-Workflows
-Agents
-Modern Sales Agency
-OnlyFans Intelligence
-Other
+Add or plan dry-run mode if the code touches any external service.
 
 Step 11:
 Do not merge.
@@ -858,11 +838,11 @@ F. What to build next
 G. Whether it is safe to continue building on this branch`,
   },
   {
-    id: "emergency-debug",
+    id: "emergency-debug-prompt",
     title: "Emergency Debug Prompt",
-    whenToUse: "When something breaks and you need the smallest safe fix.",
+    whenToUse: "Use when something breaks.",
     description:
-      "Forces find-the-exact-file, make-the-smallest-safe-fix posture. No rebuilds, no production changes.",
+      "Forces find-the-exact-file, smallest-safe-fix posture. No rebuilds, no production changes.",
     updated: LAST_UPDATED,
     preview:
       "You are debugging Mission Control.\nFind the exact error. Make the smallest safe fix.",
@@ -873,11 +853,12 @@ Do not deploy.
 Do not push to main.
 Do not touch secrets.
 Do not change production settings.
+Do not make unrelated changes.
 
 Find the exact error.
 Identify the exact file.
 Make the smallest safe fix.
-Run local tests.
+Run the relevant local test.
 Return what broke, what changed, and whether it is safe.`,
   },
 ];

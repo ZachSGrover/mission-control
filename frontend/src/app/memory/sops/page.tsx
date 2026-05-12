@@ -7,7 +7,6 @@ import {
   BookOpen,
   Hammer,
   ShieldCheck,
-  Sparkles,
   Upload,
 } from "lucide-react";
 
@@ -17,18 +16,18 @@ import { DashboardSidebar } from "@/components/organisms/DashboardSidebar";
 import { DashboardShell } from "@/components/templates/DashboardShell";
 
 import {
+  BuildStepCard,
+  ExtraStepGroup,
   GalleryCard,
-  PromptCard,
-  SecurityRulesBlock,
-  SimpleSopBlock,
-  StepBlock,
+  IntroFolderBlock,
+  SafetyRulesBlock,
 } from "./components";
 import {
-  DEVELOPER_SOP,
-  EMERGENCY_SOP,
-  IMPORT_SOP,
+  EMERGENCY_FOLDER,
+  IMPORT_FOLDER,
+  MISSION_CONTROL_BUILD,
   PROMPT_LIBRARY,
-  SECURITY_RULES,
+  SAFETY_RULES,
   SOP_GALLERY,
   type Prompt,
 } from "./sops-content";
@@ -38,38 +37,32 @@ import {
 function SectionHeading({
   Icon,
   label,
-  count,
   description,
   anchorId,
+  size = "md",
 }: {
   Icon: React.ElementType;
   label: string;
-  count?: number;
   description: string;
   anchorId?: string;
+  size?: "md" | "lg";
 }) {
+  const labelClasses =
+    size === "lg"
+      ? "text-base font-semibold"
+      : "text-xs font-semibold uppercase tracking-widest";
   return (
     <div id={anchorId} className="mb-5 scroll-mt-20">
       <div className="flex items-center gap-2">
         <Icon className="h-4 w-4" style={{ color: "var(--text-muted)" }} />
         <h2
-          className="text-xs font-semibold uppercase tracking-widest"
-          style={{ color: "var(--text-quiet)" }}
+          className={labelClasses}
+          style={{
+            color: size === "lg" ? "var(--text)" : "var(--text-quiet)",
+          }}
         >
           {label}
         </h2>
-        {count !== undefined && (
-          <span
-            className="rounded-full px-2 py-0.5 text-[10px] font-medium"
-            style={{
-              background: "var(--surface-strong)",
-              color: "var(--text-muted)",
-              border: "1px solid var(--border)",
-            }}
-          >
-            {count}
-          </span>
-        )}
       </div>
       <p
         className="mt-1.5 text-sm leading-relaxed"
@@ -86,8 +79,6 @@ function SectionHeading({
 function findPrompt(promptId: string): Prompt {
   const prompt = PROMPT_LIBRARY.find((p) => p.id === promptId);
   if (!prompt) {
-    // Should be impossible — promptId references are static. Treat as a build
-    // bug rather than a runtime concern, but fail loud during dev.
     throw new Error(`SOP references unknown prompt id: ${promptId}`);
   }
   return prompt;
@@ -108,18 +99,17 @@ function SOPsContent() {
             className="text-sm leading-relaxed"
             style={{ color: "var(--text-muted)" }}
           >
-            Step-by-step operating manuals and Claude prompts for building
-            safely inside Digidle OS.
+            Simple step-by-step build manuals and Claude Code prompts for
+            working safely inside Digidle OS.
           </p>
         </header>
 
-        {/* Gallery — four overview cards */}
+        {/* Gallery — four folder cards */}
         <section data-testid="sop-gallery-section">
           <SectionHeading
             Icon={BookOpen}
             label="SOP Library"
-            count={SOP_GALLERY.length}
-            description="Four operating manuals. Jump into one, or read the developer SOP top-to-bottom."
+            description="Four folders. Mission Control Build is the main one — copy the prompt at each step and run it before moving on."
           />
           <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
             {SOP_GALLERY.map((card) => (
@@ -128,79 +118,94 @@ function SOPsContent() {
           </div>
         </section>
 
-        {/* Mission Control Developer SOP — the main step flow */}
-        <section data-testid="developer-sop-section">
+        {/* Mission Control Build — five main steps + three extras */}
+        <section
+          data-testid="mission-control-build-section"
+          className="scroll-mt-20"
+        >
           <SectionHeading
             Icon={Hammer}
-            label="Mission Control Developer SOP"
-            count={DEVELOPER_SOP.steps.length}
-            description={DEVELOPER_SOP.description}
-            anchorId="developer-sop"
+            label={MISSION_CONTROL_BUILD.title}
+            description={MISSION_CONTROL_BUILD.description}
+            anchorId="mission-control-build"
+            size="lg"
           />
           <div className="space-y-4">
-            {DEVELOPER_SOP.steps.map((step) => (
-              <StepBlock
-                key={step.number}
+            {MISSION_CONTROL_BUILD.steps.map((step) => (
+              <BuildStepCard
+                key={step.promptId}
                 step={step}
                 prompt={findPrompt(step.promptId)}
               />
             ))}
           </div>
-        </section>
 
-        {/* Import Existing Code SOP */}
-        <section data-testid="import-sop-section" className="scroll-mt-20">
-          <SectionHeading
-            Icon={Upload}
-            label="Import Existing Code SOP"
-            description="Move outside-built code into the repo safely. The import prompt is at the bottom of the block."
-            anchorId="import-sop"
-          />
-          <SimpleSopBlock sop={IMPORT_SOP} prompt={findPrompt(IMPORT_SOP.promptId)} />
-        </section>
-
-        {/* Emergency Debug SOP */}
-        <section data-testid="emergency-sop-section" className="scroll-mt-20">
-          <SectionHeading
-            Icon={AlertTriangle}
-            label="Emergency Debug SOP"
-            description="Stop the bleed first, fix the exact issue second."
-            anchorId="emergency-sop"
-          />
-          <SimpleSopBlock
-            sop={EMERGENCY_SOP}
-            prompt={findPrompt(EMERGENCY_SOP.promptId)}
-          />
-        </section>
-
-        {/* Security and Live Action Rules */}
-        <section data-testid="security-rules-section" className="scroll-mt-20">
-          <SectionHeading
-            Icon={ShieldCheck}
-            label="Security and Live Action Rules"
-            description={SECURITY_RULES.description}
-            anchorId="security-rules"
-          />
-          <SecurityRulesBlock
-            title={SECURITY_RULES.title}
-            description={SECURITY_RULES.description}
-            blocks={SECURITY_RULES.blocks}
-          />
-        </section>
-
-        {/* Claude Prompt Library — full cards in SOP order */}
-        <section data-testid="prompt-library-section">
-          <SectionHeading
-            Icon={Sparkles}
-            label="Claude Prompt Library"
-            count={PROMPT_LIBRARY.length}
-            description="Ten prompts in the same order as the developer SOP. Copy one before kicking off the matching step."
-          />
-          <div className="space-y-4">
-            {PROMPT_LIBRARY.map((prompt) => (
-              <PromptCard key={prompt.id} prompt={prompt} />
+          {/* Extras: When ready for PR / If checks fail / Continue later */}
+          <div className="mt-8 space-y-6">
+            {MISSION_CONTROL_BUILD.extras.map((extra) => (
+              <ExtraStepGroup
+                key={extra.step.promptId}
+                label={extra.label}
+                step={extra.step}
+                prompt={findPrompt(extra.step.promptId)}
+              />
             ))}
           </div>
+        </section>
+
+        {/* Import Existing Code */}
+        <section
+          data-testid="import-folder-section"
+          className="scroll-mt-20"
+        >
+          <SectionHeading
+            Icon={Upload}
+            label={IMPORT_FOLDER.title}
+            description={IMPORT_FOLDER.description}
+            anchorId="import-existing-code"
+            size="lg"
+          />
+          <IntroFolderBlock
+            folder={IMPORT_FOLDER}
+            prompt={findPrompt(IMPORT_FOLDER.promptId)}
+          />
+        </section>
+
+        {/* Safety Rules */}
+        <section
+          data-testid="safety-rules-section"
+          className="scroll-mt-20"
+        >
+          <SectionHeading
+            Icon={ShieldCheck}
+            label={SAFETY_RULES.title}
+            description={SAFETY_RULES.description}
+            anchorId="safety-rules"
+            size="lg"
+          />
+          <SafetyRulesBlock
+            title={SAFETY_RULES.title}
+            description={SAFETY_RULES.description}
+            blocks={SAFETY_RULES.blocks}
+          />
+        </section>
+
+        {/* Emergency Debug */}
+        <section
+          data-testid="emergency-folder-section"
+          className="scroll-mt-20"
+        >
+          <SectionHeading
+            Icon={AlertTriangle}
+            label={EMERGENCY_FOLDER.title}
+            description={EMERGENCY_FOLDER.description}
+            anchorId="emergency-debug"
+            size="lg"
+          />
+          <IntroFolderBlock
+            folder={EMERGENCY_FOLDER}
+            prompt={findPrompt(EMERGENCY_FOLDER.promptId)}
+          />
         </section>
       </div>
     </main>

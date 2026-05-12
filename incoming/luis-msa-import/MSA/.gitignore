@@ -1,0 +1,65 @@
+# MSA project ignore rules — keep secrets and real client data out of git.
+# Source code, dashboards, briefings, .example files are NOT ignored.
+
+# Secrets / env
+.env
+
+# Logs
+*.log
+logs/
+
+# Real client/agency data dumps (Notion sync, run logs, scraped lists)
+data.json
+contacts*.json
+followers*.json
+follower_lists/
+follower_lists*.json
+blast_log*.json
+blast_status*.json
+status*.json
+repost_log*.json
+repost_status*.json
+builder_status*.json
+auftrag.json
+*_auftrag.json
+promo_groups.json
+models.json
+chats.json
+confirm.json
+
+# Anything explicitly marked private
+*_private*
+private/
+private_data_DO_NOT_COMMIT/
+client_data/
+sessions/
+cookies/
+
+# Un-ignore any *.example.json (fake template data is safe to commit)
+!*.example.json
+
+# Per-model client folders (Content automation)
+Monthly revenue/Automation [Content]/mike-mains/
+Monthly revenue/Automation [Content]/valerie/
+Monthly revenue/Automation [Content]/zach-grover/
+Monthly revenue/Automation [Content]/profiles/
+
+# Real briefs / personal images
+*.docx
+*.jpeg
+*.jpg
+
+# Local DBs
+*.sqlite
+*.db
+
+# Python bytecode / venv noise
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+
+# OS / editor cruft
+.DS_Store
+Thumbs.db

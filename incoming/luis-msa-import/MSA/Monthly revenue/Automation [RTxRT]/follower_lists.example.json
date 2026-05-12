@@ -1,0 +1,10 @@
+{
+  "k1example1": [
+    {
+      "handle": "fake_follower_one",
+      "name": "fake_follower_one",
+      "first_seen": "2026-01-01T00:00:00.000Z",
+      "last_seen": "2026-01-01T00:00:00.000Z"
+    }
+  ]
+}

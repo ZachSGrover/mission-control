@@ -1,0 +1,477 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Revenue Dashboard</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.5.0/dist/chart.umd.js"></script>
+<style>
+:root{color-scheme:dark}
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#08060e;color:#e8d8ff;padding:22px;font-size:14px;min-height:100vh}
+.sec-h{font-size:1.1rem;font-weight:800;color:#f0e8ff;margin-bottom:2px}
+.sec-sub{font-size:.72rem;color:#7a6a99;margin-bottom:12px}
+.divider{border:none;border-top:1px solid #1e0f35;margin:22px 0}
+.kpi-row{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:14px}
+.kpi{border-radius:12px;padding:13px 14px;position:relative;overflow:hidden;background:linear-gradient(135deg,#1a0a2e 0%,#2e1050 20%,#5a2d8a 44%,#8b5cc8 50%,#5a2d8a 56%,#2e1050 80%,#1a0a2e 100%);box-shadow:0 2px 14px rgba(90,45,138,.35),inset 0 1px 0 rgba(200,150,255,.25)}
+.kpi::after{content:'';position:absolute;top:0;left:0;right:0;height:1px;background:linear-gradient(90deg,transparent,rgba(220,170,255,.6),transparent)}
+.kpi-lbl{font-size:.63rem;font-weight:700;color:#c4a0ff;text-transform:uppercase;letter-spacing:.5px}
+.kpi-val{font-size:1.25rem;font-weight:800;margin-top:3px}
+.kpi-sub{font-size:.62rem;color:#9b7dcc;margin-top:2px}
+.vp .kpi-val{color:#c4a0ff;text-shadow:0 0 18px rgba(196,160,255,.5)}
+.vg .kpi-val{color:#86efac;text-shadow:0 0 16px rgba(134,239,172,.4)}
+.vr .kpi-val{color:#f87171;text-shadow:0 0 16px rgba(248,113,113,.4)}
+.vo .kpi-val{color:#fcd34d;text-shadow:0 0 14px rgba(252,211,77,.35)}
+.card{background:linear-gradient(160deg,#0f0720,#180c2c 55%,#0f0720);border:1px solid #2a1245;border-radius:12px;padding:14px 16px;margin-bottom:12px;position:relative;overflow:hidden}
+.card::after{content:'';position:absolute;top:0;left:0;right:0;height:1px;background:linear-gradient(90deg,transparent,rgba(140,70,210,.3),transparent)}
+.card-t{font-size:.7rem;font-weight:700;color:#9b7dcc;text-transform:uppercase;letter-spacing:.6px;margin-bottom:10px}
+.chart-wrap{position:relative;height:200px}
+table{width:100%;border-collapse:collapse}
+th{font-size:.64rem;font-weight:700;color:#7a5aaa;text-transform:uppercase;letter-spacing:.4px;padding:6px 9px;border-bottom:1px solid #1e0f35;text-align:right}
+th:first-child{text-align:left}
+td{padding:8px 9px;border-bottom:1px solid #120924;font-size:.79rem;color:#dcc8ff;text-align:right;vertical-align:middle}
+td:first-child{text-align:left;font-weight:600;color:#c4a0ff}
+tr:last-child td{border-bottom:none}
+tr:hover td{background:rgba(100,40,180,.1)}
+td a{color:#b388ff;text-decoration:none}
+.total-row td{font-weight:800;color:#f0e8ff;background:rgba(120,50,200,.14)!important}
+.cur-row td{background:rgba(90,45,138,.16)!important}
+.tabs{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px}
+.tab{padding:4px 12px;border-radius:20px;font-size:.71rem;font-weight:600;border:1px solid #2e1050;cursor:pointer;background:#120820;color:#9b7dcc;transition:all .2s}
+.tab.active{background:linear-gradient(135deg,#3b1a6e,#7c3aed,#9d6fd4,#7c3aed,#3b1a6e);border-color:transparent;color:#fff;box-shadow:0 2px 12px rgba(124,58,237,.5)}
+.badge{display:inline-block;padding:2px 8px;border-radius:20px;font-size:.66rem;font-weight:700}
+.b-paid{background:linear-gradient(135deg,#052e16,#14532d);color:#86efac;border:1px solid #166534}
+.b-pend{background:linear-gradient(135deg,#4a0e0e,#7f1d1d);color:#fca5a5;border:1px solid #7f1d1d}
+.b-curr{background:linear-gradient(135deg,#1e0b35,#3d1a6e);color:#c4a0ff;border:1px solid #5a2d8a}
+.mdot{display:inline-block;width:7px;height:7px;border-radius:50%;margin-right:5px}
+.alert{display:none;border-radius:10px;padding:11px 15px;margin-bottom:12px;font-weight:700;font-size:.83rem;color:#fff;background:linear-gradient(135deg,#5a0a0a,#9b1c1c 35%,#ef4444 50%,#9b1c1c 65%,#5a0a0a);box-shadow:0 2px 14px rgba(239,68,68,.4);animation:pulse 2.5s ease-in-out infinite}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.85}}
+.rk-row{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:12px}
+.rk{border-radius:10px;padding:10px 12px;position:relative;overflow:hidden;background:linear-gradient(135deg,#1a0a2e,#2e1050 22%,#5a2d8a 46%,#2e1050 74%,#1a0a2e);box-shadow:0 2px 10px rgba(90,45,138,.28),inset 0 1px 0 rgba(180,120,255,.18)}
+.rk::after{content:'';position:absolute;top:0;left:0;right:0;height:1px;background:linear-gradient(90deg,transparent,rgba(200,150,255,.4),transparent)}
+.rk-l{font-size:.63rem;font-weight:700;color:#c4a0ff;text-transform:uppercase;letter-spacing:.4px}
+.rk-v{font-size:1.1rem;font-weight:800;margin-top:2px;color:#fff}
+.rsec{margin-bottom:12px}
+.rhead{display:flex;align-items:center;gap:7px;margin-bottom:7px}
+.rtl{font-size:.73rem;font-weight:700;color:#9b7dcc;text-transform:uppercase;letter-spacing:.4px}
+.cnt{font-size:.66rem;font-weight:700;padding:1px 7px;border-radius:20px;background:linear-gradient(135deg,#2e1050,#5a2d8a);color:#c4a0ff}
+.cnt.red{background:linear-gradient(135deg,#4a0e0e,#7f1d1d);color:#fca5a5}
+.cnt.yel{background:linear-gradient(135deg,#422006,#78350f);color:#fcd34d}
+.cnt.grn{background:linear-gradient(135deg,#052e16,#14532d);color:#86efac}
+.rcard{border-radius:9px;padding:11px 13px;margin-bottom:7px;display:flex;gap:11px;align-items:flex-start;background:linear-gradient(160deg,#0f0720,#180c2c 60%,#0f0720);border:1px solid #2a1245;border-left:3px solid #5a2d8a}
+.rcard.new{border-left-color:#ef4444}.rcard.prog{border-left-color:#fbbf24}.rcard.done{border-left-color:#34d399;opacity:.75}
+.rbody{flex:1;min-width:0}
+.rt{font-size:.81rem;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.rt a{color:#dcc8ff;text-decoration:none}
+.rmeta{font-size:.7rem;color:#9b7dcc;margin-top:3px;display:flex;flex-wrap:wrap;gap:7px;align-items:center}
+.rprice{font-size:.9rem;font-weight:800;color:#c4a0ff;flex-shrink:0}
+.chip{display:inline-block;padding:1px 8px;border-radius:20px;font-size:.66rem;font-weight:700}
+.pill{display:inline-block;padding:1px 7px;border-radius:20px;font-size:.65rem;font-weight:700}
+.p-paid{background:linear-gradient(135deg,#052e16,#14532d);color:#86efac;border:1px solid #166534}
+.p-unpd{background:linear-gradient(135deg,#4a0e0e,#7f1d1d);color:#fca5a5;border:1px solid #7f1d1d}
+.empty{color:#5a3a7a;font-size:.78rem;padding:12px;text-align:center}
+.spin{display:inline-block;width:13px;height:13px;border:2px solid #2e1050;border-top-color:#7c3aed;border-radius:50%;animation:spin .7s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+.ldg{color:#7a5aaa;font-size:.78rem;padding:18px;text-align:center}
+.top-bar{display:flex;align-items:center;justify-content:space-between;background:linear-gradient(135deg,#0f0720,#1e0b35);border:1px solid #2a1245;border-radius:10px;padding:9px 14px;margin-bottom:16px;font-size:.72rem;color:#9b7dcc}
+.dot{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:5px;vertical-align:middle}
+.dot.on{background:#86efac;box-shadow:0 0 7px #86efac}
+.dot.off{background:#3a2050}
+.dot.wait{background:#fcd34d;box-shadow:0 0 7px #fcd34d;animation:pulse 1.5s infinite}
+.refresh-btn{padding:4px 14px;border-radius:20px;border:1px solid #5a2d8a;background:linear-gradient(135deg,#2e1050,#5a2d8a);color:#c4a0ff;font-size:.68rem;font-weight:700;cursor:pointer}
+.waiting-box{background:linear-gradient(160deg,#0f0720,#180c2c);border:1px solid #2a1245;border-radius:12px;padding:40px 20px;text-align:center;color:#5a3a7a;margin-bottom:20px}
+.waiting-box .big{font-size:2rem;margin-bottom:10px}
+.waiting-box p{font-size:.82rem;line-height:1.6}
+.waiting-box code{background:#1a0a2e;padding:2px 8px;border-radius:6px;font-size:.78rem;color:#c4a0ff}
+</style>
+</head>
+<body>
+
+<div class="top-bar">
+  <div style="display:flex;align-items:center;gap:6px">
+    <span class="dot off" id="statusDot"></span>
+    <span id="statusText">Warte auf Daten von Cowork…</span>
+  </div>
+  <div style="display:flex;align-items:center;gap:10px">
+    <span id="lastUpdate" style="color:#5a3a7a">—</span>
+  </div>
+</div>
+
+<div id="waitingBox" class="waiting-box">
+  <div class="big">⏳</div>
+  <p>Warte auf Daten vom Cowork-Artifact…<br><br>
+  Stelle sicher dass das <strong>Revenue Dashboard Artifact</strong><br>
+  in Cowork geöffnet ist und geladen hat.<br><br>
+  Dann drück dort auf <code>↻ Jetzt laden</code></p>
+</div>
+
+<div id="mainContent" style="display:none">
+  <!-- REVENUE -->
+  <div style="display:flex;align-items:center;justify-content:space-between;cursor:pointer;user-select:none;margin-bottom:2px" onclick="toggleSection('rev')">
+    <div>
+      <div class="sec-h">💰 Revenue</div>
+      <div class="sec-sub" id="revSub">—</div>
+    </div>
+    <span id="revChevron" style="font-size:1.1rem;color:#5a3a7a;transition:transform .25s">▼</span>
+  </div>
+  <div class="kpi-row">
+    <div class="kpi vp"><div class="kpi-lbl">Gross Revenue</div><div class="kpi-val" id="kGross">—</div><div class="kpi-sub">aus Model Revenue DB</div></div>
+    <div class="kpi vo"><div class="kpi-lbl">Total Payout</div><div class="kpi-val" id="kPayout">—</div><div class="kpi-sub">nach Model-Split</div></div>
+    <div class="kpi vg"><div class="kpi-lbl">This Month</div><div class="kpi-val" id="kThis">—</div><div class="kpi-sub" id="kThisSub">—</div></div>
+    <div class="kpi vr"><div class="kpi-lbl">Unpaid Payout</div><div class="kpi-val" id="kUnpaid">—</div><div class="kpi-sub">ausstehend</div></div>
+  </div>
+  <div id="revSection">
+    <div class="card"><div class="card-t">Revenue by Month</div><div class="chart-wrap"><canvas id="chart"></canvas></div></div>
+    <div class="card"><div class="card-t">Monatliche Statistik</div><div id="statsTable"><div class="ldg"><span class="spin"></span></div></div></div>
+    <div class="tabs" id="tabs"></div>
+    <div class="card" style="margin-top:0"><div class="card-t" id="bdTitle">Model Breakdown</div><div id="bdTable"><div class="ldg"><span class="spin"></span></div></div></div>
+  </div>
+
+  <hr class="divider">
+
+  <!-- CUSTOM REQUESTS -->
+  <div style="display:flex;align-items:center;justify-content:space-between;cursor:pointer;user-select:none;margin-bottom:2px" onclick="toggleSection('req')">
+    <div>
+      <div class="sec-h">📬 Custom Requests</div>
+      <div class="sec-sub" id="reqSub">—</div>
+    </div>
+    <span id="reqChevron" style="font-size:1.1rem;color:#5a3a7a;transition:transform .25s">▼</span>
+  </div>
+  <div class="alert" id="alertBanner"></div>
+  <div class="rk-row">
+    <div class="rk"><div class="rk-l">🔴 New</div><div class="rk-v" style="color:#f87171" id="rkN">—</div></div>
+    <div class="rk"><div class="rk-l">🟡 In Progress</div><div class="rk-v" style="color:#fcd34d" id="rkP">—</div></div>
+    <div class="rk"><div class="rk-l">✅ Done (30d)</div><div class="rk-v" style="color:#86efac" id="rkD">—</div></div>
+    <div class="rk"><div class="rk-l">💰 Open Value</div><div class="rk-v" style="color:#c4a0ff" id="rkV">—</div></div>
+  </div>
+  <div id="reqSection">
+    <div class="rsec"><div class="rhead"><span class="rtl">🔴 New</span><span class="cnt red" id="cntN">0</span></div><div id="listN"></div></div>
+    <div class="rsec"><div class="rhead"><span class="rtl">🟡 In Progress</span><span class="cnt yel" id="cntP">0</span></div><div id="listP"></div></div>
+    <div class="rsec"><div class="rhead"><span class="rtl">✅ Recent Done</span><span class="cnt grn" id="cntD">0</span></div><div id="listD"></div></div>
+  </div>
+</div>
+
+<hr class="divider">
+
+<div style="display:flex;align-items:center;justify-content:space-between;cursor:pointer;user-select:none;margin-bottom:2px" onclick="toggleSection('pp')">
+  <div>
+    <div class="sec-h">💵 Personal Payout</div>
+    <div class="sec-sub">10% pro Model · Zach, John, Ethan & Kaleb 5% · Zane 0% · basierend auf Gross Revenue</div>
+  </div>
+  <span id="ppChevron" style="font-size:1.1rem;color:#5a3a7a;transition:transform .25s">▼</span>
+</div>
+<div class="kpi-row">
+  <div class="kpi vg"><div class="kpi-lbl">Gesamt</div><div class="kpi-val" id="ppTotal">—</div><div class="kpi-sub">alle Monate</div></div>
+  <div class="kpi vp"><div class="kpi-lbl">This Month</div><div class="kpi-val" id="ppThis">—</div><div class="kpi-sub" id="ppThisSub">—</div></div>
+  <div class="kpi vr"><div class="kpi-lbl">Ausstehend</div><div class="kpi-val" id="ppUnpaid">—</div><div class="kpi-sub">noch nicht ausgezahlt</div></div>
+  <div class="kpi vo"><div class="kpi-lbl">Ø pro Monat</div><div class="kpi-val" id="ppAvg">—</div><div class="kpi-sub">Durchschnitt</div></div>
+</div>
+<div id="ppSection">
+<div id="ppMonths"></div>
+</div>
+
+<script>
+const $=id=>document.getElementById(id);
+const fmt=v=>'$'+Number(v||0).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
+const COLORS=['#c4a0ff','#86efac','#fcd34d','#f472b6','#f87171','#38bdf8','#fb923c','#34d399','#a78bfa','#facc15'];
+const MC={Zach:'#fb923c',Marcus:'#c084fc',Rory:'#4ade80',Mike:'#38bdf8',Luke:'#f472b6',Adam:'#60a5fa',Alex:'#94a3b8',Marina:'#f87171',Valerie:'#34d399',Tyler:'#facc15',Denis:'#fbbf24',Andrew:'#818cf8',Craig:'#a78bfa',Joseph:'#fbbf24',Promotion:'#6b7280',Ethan:'#f97316',Kaleb:'#f472b6',Pedro:'#86efac',Konstantin:'#fcd34d',Zaney:'#fb923c'};
+
+function calcTP(r){
+  const g=Number(r['Gross Revenue'])||0;if(g<=0)return 0;
+  return g*(Number(r['Model %'])||0)/100-(Number(r['Media Spend X '])||0)-(Number(r['Media Spend Meta'])||0);
+}
+function myRate(name){
+  const n=(name||'').trim().toLowerCase();
+  if(n==='zane'||n==='zaney')return 0.00;
+  if(n==='zach'||n==='john'||n==='ethan'||n==='kaleb')return 0.05;
+  return 0.10;
+}
+function myPayout(r){
+  const g=Number(r['Gross Revenue'])||0;
+  if(g<=0)return 0;
+  return g*myRate(r.Name);
+}
+function ymKey(ds){return ds.slice(0,7);}
+function ymLabel(k){const[y,m]=k.split('-');return new Date(+y,+m-1,1).toLocaleDateString('en-US',{month:'short',year:'numeric'});}
+const curYM=(()=>{const n=new Date();return `${n.getFullYear()}-${String(n.getMonth()+1).padStart(2,'0')}`;})();
+
+let chartInst=null;
+
+function renderAll(data){
+  const ofRows=data.ofRows||[], pmtRows=data.pmtRows||[], custRows=data.custRows||[];
+
+  // ── Revenue ──────────────────────────────────────────────────────────────
+  const ofMap={};
+  for(const r of ofRows){
+    const ds=r['date:Payout Date:start'];if(!ds)continue;
+    const k=ymKey(ds);
+    if(!ofMap[k])ofMap[k]={label:ymLabel(k),gross:0,totalPayout:0,unpaidPayout:0,items:[]};
+    const g=Number(r['Gross Revenue'])||0,tp=calcTP(r);
+    ofMap[k].gross+=g;ofMap[k].totalPayout+=tp;
+    if(r.Paid==='__NO__'&&tp>0)ofMap[k].unpaidPayout+=tp;
+    ofMap[k].items.push(r);
+  }
+  const pmtMap={};
+  for(const r of pmtRows){
+    const ds=r['date:Date:start'];if(!ds)continue;
+    pmtMap[ymKey(ds)]=(pmtMap[ymKey(ds)]||0)+(Number(r['Amount'])||0);
+  }
+  const allKeys=[...new Set([...Object.keys(ofMap),...Object.keys(pmtMap)])].sort();
+  const months=allKeys.map(k=>{
+    const of=ofMap[k]||{label:ymLabel(k),gross:0,totalPayout:0,unpaidPayout:0,items:[]};
+    return{k,label:of.label,gross:of.gross,offPlat:pmtMap[k]||0,totalPayout:of.totalPayout,unpaidPayout:of.unpaidPayout,items:of.items};
+  });
+  const gGross=months.reduce((s,m)=>s+m.gross,0);
+  const gPay  =months.reduce((s,m)=>s+m.totalPayout,0);
+  const gUnpd =months.reduce((s,m)=>s+m.unpaidPayout,0);
+  const gOffP =months.reduce((s,m)=>s+m.offPlat,0);
+  const thisMon=months.find(m=>m.k===curYM);
+  $('kGross').textContent=fmt(gGross);
+  $('kPayout').textContent=fmt(gPay);
+  $('kThis').textContent=fmt(thisMon?thisMon.totalPayout:0);
+  $('kThisSub').textContent=thisMon?thisMon.label:ymLabel(curYM);
+  $('kUnpaid').textContent=fmt(gUnpd);
+  $('revSub').textContent=`${ofRows.length} Einträge · ${months.length} Monate`;
+
+  try{
+    if(chartInst){chartInst.destroy();chartInst=null;}
+    chartInst=new Chart($('chart').getContext('2d'),{
+      type:'bar',
+      data:{labels:months.map(m=>m.label),datasets:[
+        {label:'Gross Revenue',data:months.map(m=>m.gross),
+         backgroundColor:months.map(m=>m.k===curYM?'rgba(196,160,255,.9)':'rgba(90,45,138,.55)'),
+         borderColor:months.map(m=>m.k===curYM?'#c4a0ff':'#5a2d8a'),borderWidth:1,borderRadius:4,borderSkipped:false},
+        {label:'Total Payout',data:months.map(m=>m.totalPayout),type:'line',
+         borderColor:'#86efac',backgroundColor:'transparent',borderWidth:2,pointBackgroundColor:'#86efac',pointRadius:3,tension:.3}
+      ]},
+      options:{responsive:true,maintainAspectRatio:false,
+        plugins:{legend:{labels:{color:'#c4a0ff',font:{size:10},boxWidth:10}},
+          tooltip:{backgroundColor:'#1e0b35',borderColor:'#5a2d8a',borderWidth:1,titleColor:'#c4a0ff',bodyColor:'#e8d8ff',
+            callbacks:{label:c=>' '+c.dataset.label+': '+fmt(c.parsed.y)}}},
+        scales:{x:{grid:{display:false},ticks:{color:'#9b7dcc',font:{size:10}}},
+          y:{grid:{color:'rgba(60,20,90,.4)'},ticks:{color:'#9b7dcc',font:{size:10},callback:v=>'$'+(v>=1000?(v/1000).toFixed(0)+'k':v)}}}}
+    });
+  }catch(e){}
+
+  $('statsTable').innerHTML=`<table><thead><tr>
+    <th style="text-align:left">Monat</th><th>Gross Revenue</th><th>davon Off-Platform</th><th>Total Payout</th><th>Unpaid Payout</th>
+  </tr></thead><tbody>
+  ${[...months].reverse().map(m=>`<tr class="${m.k===curYM?'cur-row':''}">
+    <td>${m.label}${m.k===curYM?' <span class="badge b-curr">Now</span>':''}</td>
+    <td style="color:#c4a0ff">${m.gross>0?fmt(m.gross):'—'}</td>
+    <td style="color:#9b7dcc;font-size:.72rem">${m.offPlat>0?fmt(m.offPlat):'—'}</td>
+    <td style="color:#86efac;font-weight:700">${m.totalPayout>0?fmt(m.totalPayout):'—'}</td>
+    <td style="color:${m.unpaidPayout>0?'#f87171':'#86efac'}">${m.unpaidPayout>0?fmt(m.unpaidPayout):'All paid ✓'}</td>
+  </tr>`).join('')}
+  <tr class="total-row"><td>TOTAL</td>
+    <td style="color:#c4a0ff">${fmt(gGross)}</td>
+    <td style="color:#9b7dcc;font-size:.72rem">${fmt(gOffP)}</td>
+    <td style="color:#86efac">${fmt(gPay)}</td>
+    <td style="color:${gUnpd>0?'#f87171':'#86efac'}">${gUnpd>0?fmt(gUnpd):'All paid ✓'}</td>
+  </tr></tbody></table>`;
+
+  const tabsEl=$('tabs');const colorMap={};let ci=0;
+  const activeKey=months.find(m=>m.k===curYM)?curYM:(months[months.length-1]?.k);
+  function renderBD(k){
+    const mon=months.find(m=>m.k===k);if(!mon)return;
+    $('bdTitle').textContent='Model Breakdown — '+mon.label;
+    const rows=mon.items.filter(r=>(Number(r['Gross Revenue'])||0)>0).sort((a,b)=>(Number(b['Gross Revenue'])||0)-(Number(a['Gross Revenue'])||0));
+    document.querySelectorAll('.tab').forEach(t=>t.classList.toggle('active',t.dataset.k===k));
+    if(!rows.length){$('bdTable').innerHTML='<div class="empty">Noch keine Umsätze</div>';return;}
+    const mTot=rows.reduce((s,r)=>s+(Number(r['Gross Revenue'])||0),0);
+    for(const r of rows){const n=(r.Name||'').trim();if(!colorMap[n])colorMap[n]=COLORS[ci++%COLORS.length];}
+    $('bdTable').innerHTML=`<table><thead><tr>
+      <th style="text-align:left">Model</th><th>Gross Revenue</th><th>Model %</th><th style="text-align:center">Paid</th>
+    </tr></thead><tbody>
+    ${rows.map(r=>{const n=(r.Name||'').trim(),p=r.Paid==='__YES__',c=MC[n]||colorMap[n]||'#9ca3af';
+      return`<tr><td><span class="mdot" style="background:${c};box-shadow:0 0 5px ${c}88"></span><a href="${r.url||'#'}" target="_blank">${n}</a></td>
+      <td style="color:#c4a0ff">${fmt(Number(r['Gross Revenue']))}</td>
+      <td style="color:#9b7dcc">${r['Model %']!=null?r['Model %']+'%':'—'}</td>
+      <td style="text-align:center"><span class="badge ${p?'b-paid':'b-pend'}">${p?'✓ Paid':'Pending'}</span></td></tr>`;
+    }).join('')}
+    <tr class="total-row"><td>TOTAL</td><td style="color:#c4a0ff">${fmt(mTot)}</td><td></td><td></td></tr>
+    </tbody></table>`;
+  }
+  tabsEl.innerHTML='';
+  months.forEach(({k,label})=>{
+    const btn=document.createElement('button');
+    btn.className='tab'+(k===activeKey?' active':'');
+    btn.textContent=label;btn.dataset.k=k;btn.onclick=()=>renderBD(k);
+    tabsEl.appendChild(btn);
+  });
+  if(activeKey)renderBD(activeKey);
+
+  // ── Custom Requests ───────────────────────────────────────────────────────
+  const now=new Date();
+  const cutoff=new Date(now.getTime()-30*86400000);
+  const nw=custRows.filter(r=>r.Status==='Not started');
+  const pg=custRows.filter(r=>r.Status==='In progress');
+  const dn=custRows.filter(r=>r.Status==='Done'&&r['date:Date:start']&&new Date(r['date:Date:start'])>=cutoff);
+  const ov=[...nw,...pg].reduce((s,r)=>s+(Number(r['Price ($)'])||0),0);
+  $('rkN').textContent=$('cntN').textContent=nw.length;
+  $('rkP').textContent=$('cntP').textContent=pg.length;
+  $('rkD').textContent=$('cntD').textContent=dn.length;
+  $('rkV').textContent='$'+ov.toFixed(0);
+  $('reqSub').textContent=`${custRows.length} Requests total`;
+  const ab=$('alertBanner');
+  if(nw.length>0){ab.style.display='block';ab.textContent=`🔴 ${nw.length} NEW CUSTOM REQUEST${nw.length>1?'S':''} — Needs attention!`;}
+  else ab.style.display='none';
+  function card(r,cls){
+    const t=r['Short Description']||'(No title)',mod=r['Model']||'',pr=r['Price ($)'],pd=r['Paid']==='__YES__',
+      ds=r['date:Date:start'],ln=r['Video Lenght']||'',url=r['url']||'#',c=MC[mod]||'#9ca3af';
+    let rd='';
+    if(ds){const d=new Date(ds),df=Math.floor((now-d)/86400000);rd=df===0?'Today':df===1?'Yesterday':d.toLocaleDateString('en-US',{month:'short',day:'numeric'});}
+    return`<div class="rcard ${cls}"><div class="rbody">
+      <div class="rt"><a href="${url}" target="_blank">${t}</a></div>
+      <div class="rmeta">
+        ${mod?`<span class="chip" style="background:${c}22;color:${c};border:1px solid ${c}44">${mod}</span>`:''}
+        ${rd?`<span>${rd}</span>`:''}${ln?`<span>⏱ ${ln}</span>`:''}
+        <span class="pill ${pd?'p-paid':'p-unpd'}">${pd?'✓ Paid':'Unpaid'}</span>
+      </div></div>
+      <div class="rprice">${pr!=null?'$'+Number(pr).toFixed(0):'—'}</div></div>`;
+  }
+  $('listN').innerHTML=nw.length?nw.map(r=>card(r,'new')).join(''):'<div class="empty">All clear ✓</div>';
+  $('listP').innerHTML=pg.length?pg.map(r=>card(r,'prog')).join(''):'<div class="empty">None in progress</div>';
+  $('listD').innerHTML=dn.length?dn.map(r=>card(r,'done')).join(''):'<div class="empty">No recent completed</div>';
+
+  // ── Personal Payout ───────────────────────────────────────────────────────
+  renderPersonalPayout(ofRows);
+}
+
+function renderPersonalPayout(ofRows){
+  const ppMap={};
+  for(const r of ofRows){
+    const ds=r['date:Payout Date:start'];if(!ds)continue;
+    const k=ymKey(ds);
+    if(!ppMap[k])ppMap[k]={label:ymLabel(k),total:0,unpaid:0,models:{}};
+    const pp=myPayout(r);
+    const n=(r.Name||'').trim();
+    ppMap[k].total+=pp;
+    if(r.Paid==='__NO__')ppMap[k].unpaid+=pp;
+    if(!ppMap[k].models[n])ppMap[k].models[n]={gross:0,pp:0,rate:myRate(n)*100,paid:true};
+    ppMap[k].models[n].gross+=(Number(r['Gross Revenue'])||0);
+    ppMap[k].models[n].pp+=pp;
+    if(r.Paid==='__NO__')ppMap[k].models[n].paid=false;
+  }
+  const months=Object.keys(ppMap).sort().reverse();
+  const ppTot=months.reduce((s,k)=>s+ppMap[k].total,0);
+  const ppUnpd=months.reduce((s,k)=>s+ppMap[k].unpaid,0);
+  const ppThisM=ppMap[curYM];
+  $('ppTotal').textContent=fmt(ppTot);
+  $('ppThis').textContent=fmt(ppThisM?ppThisM.total:0);
+  $('ppThisSub').textContent=ymLabel(curYM);
+  $('ppUnpaid').textContent=fmt(ppUnpd);
+  $('ppAvg').textContent=months.length?fmt(ppTot/months.length):'—';
+
+  const container=$('ppMonths');
+  container.innerHTML='';
+  for(const k of months){
+    const m=ppMap[k];
+    const isCur=k===curYM;
+    const modelRows=Object.entries(m.models).filter(([,v])=>v.gross>0).sort(([,a],[,b])=>b.pp-a.pp);
+
+    const wrap=document.createElement('div');
+    wrap.style.cssText='margin-bottom:8px';
+
+    // Header row — klickbar
+    const hdr=document.createElement('div');
+    hdr.style.cssText=`display:flex;align-items:center;justify-content:space-between;padding:12px 16px;border-radius:12px;cursor:pointer;
+      background:${isCur?'linear-gradient(135deg,#1e0b35,#3d1a6e)':'linear-gradient(160deg,#0f0720,#180c2c)'};
+      border:1px solid ${isCur?'#5a2d8a':'#2a1245'};transition:border-color .2s`;
+    hdr.innerHTML=`
+      <div style="display:flex;align-items:center;gap:10px">
+        <span style="font-weight:800;color:#f0e8ff;font-size:.95rem">${m.label}</span>
+        ${isCur?'<span class="badge b-curr">Now</span>':''}
+        ${m.unpaid>0?`<span style="font-size:.65rem;color:#f87171;font-weight:700">⚠ ${fmt(m.unpaid)} ausstehend</span>`:'<span style="font-size:.65rem;color:#86efac;font-weight:700">✓ bezahlt</span>'}
+      </div>
+      <div style="display:flex;align-items:center;gap:14px">
+        <span style="font-size:1.15rem;font-weight:800;color:#86efac;text-shadow:0 0 14px rgba(134,239,172,.4)">${fmt(m.total)}</span>
+        <span class="chevron" style="color:#5a3a7a;font-size:.8rem;transition:transform .2s">▼</span>
+      </div>`;
+
+    // Dropdown body
+    const body=document.createElement('div');
+    body.style.cssText='display:none;background:linear-gradient(160deg,#0a0518,#120924);border:1px solid #2a1245;border-top:none;border-radius:0 0 12px 12px;overflow:hidden';
+    body.innerHTML=`<table style="width:100%;border-collapse:collapse">
+      <thead><tr>
+        <th style="text-align:left;font-size:.62rem;font-weight:700;color:#7a5aaa;text-transform:uppercase;letter-spacing:.4px;padding:8px 16px;border-bottom:1px solid #1e0f35">Model</th>
+        <th style="text-align:right;font-size:.62rem;font-weight:700;color:#7a5aaa;text-transform:uppercase;letter-spacing:.4px;padding:8px 16px;border-bottom:1px solid #1e0f35">Gross Revenue</th>
+        <th style="text-align:right;font-size:.62rem;font-weight:700;color:#7a5aaa;text-transform:uppercase;letter-spacing:.4px;padding:8px 16px;border-bottom:1px solid #1e0f35">Mein %</th>
+        <th style="text-align:right;font-size:.62rem;font-weight:700;color:#7a5aaa;text-transform:uppercase;letter-spacing:.4px;padding:8px 16px;border-bottom:1px solid #1e0f35">Mein Anteil</th>
+        <th style="text-align:center;font-size:.62rem;font-weight:700;color:#7a5aaa;text-transform:uppercase;letter-spacing:.4px;padding:8px 16px;border-bottom:1px solid #1e0f35">Status</th>
+      </tr></thead>
+      <tbody>
+      ${modelRows.map(([n,v])=>{const c=MC[n]||'#9ca3af';return`
+        <tr style="border-bottom:1px solid #120924">
+          <td style="padding:9px 16px;font-size:.8rem;font-weight:600;color:#c4a0ff;text-align:left">
+            <span class="mdot" style="background:${c};box-shadow:0 0 5px ${c}88"></span>${n}
+          </td>
+          <td style="padding:9px 16px;font-size:.8rem;color:#9b7dcc;text-align:right">${fmt(v.gross)}</td>
+          <td style="padding:9px 16px;font-size:.8rem;color:#c4a0ff;text-align:right">${v.rate}%</td>
+          <td style="padding:9px 16px;font-size:.85rem;font-weight:700;color:#86efac;text-align:right">${fmt(v.pp)}</td>
+          <td style="padding:9px 16px;text-align:center"><span class="badge ${v.paid?'b-paid':'b-pend'}">${v.paid?'✓ Paid':'Pending'}</span></td>
+        </tr>`}).join('')}
+        <tr style="background:rgba(120,50,200,.14)">
+          <td colspan="3" style="padding:9px 16px;font-size:.8rem;font-weight:800;color:#f0e8ff;text-align:left">TOTAL</td>
+          <td style="padding:9px 16px;font-size:.9rem;font-weight:800;color:#86efac;text-align:right">${fmt(m.total)}</td>
+          <td></td>
+        </tr>
+      </tbody></table>`;
+
+    // Toggle
+    let open=isCur;
+    function setOpen(o){
+      open=o;
+      body.style.display=o?'block':'none';
+      hdr.querySelector('.chevron').style.transform=o?'rotate(180deg)':'rotate(0deg)';
+      hdr.style.borderRadius=o?'12px 12px 0 0':'12px';
+    }
+    hdr.addEventListener('click',()=>setOpen(!open));
+    setOpen(open);
+
+    wrap.appendChild(hdr);
+    wrap.appendChild(body);
+    container.appendChild(wrap);
+  }
+}
+
+const sectionState={rev:true,req:true,pp:true};
+function toggleSection(id){
+  sectionState[id]=!sectionState[id];
+  const open=sectionState[id];
+  const sec=id==='pp'?'ppSection':id+'Section';
+  const chv=id==='pp'?'ppChevron':id+'Chevron';
+  $(sec).style.display=open?'block':'none';
+  $(chv).style.transform=open?'rotate(0deg)':'rotate(-90deg)';
+}
+function togglePP(){toggleSection('pp');}
+
+async function poll(){
+  try{
+    const res=await fetch('/data');
+    const data=await res.json();
+    if(data.status==='waiting'||!data.ofRows){
+      $('statusDot').className='dot wait';
+      $('statusText').textContent='Warte auf Daten von Cowork…';
+      return;
+    }
+    $('waitingBox').style.display='none';
+    $('mainContent').style.display='block';
+    $('statusDot').className='dot on';
+    const ts=data.timestamp?new Date(data.timestamp).toLocaleTimeString('de-DE',{hour:'2-digit',minute:'2-digit'})+' Uhr':'—';
+    $('statusText').textContent='Live · Zuletzt: '+ts;
+    $('lastUpdate').textContent=ts;
+    renderAll(data);
+  }catch(e){
+    $('statusDot').className='dot off';
+    $('statusText').textContent='Server nicht erreichbar — läuft server.py?';
+  }
+}
+
+// Alle 60 Sekunden automatisch data.json neu lesen.
+// data.json wird vom Cowork-Schedule "model-revenue-refresh" alle 5 Min aus Notion aktualisiert.
+poll();
+setInterval(poll, 60 * 1000);
+</script>
+</body>
+</html>

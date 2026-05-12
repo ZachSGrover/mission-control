@@ -1,0 +1,11 @@
+{
+  "slug": "example-model",
+  "name": "Example Model",
+  "niche": "example-niche",
+  "audience": "fake demographic notes for example only",
+  "voice": "fake brand voice description",
+  "links": {
+    "x": "https://example.invalid/example-model",
+    "of": "https://example.invalid/example-model"
+  }
+}

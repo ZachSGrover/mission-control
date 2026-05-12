@@ -1,0 +1,14 @@
+{
+  "k1example1": [
+    {
+      "name": "fake_handle_alpha",
+      "url": "https://example.invalid/i/chat/1111-2222",
+      "last_sent": "2026-01-01T00:00:00.000Z"
+    },
+    {
+      "name": "fake_handle_beta",
+      "url": null,
+      "last_sent": "2026-01-01T00:00:00.000Z"
+    }
+  ]
+}

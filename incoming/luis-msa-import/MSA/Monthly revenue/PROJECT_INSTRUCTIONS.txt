@@ -1,0 +1,29 @@
+Dies ist das Cowork-Projekt "MSA" — Tooling für Zach's Model-Management-Agentur. Drei separate Komponenten teilen sich diesen Ordner, jede hat ihren eigenen Chat:
+
+1. Automation [RTxRT] — X (Twitter) DM-Bot. Sendet aus AdsPower-Profilen heraus DMs auf X. Stack: Python + Playwright + xdashboard.html. Ordner: "Automation [RTxRT]/". Eigene Doku: BRIEFING.md im Ordner.
+
+2. Model Revenue — Revenue-Dashboard. Zieht Daten aus zwei Notion-DBs (MODEL REVENUE + PAYMENTS), schreibt data.json, rendert dashboard.html. Stack: Python stdlib + Notion API + HTML/JS. Dateien im Hauptordner: server.py, notion_sync.py, dashboard.html, data.json, .env. Eigene Doku: PROJECT_BRIEFING.md im Hauptordner.
+
+3. Content — Models-Dashboard mit KI-Content-Strategie. Pflegt Profile pro Model und generiert via Claude Haiku 4.5 wöchentliche Content-Strategien. Stack: HTML/JS + server.py /analyze + Anthropic API. Ordner: "Automation [Content]/". Eigene Doku: PROJECT_BRIEFING.md im Ordner.
+
+WICHTIG — Trennung zwischen Chats:
+Jeder Chat in diesem Projekt arbeitet an GENAU EINER der drei Komponenten. Der erste User-Prompt im jeweiligen Chat wird dir sagen welche. Halte dich strikt an diese Komponente — fasse keine Dateien anderer Komponenten an, auch wenn sie technisch im selben Ordner liegen.
+
+Mapping: welche Dateien gehören zu welchem Chat:
+- RTxRT: alles unter Automation [RTxRT]/, plus die RTxRT-Endpoints in ../server.py (/xdashboard, /auftrag, /chats, /confirm, /contacts, /status, /ads-*, /start-bot, /schedule)
+- Model Revenue: server.py (Revenue-Endpoints /, /data, /sync), notion_sync.py, dashboard.html, data.json, .env, .env.example
+- Content: alles unter Automation [Content]/, plus die Content-Endpoints in ../server.py (/models, /models-dashboard, /analyze)
+
+Server.py ist geteilt — bei Änderungen daran prüfen welche Routes betroffen sind und nur die zum aktuellen Chat passenden anfassen.
+
+Kontext zum User:
+Zach betreibt eine MSA und verwaltet OnlyFans/X-Accounts mehrerer Models. Er ist technisch versiert, schreibt meist auf Deutsch, will pragmatische Antworten ohne Grundlagen-Erklärungen. Code-Änderungen direkt umsetzen statt langatmig zu erklären.
+
+Sicherheit:
+- AdsPower-API-Key (in server.py hardcoded), NOTION_TOKEN (in .env), ANTHROPIC_API_KEY (ENV) — niemals in Logs, im Frontend oder im Chat-Output ausgeben.
+- backup_working_v1/ unter Automation [RTxRT]/ niemals überschreiben — das ist der Rollback-Stand.
+- contacts.json niemals für read-only Konversationen schreiben (sonst 24h-Lockout fälschlich).
+
+Performance / Tools:
+- Bei Computer-Use im DM-Bot Kontext: Sunbrowser ist Tier "full", Chrome ist Tier "read" — siehe BRIEFING.md.
+- Batch-Patterns für Scrolls/Sends bevorzugen, nicht Einzel-Aktionen.

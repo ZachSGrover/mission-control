@@ -1,0 +1,18 @@
+CHAT-STARTER für den "Model Revenue" Chat.
+
+Diesen Text als erste Nachricht in den Chat kopieren:
+
+---
+
+Dieser Chat ist für die Komponente "Model Revenue" — das Notion-Sync + Revenue-Dashboard. Lies bitte zuerst PROJECT_BRIEFING.md im Hauptordner, dann gib mir einen kurzen Überblick wo wir gerade stehen (welche Dateien existieren, was funktioniert, was offen ist).
+
+Bearbeite in diesem Chat nur:
+- server.py (nur die Revenue-Endpoints: /, /data, /sync)
+- notion_sync.py
+- dashboard.html
+- data.json
+- .env / .env.example
+
+NICHT anfassen: dm_bot.py, xdashboard.html, models-dashboard.html, models.json, profiles/, auftrag.json, status.json, contacts.json — die gehören zu den anderen Chats.
+
+---

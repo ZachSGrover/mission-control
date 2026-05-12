@@ -1,0 +1,15 @@
+CHAT-STARTER für den "Automation [RTxRT]" Chat.
+
+Diesen Text als erste Nachricht in den Chat kopieren:
+
+---
+
+Dieser Chat ist für die Komponente "Automation [RTxRT]" — der X (Twitter) DM-Bot. Lies bitte zuerst BRIEFING.md im Ordner "Automation [RTxRT]/", dann gib mir einen kurzen Überblick wo wir gerade stehen (Stand des Bots, letzter Run laut status.json, offene Probleme).
+
+Bearbeite in diesem Chat nur Dateien unter "Automation [RTxRT]/" plus die RTxRT-Endpoints in ../server.py (/xdashboard, /auftrag, /chats, /confirm, /contacts, /status, /ads-profiles, /ads-start, /start-bot, /schedule).
+
+NICHT anfassen: notion_sync.py, dashboard.html, data.json, models.json, profiles/, models-dashboard.html — die gehören zu den anderen Chats.
+
+WICHTIG: backup_working_v1/ ist der Rollback-Stand, niemals überschreiben.
+
+---

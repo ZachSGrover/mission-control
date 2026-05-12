@@ -1,0 +1,17 @@
+CHAT-STARTER für den "Content" Chat.
+
+Diesen Text als erste Nachricht in den Chat kopieren:
+
+---
+
+Dieser Chat ist für die Komponente "Content" — das Models-Dashboard mit KI-Content-Strategie. Lies bitte zuerst PROJECT_BRIEFING.md im Ordner "Automation [Content]/", dann gib mir einen kurzen Überblick (welche Models in models.json, welche Detail-Profile existieren, was offen ist).
+
+Bearbeite in diesem Chat nur:
+- models.json
+- profiles/{id}.json
+- models-dashboard.html
+- die Content-Endpoints in ../server.py (/models, /models-dashboard, /analyze)
+
+NICHT anfassen: dm_bot.py, xdashboard.html, dashboard.html, notion_sync.py, data.json, auftrag.json, status.json, contacts.json — die gehören zu den anderen Chats.
+
+---

@@ -1,0 +1,12 @@
+{
+  "timestamp": "2026-01-01T00:00:00.000Z",
+  "max_chats": 5,
+  "accounts": [
+    {
+      "user_id": "k1example1",
+      "name": "EXAMPLE_ACCOUNT",
+      "username": "",
+      "message": "Hi! Example dry-run DM body. Replace with your real promo when going live.\nhttps://example.invalid/promo"
+    }
+  ]
+}

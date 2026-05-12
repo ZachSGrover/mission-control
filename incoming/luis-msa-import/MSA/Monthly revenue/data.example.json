@@ -1,0 +1,32 @@
+{
+  "ofRows": [
+    {
+      "date:Payout Date:start": "2026-01-15",
+      "date:Payout Date:is_datetime": 0,
+      "Gross Revenue": 1000,
+      "Revenue Payout": "800",
+      "Invoice": "INV-EXAMPLE-001",
+      "Notes": "Example row — fake data",
+      "Total Payout ": "800",
+      "Paid": "__YES__",
+      "Model %": 50,
+      "Media Spend X ": 0,
+      "Media Spend Meta": 0,
+      "Name": "Example Model",
+      "url": "https://example.invalid/page/example-model"
+    }
+  ],
+  "pmtRows": [
+    {
+      "date:Date:start": "2026-01-20",
+      "Amount": 400,
+      "Creator": "Example Model",
+      "Payment Source": "OnlyFans",
+      "Chatter": "example_chatter",
+      "Attachments": "",
+      "Name": "Example payout"
+    }
+  ],
+  "custRows": [],
+  "timestamp": "2026-01-01T00:00:00.000Z"
+}

@@ -1,0 +1,841 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Models Dashboard</title>
+<style>
+:root{color-scheme:dark}
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#08060e;color:#e8d8ff;font-size:14px;min-height:100vh}
+
+/* ── Top Bar ── */
+.top-bar{background:linear-gradient(135deg,#1a0a2e 0%,#2d1b4e 100%);border-bottom:1px solid #3d2a6e;padding:12px 24px;display:flex;align-items:center;justify-content:space-between;gap:12px;position:sticky;top:0;z-index:100}
+.top-bar-left{display:flex;align-items:center;gap:12px}
+.top-bar .logo{height:36px;width:auto;object-fit:contain;filter:drop-shadow(0 0 8px #7c3aed88)}
+.top-bar h1{font-size:1.05rem;font-weight:700;color:#e2d9f3}
+.top-bar .badge{background:#7c3aed;color:#fff;font-size:.7rem;padding:2px 8px;border-radius:999px;font-weight:600}
+.top-bar-right{display:flex;align-items:center;gap:10px}
+.model-count{font-size:.8rem;color:#9b7dcc;background:#1e1535;border:1px solid #2d1b4e;padding:4px 12px;border-radius:999px;font-weight:600}
+.model-count span{color:#c4b5fd}
+
+/* ── Layout ── */
+.container{max-width:1160px;margin:0 auto;padding:28px 20px}
+
+/* ── Buttons ── */
+.btn{display:inline-flex;align-items:center;gap:8px;padding:10px 20px;border-radius:8px;border:none;font-size:.875rem;font-weight:600;cursor:pointer;transition:all .2s;font-family:inherit}
+.btn-primary{background:#7c3aed;color:#fff}
+.btn-primary:hover{background:#6d28d9;transform:translateY(-1px)}
+.btn-secondary{background:#1e1535;color:#a78bfa;border:1px solid #3d2a6e}
+.btn-secondary:hover{background:#2d1b4e}
+.btn-sm{padding:6px 14px;font-size:.78rem}
+.btn-danger{background:#2d0a0a;color:#f87171;border:1px solid #7f1d1d}
+.btn-danger:hover{background:#3d1010}
+.btn-analyze{background:linear-gradient(135deg,#0f3460,#1a5c9a);color:#38bdf8;border:1px solid #1e4e80;font-size:.72rem;padding:5px 11px;gap:5px}
+.btn-analyze:hover{background:linear-gradient(135deg,#1a5c9a,#0f3460);transform:translateY(-1px);box-shadow:0 4px 14px rgba(56,189,248,.25)}
+
+/* ── KPI Row ── */
+.kpi-row{display:grid;grid-template-columns:repeat(5,1fr);gap:10px;margin-bottom:24px}
+.kpi{border-radius:12px;padding:13px 14px;position:relative;overflow:hidden;background:linear-gradient(135deg,#1a0a2e 0%,#2e1050 20%,#5a2d8a 44%,#8b5cc8 50%,#5a2d8a 56%,#2e1050 80%,#1a0a2e 100%);box-shadow:0 2px 14px rgba(90,45,138,.35),inset 0 1px 0 rgba(200,150,255,.25)}
+.kpi::after{content:'';position:absolute;top:0;left:0;right:0;height:1px;background:linear-gradient(90deg,transparent,rgba(220,170,255,.6),transparent)}
+.kpi-lbl{font-size:.63rem;font-weight:700;color:#c4a0ff;text-transform:uppercase;letter-spacing:.5px}
+.kpi-val{font-size:1.5rem;font-weight:800;margin-top:3px;color:#fff;text-shadow:0 0 18px rgba(196,160,255,.4)}
+.kpi-sub{font-size:.62rem;color:#9b7dcc;margin-top:2px}
+.kpi.x-kpi .kpi-val{color:#e8d8ff;text-shadow:0 0 14px rgba(232,216,255,.4)}
+.kpi.ig-kpi .kpi-val{color:#f472b6;text-shadow:0 0 14px rgba(244,114,182,.4)}
+.kpi.of-kpi .kpi-val{color:#38bdf8;text-shadow:0 0 14px rgba(56,189,248,.4)}
+.kpi.tt-kpi .kpi-val{color:#86efac;text-shadow:0 0 14px rgba(134,239,172,.4)}
+
+/* ── Toolbar ── */
+.toolbar{display:flex;align-items:center;gap:8px;margin-bottom:20px;flex-wrap:wrap}
+.search-wrap{position:relative;flex:1;min-width:180px}
+.search-wrap svg{position:absolute;left:11px;top:50%;transform:translateY(-50%);color:#5a3a7a;pointer-events:none}
+.search-input{width:100%;background:#1a1030;border:1px solid #2d1b4e;border-radius:8px;color:#e8d8ff;padding:9px 11px 9px 35px;font-size:.85rem;outline:none;transition:border-color .2s;font-family:inherit}
+.search-input:focus{border-color:#7c3aed}
+.search-input::placeholder{color:#4a3a6e}
+.filter-chip{padding:7px 14px;border-radius:20px;font-size:.75rem;font-weight:600;cursor:pointer;background:#1e1535;color:#7a5aaa;border:1px solid #2d1b4e;transition:all .2s}
+.filter-chip:hover{border-color:#7c3aed;color:#c4b5fd}
+.filter-chip.active{background:linear-gradient(135deg,#3b1a6e,#7c3aed);border-color:transparent;color:#fff;box-shadow:0 2px 12px rgba(124,58,237,.4)}
+
+/* ── Section header ── */
+.sec-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:16px}
+.sec-h{font-size:1rem;font-weight:800;color:#f0e8ff}
+.sec-sub{font-size:.7rem;color:#7a6a99;margin-top:1px}
+
+/* ── Grid ── */
+.model-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:14px;margin-bottom:40px}
+
+/* ── Model Card ── */
+.model-card{background:linear-gradient(160deg,#0f0720,#180c2c 55%,#0f0720);border:1px solid #2a1245;border-radius:12px;padding:18px;position:relative;overflow:hidden;transition:all .2s}
+.model-card::after{content:'';position:absolute;top:0;left:0;right:0;height:1px;background:linear-gradient(90deg,transparent,rgba(140,70,210,.3),transparent)}
+.model-card::before{content:'';position:absolute;top:0;left:0;right:0;height:2px;background:linear-gradient(90deg,#7c3aed,#db2777);opacity:0;transition:opacity .2s}
+.model-card:hover{border-color:#5a2d8a;transform:translateY(-2px);box-shadow:0 8px 28px rgba(90,45,138,.3)}
+.model-card:hover::before{opacity:1}
+
+.card-header{display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:14px}
+.model-avatar{width:42px;height:42px;border-radius:50%;flex-shrink:0;background:linear-gradient(135deg,#7c3aed,#db2777);display:flex;align-items:center;justify-content:center;font-size:16px;font-weight:800;color:#fff}
+.model-meta{flex:1;margin-left:11px}
+.model-name{font-size:.95rem;font-weight:700;color:#f0e8ff}
+.model-alias{font-size:.72rem;color:#7a5aaa;margin-top:1px}
+.model-niche{font-size:.7rem;color:#a78bfa;margin-top:2px;font-weight:600}
+.card-actions{display:flex;gap:5px;opacity:0;transition:opacity .2s}
+.model-card:hover .card-actions{opacity:1}
+.icon-btn{width:27px;height:27px;border:1px solid #2a1245;background:#0f0720;border-radius:6px;display:flex;align-items:center;justify-content:center;cursor:pointer;transition:all .15s;color:#7a5aaa}
+.icon-btn:hover{border-color:#7c3aed;color:#c4b5fd;background:#1e1535}
+.icon-btn.del:hover{border-color:#7f1d1d;color:#f87171;background:#2d0a0a}
+
+/* ── Platform list on card ── */
+.accounts{display:flex;flex-direction:column;gap:5px}
+.acct-row{display:flex;align-items:center;gap:9px;background:#0a0518;border:1px solid #1e0f35;border-radius:7px;padding:6px 10px;transition:border-color .15s}
+.acct-row:hover{border-color:#2d1b4e}
+.plat-badge{width:24px;height:24px;border-radius:5px;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:800;flex-shrink:0}
+.plat-badge.x {background:rgba(232,216,255,.08);color:#e8d8ff}
+.plat-badge.ig{background:rgba(244,114,182,.12);color:#f472b6}
+.plat-badge.of{background:rgba(56,189,248,.1);color:#38bdf8}
+.plat-badge.tt{background:rgba(134,239,172,.08);color:#86efac}
+.acct-handle{font-size:.78rem;color:#9b7dcc;flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.acct-handle a{color:inherit;text-decoration:none;transition:color .15s}
+.acct-handle a:hover{color:#c4b5fd}
+.no-accts{font-size:.72rem;color:#4a3a6e;font-style:italic;padding:6px 10px}
+.nsfw-badge{font-size:.58rem;font-weight:800;padding:2px 6px;border-radius:4px;background:linear-gradient(135deg,#7f1d1d,#dc2626);color:#fee2e2;letter-spacing:.5px;flex-shrink:0;border:1px solid #991b1b;text-shadow:0 0 4px rgba(0,0,0,.4)}
+.nude-toggle{display:flex;align-items:center;gap:5px;flex-shrink:0;padding:0 6px;border-left:1px solid #1e0f35;height:32px}
+.nude-toggle input[type=checkbox]{appearance:none;-webkit-appearance:none;-moz-appearance:none;width:16px;height:16px;border:1px solid #3d2a6e;border-radius:4px;background:#0a0518;cursor:pointer;position:relative;transition:all .15s;margin:0;padding:0}
+.nude-toggle input[type=checkbox]:checked{background:linear-gradient(135deg,#7f1d1d,#dc2626);border-color:#dc2626}
+.nude-toggle input[type=checkbox]:checked::after{content:'✓';position:absolute;top:-3px;left:2px;color:#fff;font-size:13px;font-weight:800;line-height:1}
+.nude-toggle input[type=checkbox]:hover{border-color:#7c3aed}
+.nude-toggle label{font-size:.6rem;font-weight:700;color:#7a5aaa;text-transform:uppercase;letter-spacing:.3px;cursor:pointer;margin:0;padding:0;display:inline;user-select:none}
+.nude-toggle input[type=checkbox]:checked + label{color:#f87171}
+
+/* ── Card Footer ── */
+.card-footer{margin-top:12px;padding-top:10px;border-top:1px solid #1e0f35;display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap}
+.card-date{font-size:.68rem;color:#4a3a6e}
+.card-footer-right{display:flex;align-items:center;gap:7px}
+.status-chip{display:inline-flex;align-items:center;gap:5px;padding:2px 9px;border-radius:20px;font-size:.68rem;font-weight:700}
+.status-chip.active {background:linear-gradient(135deg,#052e16,#14532d);color:#86efac;border:1px solid #166534}
+.status-chip.paused {background:linear-gradient(135deg,#422006,#78350f);color:#fcd34d;border:1px solid #92400e}
+.status-chip.inactive{background:linear-gradient(135deg,#2d0a0a,#4a0e0e);color:#f87171;border:1px solid #7f1d1d}
+.sdot{width:6px;height:6px;border-radius:50%;background:currentColor}
+
+/* ── Empty State ── */
+.empty-state{grid-column:1/-1;text-align:center;padding:60px 20px;background:linear-gradient(160deg,#0f0720,#180c2c);border:1px solid #2a1245;border-radius:12px;color:#5a3a7a}
+.empty-state .big{font-size:2.5rem;margin-bottom:14px;opacity:.4}
+.empty-state p{font-size:.85rem;margin-bottom:18px;color:#7a5aaa}
+
+/* ── Add / Edit Section ── */
+.add-section{background:linear-gradient(160deg,#0f0720,#180c2c 55%,#0f0720);border:1px solid #2a1245;border-radius:12px;overflow:hidden;margin-bottom:32px}
+.add-section-hdr{padding:16px 20px;border-bottom:1px solid #1e0f35;display:flex;align-items:center;justify-content:space-between;cursor:pointer;user-select:none;transition:background .15s}
+.add-section-hdr:hover{background:rgba(124,58,237,.06)}
+.add-section-title{font-size:.88rem;font-weight:700;color:#c4b5fd;display:flex;align-items:center;gap:7px}
+.add-section-body{padding:22px;display:none}
+.add-section-body.open{display:block}
+.chevron{transition:transform .2s;color:#5a3a7a;font-size:.85rem}
+.chevron.open{transform:rotate(180deg)}
+
+/* ── Form ── */
+.form-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:18px}
+.form-grid .full{grid-column:1/-1}
+@media(max-width:600px){.form-grid{grid-template-columns:1fr}}
+.fg{display:flex;flex-direction:column;gap:5px}
+label,.plat-lbl{font-size:.68rem;font-weight:700;color:#9b7dcc;text-transform:uppercase;letter-spacing:.5px;display:flex;align-items:center;gap:5px;margin-bottom:3px}
+.plat-dot{width:7px;height:7px;border-radius:50%;flex-shrink:0}
+.plat-dot.x {background:#e8d8ff}
+.plat-dot.ig{background:#f472b6}
+.plat-dot.of{background:#38bdf8}
+.plat-dot.tt{background:#86efac}
+input[type=text],textarea,select{width:100%;background:#0a0518;border:1px solid #2d1b4e;border-radius:8px;color:#e8d8ff;padding:9px 11px;font-size:.85rem;outline:none;transition:border-color .2s;font-family:inherit}
+input[type=text]:focus,textarea:focus,select:focus{border-color:#7c3aed;box-shadow:0 0 0 3px rgba(124,58,237,.15)}
+input::placeholder,textarea::placeholder{color:#4a3a6e}
+textarea{resize:vertical;min-height:65px}
+select{cursor:pointer}
+select option{background:#0a0518}
+
+/* ── Multi-account field ── */
+.platform-section{margin-bottom:18px}
+.platform-section-title{font-size:.7rem;font-weight:700;color:#9b7dcc;text-transform:uppercase;letter-spacing:.5px;margin-bottom:10px;padding-bottom:7px;border-bottom:1px solid #1e0f35}
+.platform-fields-grid{display:grid;grid-template-columns:1fr 1fr;gap:18px}
+@media(max-width:600px){.platform-fields-grid{grid-template-columns:1fr}}
+.multi-field-group{display:flex;flex-direction:column;gap:5px}
+.multi-field-row{display:flex;align-items:center;gap:6px;margin-bottom:5px}
+.multi-field-row input{flex:1}
+.prefix-wrap{position:relative;flex:1}
+.prefix-wrap .pfx{position:absolute;left:10px;top:50%;transform:translateY(-50%);font-size:.8rem;color:#4a3a6e;pointer-events:none;z-index:1}
+.prefix-wrap input{padding-left:22px}
+.remove-field-btn{width:28px;height:36px;border:1px solid #2a1245;background:#0f0720;border-radius:7px;display:flex;align-items:center;justify-content:center;cursor:pointer;color:#5a3a7a;font-size:14px;flex-shrink:0;transition:all .15s}
+.remove-field-btn:hover{border-color:#7f1d1d;color:#f87171;background:#2d0a0a}
+.add-field-btn{display:inline-flex;align-items:center;gap:5px;font-size:.72rem;font-weight:600;color:#7c3aed;background:none;border:1px dashed #3d2a6e;border-radius:7px;padding:6px 12px;cursor:pointer;transition:all .15s;width:100%}
+.add-field-btn:hover{border-color:#7c3aed;background:rgba(124,58,237,.08)}
+
+.form-actions{display:flex;gap:10px;justify-content:flex-end;padding-top:14px;border-top:1px solid #1e0f35}
+
+/* ── Modal ── */
+.modal-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.8);backdrop-filter:blur(5px);z-index:200;align-items:center;justify-content:center;padding:20px}
+.modal-overlay.open{display:flex}
+.modal{background:linear-gradient(160deg,#0f0720,#180c2c);border:1px solid #2a1245;border-radius:12px;width:100%;max-width:560px;max-height:90vh;overflow-y:auto}
+.modal-hdr{padding:18px 22px;border-bottom:1px solid #1e0f35;display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;background:linear-gradient(160deg,#0f0720,#180c2c);z-index:1}
+.modal-title{font-size:.95rem;font-weight:700;color:#f0e8ff}
+.modal-close{width:30px;height:30px;border:1px solid #2a1245;background:none;border-radius:6px;cursor:pointer;color:#7a5aaa;font-size:14px;display:flex;align-items:center;justify-content:center;transition:all .15s}
+.modal-close:hover{background:#1e1535;color:#e8d8ff}
+.modal-body{padding:22px}
+
+/* ── Analysis Modal ── */
+.analysis-modal{max-width:720px}
+.analysis-model-header{display:flex;align-items:center;gap:12px;padding:16px 22px;border-bottom:1px solid #1e0f35;background:rgba(124,58,237,.06)}
+.analysis-avatar{width:38px;height:38px;border-radius:50%;background:linear-gradient(135deg,#7c3aed,#db2777);display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:800;color:#fff;flex-shrink:0}
+.analysis-model-info{}
+.analysis-model-name{font-size:.95rem;font-weight:700;color:#f0e8ff}
+.analysis-model-niche{font-size:.72rem;color:#a78bfa}
+.analysis-body{padding:22px}
+.analysis-generate-row{display:flex;align-items:center;gap:10px;margin-bottom:20px}
+.analysis-output{display:none}
+.analysis-output.visible{display:block}
+
+/* ── Markdown rendering ── */
+.md-output{color:#e8d8ff;line-height:1.7;font-size:.87rem}
+.md-output h2{font-size:.95rem;font-weight:800;color:#c4b5fd;margin:18px 0 10px;padding-bottom:6px;border-bottom:1px solid #1e0f35}
+.md-output h2:first-child{margin-top:0}
+.md-output p{margin-bottom:10px;color:#dcc8ff}
+.md-output ul,.md-output ol{padding-left:18px;margin-bottom:10px}
+.md-output li{margin-bottom:5px;color:#dcc8ff}
+.md-output strong{color:#f0e8ff;font-weight:700}
+.md-output table{width:100%;border-collapse:collapse;margin-bottom:12px;font-size:.82rem}
+.md-output th{background:#1e1535;color:#a78bfa;padding:7px 10px;text-align:left;font-size:.68rem;text-transform:uppercase;letter-spacing:.4px;border-bottom:1px solid #2a1245}
+.md-output td{padding:7px 10px;border-bottom:1px solid #120924;color:#dcc8ff}
+.md-output tr:last-child td{border-bottom:none}
+
+/* ── Spinner ── */
+.spin{display:inline-block;width:14px;height:14px;border:2px solid #2e1050;border-top-color:#7c3aed;border-radius:50%;animation:spin .7s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+.loading-state{display:none;text-align:center;padding:30px;color:#7a5aaa;font-size:.85rem}
+.loading-state.visible{display:block}
+.loading-state .spin{width:24px;height:24px;margin-bottom:12px}
+
+/* ── Toast ── */
+.toast-wrap{position:fixed;bottom:22px;right:22px;z-index:300;display:flex;flex-direction:column;gap:7px}
+.toast{background:linear-gradient(160deg,#0f0720,#180c2c);border:1px solid #2a1245;border-radius:8px;padding:11px 15px;font-size:.82rem;color:#e8d8ff;display:flex;align-items:center;gap:8px;min-width:220px;animation:tin .2s ease;box-shadow:0 4px 20px rgba(0,0,0,.4)}
+.toast.ok {border-left:3px solid #86efac}
+.toast.err{border-left:3px solid #f87171}
+@keyframes tin{from{transform:translateX(110%);opacity:0}to{transform:translateX(0);opacity:1}}
+
+/* ── Scrollbar ── */
+::-webkit-scrollbar{width:5px}
+::-webkit-scrollbar-track{background:#08060e}
+::-webkit-scrollbar-thumb{background:#2a1245;border-radius:3px}
+::-webkit-scrollbar-thumb:hover{background:#5a2d8a}
+</style>
+</head>
+<body>
+
+<!-- ── Top Bar ── -->
+<div class="top-bar">
+  <div class="top-bar-left">
+    <img src="/logo.jpg" class="logo" alt="Logo" onerror="this.style.display='none'">
+    <h1>Models Dashboard</h1>
+    <span class="badge">OVERVIEW</span>
+  </div>
+  <div class="top-bar-right">
+    <div class="model-count">Total: <span id="totalCount">0</span></div>
+    <button class="btn btn-secondary btn-sm" onclick="exportData()">↓ Export JSON</button>
+    <button class="btn btn-primary btn-sm" onclick="openAddPanel()">+ Add Model</button>
+  </div>
+</div>
+
+<div class="container">
+
+  <!-- KPI Row -->
+  <div class="kpi-row">
+    <div class="kpi"><div class="kpi-lbl">Total Models</div><div class="kpi-val" id="stat-total">0</div><div class="kpi-sub">Active creators</div></div>
+    <div class="kpi x-kpi"><div class="kpi-lbl">𝕏 Twitter</div><div class="kpi-val" id="stat-x">0</div><div class="kpi-sub">Accounts linked</div></div>
+    <div class="kpi ig-kpi"><div class="kpi-lbl">Instagram</div><div class="kpi-val" id="stat-ig">0</div><div class="kpi-sub">Accounts linked</div></div>
+    <div class="kpi of-kpi"><div class="kpi-lbl">OnlyFans</div><div class="kpi-val" id="stat-of">0</div><div class="kpi-sub">Accounts linked</div></div>
+    <div class="kpi tt-kpi"><div class="kpi-lbl">TikTok</div><div class="kpi-val" id="stat-tt">0</div><div class="kpi-sub">Accounts linked</div></div>
+  </div>
+
+  <!-- Add Model Section -->
+  <div class="add-section" id="addSection">
+    <div class="add-section-hdr" onclick="toggleAdd()">
+      <div class="add-section-title">＋ Add New Model</div>
+      <span class="chevron" id="addChevron">▼</span>
+    </div>
+    <div class="add-section-body" id="addBody">
+      <div class="form-grid">
+        <div class="fg"><label>Full Name *</label><input type="text" id="f-name" placeholder="e.g. Sophia Rose" /></div>
+        <div class="fg"><label>Alias / Stage Name</label><input type="text" id="f-alias" placeholder="e.g. Soph" /></div>
+        <div class="fg"><label>Niche / Category</label><input type="text" id="f-niche" placeholder="e.g. Fitness, Lifestyle" /></div>
+        <div class="fg"><label>Status</label>
+          <select id="f-status"><option value="active">🟢 Active</option><option value="paused">🟡 Paused</option><option value="inactive">🔴 Inactive</option></select>
+        </div>
+        <div class="fg full"><label>Notes</label><textarea id="f-notes" placeholder="Any notes about this model..."></textarea></div>
+      </div>
+
+      <div class="platform-section">
+        <div class="platform-section-title">Platform Accounts — add as many as needed</div>
+        <div class="platform-fields-grid">
+          <div class="multi-field-group" id="f-fields-x">
+            <div class="plat-lbl"><span class="plat-dot x"></span>X (Twitter)</div>
+          </div>
+          <div class="multi-field-group" id="f-fields-ig">
+            <div class="plat-lbl"><span class="plat-dot ig"></span>Instagram</div>
+          </div>
+          <div class="multi-field-group" id="f-fields-of">
+            <div class="plat-lbl"><span class="plat-dot of"></span>OnlyFans</div>
+          </div>
+          <div class="multi-field-group" id="f-fields-tt">
+            <div class="plat-lbl"><span class="plat-dot tt"></span>TikTok</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="form-actions">
+        <button class="btn btn-secondary btn-sm" onclick="clearAddForm()">Clear</button>
+        <button class="btn btn-primary btn-sm" onclick="saveFromPanel()">✓ Save Model</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Model Grid -->
+  <div class="sec-header">
+    <div><div class="sec-h">Your Models</div><div class="sec-sub" id="gridSub">Loading…</div></div>
+    <div class="toolbar" style="margin-bottom:0">
+      <div class="search-wrap">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
+        <input class="search-input" type="text" id="searchInput" placeholder="Search models…" oninput="renderCards()" />
+      </div>
+      <div class="filter-chip active" data-filter="all" onclick="setFilter('all',this)">All</div>
+      <div class="filter-chip" data-filter="x"  onclick="setFilter('x',this)">𝕏</div>
+      <div class="filter-chip" data-filter="ig" onclick="setFilter('ig',this)">IG</div>
+      <div class="filter-chip" data-filter="of" onclick="setFilter('of',this)">OF</div>
+      <div class="filter-chip" data-filter="tt" onclick="setFilter('tt',this)">TT</div>
+    </div>
+  </div>
+
+  <div class="model-grid" id="modelGrid"></div>
+</div>
+
+<!-- ── Edit Modal ── -->
+<div class="modal-overlay" id="editOverlay">
+  <div class="modal">
+    <div class="modal-hdr">
+      <div class="modal-title">Edit Model</div>
+      <button class="modal-close" onclick="closeEdit()">✕</button>
+    </div>
+    <div class="modal-body">
+      <input type="hidden" id="editId" />
+      <div class="form-grid">
+        <div class="fg"><label>Full Name *</label><input type="text" id="m-name" placeholder="e.g. Sophia Rose" /></div>
+        <div class="fg"><label>Alias / Stage Name</label><input type="text" id="m-alias" placeholder="e.g. Soph" /></div>
+        <div class="fg"><label>Niche / Category</label><input type="text" id="m-niche" placeholder="e.g. Fitness, Lifestyle" /></div>
+        <div class="fg"><label>Status</label>
+          <select id="m-status"><option value="active">🟢 Active</option><option value="paused">🟡 Paused</option><option value="inactive">🔴 Inactive</option></select>
+        </div>
+        <div class="fg full"><label>Notes</label><textarea id="m-notes" placeholder="Notes…"></textarea></div>
+      </div>
+      <div class="platform-section">
+        <div class="platform-section-title">Platform Accounts</div>
+        <div class="platform-fields-grid">
+          <div class="multi-field-group" id="m-fields-x"><div class="plat-lbl"><span class="plat-dot x"></span>X (Twitter)</div></div>
+          <div class="multi-field-group" id="m-fields-ig"><div class="plat-lbl"><span class="plat-dot ig"></span>Instagram</div></div>
+          <div class="multi-field-group" id="m-fields-of"><div class="plat-lbl"><span class="plat-dot of"></span>OnlyFans</div></div>
+          <div class="multi-field-group" id="m-fields-tt"><div class="plat-lbl"><span class="plat-dot tt"></span>TikTok</div></div>
+        </div>
+      </div>
+      <div class="form-actions">
+        <button class="btn btn-secondary btn-sm" onclick="closeEdit()">Cancel</button>
+        <button class="btn btn-primary btn-sm" onclick="saveFromEdit()">✓ Save Changes</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ── Analysis Modal ── -->
+<div class="modal-overlay" id="analysisOverlay">
+  <div class="modal analysis-modal">
+    <div class="modal-hdr">
+      <div class="modal-title">⚡ Content Audit & Strategy</div>
+      <button class="modal-close" onclick="closeAnalysis()">✕</button>
+    </div>
+    <div class="analysis-model-header" id="analysisModelHeader"></div>
+    <div class="analysis-body">
+      <div class="analysis-generate-row">
+        <button class="btn btn-primary btn-sm" id="generateBtn" onclick="runAnalysis()">⚡ Generate Analysis</button>
+        <span style="font-size:.75rem;color:#5a3a7a">Powered by Claude AI · ~10 seconds</span>
+      </div>
+      <div class="loading-state" id="loadingState">
+        <div class="spin"></div>
+        <div>Analyzing niche, building strategy…</div>
+      </div>
+      <div class="analysis-output" id="analysisOutput">
+        <div class="md-output" id="analysisText"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Toast -->
+<div class="toast-wrap" id="toastWrap"></div>
+
+<script>
+// ── Platforms config ─────────────────────────────────────────────────────────
+const PLATFORMS = [
+  { key:'x',  label:'𝕏',  pfx:'@', cls:'x',  url: h=>`https://x.com/${h}` },
+  { key:'ig', label:'IG', pfx:'@', cls:'ig', url: h=>`https://instagram.com/${h}` },
+  { key:'of', label:'OF', pfx:'/', cls:'of', url: h=>`https://onlyfans.com/${h}` },
+  { key:'tt', label:'TT', pfx:'@', cls:'tt', url: h=>`https://tiktok.com/@${h}` },
+];
+
+// ── Data ─────────────────────────────────────────────────────────────────────
+const API    = window.location.origin;
+const LS_KEY = 'models_v3';
+
+function lsLoad(){ try{return JSON.parse(localStorage.getItem(LS_KEY))||[];}catch{return[];} }
+function lsSave(d){ try{localStorage.setItem(LS_KEY,JSON.stringify(d));}catch{} }
+
+async function serverLoad(){
+  try{
+    const r=await fetch(API+'/models');
+    if(r.ok){ const d=await r.json(); if(Array.isArray(d)&&d.length>0) return d; }
+  }catch{}
+  return lsLoad();
+}
+async function serverSave(d){
+  lsSave(d);
+  try{ await fetch(API+'/models',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(d)}); }
+  catch(e){ console.warn('server save failed',e); }
+}
+
+// Normalize accounts: every entry → {handle, nude}
+// Accepts legacy string format ("zach") and new object format ({handle, nude}).
+function normalizeAccounts(accts){
+  const norm={};
+  for(const p of PLATFORMS){
+    const v=accts?.[p.key];
+    let arr=[];
+    if(!v){ arr=[]; }
+    else if(typeof v==='string'){ arr = v ? [{handle:v, nude:false}] : []; }
+    else if(Array.isArray(v)){
+      arr = v.map(item=>{
+        if(!item) return null;
+        if(typeof item==='string') return item ? {handle:item, nude:false} : null;
+        if(typeof item==='object' && item.handle) return {handle:String(item.handle), nude:!!item.nude};
+        return null;
+      }).filter(Boolean);
+    }
+    norm[p.key]=arr;
+  }
+  return norm;
+}
+
+let models=[];
+let activeFilter='all';
+let currentAnalysisModel=null;
+
+function uid(){ return Date.now().toString(36)+Math.random().toString(36).slice(2); }
+function initials(n){ return n.split(' ').map(w=>w[0]).join('').toUpperCase().slice(0,2); }
+function fmtDate(ts){ return new Date(ts).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'}); }
+function esc(s){ const d=document.createElement('div');d.textContent=s;return d.innerHTML; }
+
+// ── Multi-field builder ──────────────────────────────────────────────────────
+function buildMultiFields(containerId, platform, values=[]){
+  const container = document.getElementById(containerId);
+  // Keep only the label row (first child), remove rest
+  while(container.children.length > 1) container.removeChild(container.lastChild);
+
+  const renderVals = values.length ? values : [{handle:'', nude:false}];
+  renderVals.forEach(val => addFieldRow(container, platform, val));
+  addPlusButton(container, platform, containerId);
+}
+
+function addFieldRow(container, platform, value={handle:'', nude:false}){
+  // Accept legacy plain-string values too
+  if(typeof value === 'string') value = {handle:value, nude:false};
+  value = value || {handle:'', nude:false};
+
+  // Remove existing plus btn if present
+  const existingPlus = container.querySelector('.add-field-btn');
+  if(existingPlus) existingPlus.remove();
+
+  const row = document.createElement('div');
+  row.className = 'multi-field-row';
+
+  const wrap = document.createElement('div');
+  wrap.className = 'prefix-wrap';
+
+  const pfxSpan = document.createElement('span');
+  pfxSpan.className = 'pfx';
+  pfxSpan.textContent = platform.pfx;
+
+  const input = document.createElement('input');
+  input.type = 'text';
+  input.placeholder = 'username';
+  input.value = value.handle || '';
+  input.dataset.field = 'handle';
+
+  wrap.appendChild(pfxSpan);
+  wrap.appendChild(input);
+
+  // Nude toggle
+  const toggle = document.createElement('div');
+  toggle.className = 'nude-toggle';
+  const cb = document.createElement('input');
+  cb.type = 'checkbox';
+  cb.checked = !!value.nude;
+  cb.dataset.field = 'nude';
+  // unique id so the label "for" works
+  const cbId = `nude-${platform.key}-${Math.random().toString(36).slice(2,8)}`;
+  cb.id = cbId;
+  const lbl = document.createElement('label');
+  lbl.htmlFor = cbId;
+  lbl.textContent = 'NSFW';
+  lbl.title = 'Auf diesem Account gibt es Nude/Explicit Content';
+  toggle.appendChild(cb);
+  toggle.appendChild(lbl);
+
+  const removeBtn = document.createElement('button');
+  removeBtn.type = 'button';
+  removeBtn.className = 'remove-field-btn';
+  removeBtn.innerHTML = '×';
+  removeBtn.title = 'Remove';
+  removeBtn.onclick = () => {
+    row.remove();
+    // If no rows left, add one empty
+    const rows = container.querySelectorAll('.multi-field-row');
+    if(!rows.length){
+      const existingPlus2 = container.querySelector('.add-field-btn');
+      if(existingPlus2) existingPlus2.remove();
+      addFieldRow(container, platform, {handle:'', nude:false});
+      addPlusButton(container, platform, container.id);
+    }
+  };
+
+  row.appendChild(wrap);
+  row.appendChild(toggle);
+  row.appendChild(removeBtn);
+  container.appendChild(row);
+}
+
+function addPlusButton(container, platform, containerId){
+  const btn = document.createElement('button');
+  btn.type = 'button';
+  btn.className = 'add-field-btn';
+  btn.innerHTML = `<span>＋</span> Add ${platform.label} account`;
+  btn.onclick = () => {
+    btn.remove();
+    addFieldRow(container, platform, {handle:'', nude:false});
+    addPlusButton(container, platform, containerId);
+  };
+  container.appendChild(btn);
+}
+
+function readMultiFields(containerId){
+  const container = document.getElementById(containerId);
+  return Array.from(container.querySelectorAll('.multi-field-row'))
+    .map(row => {
+      const input = row.querySelector('input[data-field="handle"]');
+      const cb    = row.querySelector('input[data-field="nude"]');
+      const handle = input ? input.value.trim() : '';
+      if(!handle) return null;
+      return { handle, nude: cb ? !!cb.checked : false };
+    })
+    .filter(Boolean);
+}
+
+// Init form fields
+function initAddForm(){
+  PLATFORMS.forEach(p => buildMultiFields(`f-fields-${p.key}`, p, []));
+}
+function clearAddForm(){
+  document.getElementById('f-name').value='';
+  document.getElementById('f-alias').value='';
+  document.getElementById('f-niche').value='';
+  document.getElementById('f-status').value='active';
+  document.getElementById('f-notes').value='';
+  PLATFORMS.forEach(p => buildMultiFields(`f-fields-${p.key}`, p, []));
+}
+
+// ── Render ───────────────────────────────────────────────────────────────────
+function renderCards(){
+  const q = document.getElementById('searchInput').value.toLowerCase();
+  const filtered = models.filter(m=>{
+    const ms = !q || [m.name, m.alias||'', m.niche||''].some(v=>v.toLowerCase().includes(q));
+    const accts = normalizeAccounts(m.accounts);
+    const mf = activeFilter==='all' || accts[activeFilter]?.length>0;
+    return ms && mf;
+  });
+
+  const grid = document.getElementById('modelGrid');
+  if(!filtered.length){
+    grid.innerHTML=`<div class="empty-state">
+      <div class="big">👤</div>
+      <p>${models.length===0?'No models yet. Add your first model above.':'No models match your search.'}</p>
+      ${models.length===0?'<button class="btn btn-primary btn-sm" onclick="openAddPanel()">+ Add First Model</button>':''}
+    </div>`;
+    updateStats(); return;
+  }
+
+  grid.innerHTML = filtered.map(m => {
+    const accts = normalizeAccounts(m.accounts);
+    const allRows = PLATFORMS.flatMap(p =>
+      accts[p.key].map(a => `
+        <div class="acct-row">
+          <div class="plat-badge ${p.cls}">${p.label}</div>
+          <div class="acct-handle"><a href="${p.url(a.handle)}" target="_blank" rel="noopener">${p.pfx}${esc(a.handle)}</a></div>
+          ${a.nude ? '<span class="nsfw-badge" title="NSFW / Nude content">18+</span>' : ''}
+        </div>`)
+    ).join('');
+    const status = m.status||'active';
+    return `<div class="model-card">
+      <div class="card-header">
+        <div class="model-avatar">${initials(m.name)}</div>
+        <div class="model-meta">
+          <div class="model-name">${esc(m.name)}</div>
+          ${m.alias?`<div class="model-alias">${esc(m.alias)}</div>`:''}
+          ${m.niche?`<div class="model-niche">${esc(m.niche)}</div>`:''}
+        </div>
+        <div class="card-actions">
+          <div class="icon-btn" onclick="openEditModal('${m.id}')" title="Edit">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+          </div>
+          <div class="icon-btn del" onclick="deleteModel('${m.id}')" title="Delete">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4h6v2"/></svg>
+          </div>
+        </div>
+      </div>
+      <div class="accounts">${allRows||'<div class="no-accts">No accounts added yet</div>'}</div>
+      <div class="card-footer">
+        <div class="card-date">Added ${fmtDate(m.createdAt)}</div>
+        <div class="card-footer-right">
+          <button class="btn btn-analyze btn-sm" onclick="openAnalysis('${m.id}')">⚡ Audit & Ideas</button>
+          <div class="status-chip ${status}"><span class="sdot"></span>${status.charAt(0).toUpperCase()+status.slice(1)}</div>
+        </div>
+      </div>
+    </div>`;
+  }).join('');
+
+  updateStats();
+}
+
+function updateStats(){
+  const t=models.length;
+  document.getElementById('stat-total').textContent=t;
+  document.getElementById('totalCount').textContent=t;
+  document.getElementById('gridSub').textContent=`${t} model${t!==1?'s':''} total`;
+  PLATFORMS.forEach(p=>{
+    const count = models.reduce((acc,m)=>{
+      const a=normalizeAccounts(m.accounts);
+      return acc + (a[p.key]?.length||0);
+    },0);
+    document.getElementById(`stat-${p.key}`).textContent=count;
+  });
+}
+
+// ── Filter ───────────────────────────────────────────────────────────────────
+function setFilter(val,el){
+  activeFilter=val;
+  document.querySelectorAll('.filter-chip').forEach(c=>c.classList.remove('active'));
+  el.classList.add('active');
+  renderCards();
+}
+
+// ── Add Panel ─────────────────────────────────────────────────────────────────
+function toggleAdd(){
+  const body=document.getElementById('addBody');
+  const chv=document.getElementById('addChevron');
+  const open=body.classList.toggle('open');
+  chv.classList.toggle('open',open);
+}
+function openAddPanel(){
+  const body=document.getElementById('addBody');
+  const chv=document.getElementById('addChevron');
+  body.classList.add('open');
+  chv.classList.add('open');
+  document.getElementById('addSection').scrollIntoView({behavior:'smooth',block:'start'});
+}
+function saveFromPanel(){
+  const name=document.getElementById('f-name').value.trim();
+  if(!name){toast('Name is required','err');return;}
+  const accounts={};
+  PLATFORMS.forEach(p=>{ accounts[p.key]=readMultiFields(`f-fields-${p.key}`); });
+  const m={
+    id:uid(), name,
+    alias: document.getElementById('f-alias').value.trim(),
+    niche: document.getElementById('f-niche').value.trim(),
+    status:document.getElementById('f-status').value,
+    notes: document.getElementById('f-notes').value.trim(),
+    accounts, createdAt:Date.now(), updatedAt:Date.now()
+  };
+  models.push(m);
+  serverSave(models);
+  clearAddForm();
+  renderCards();
+  toast(`${name} added`,'ok');
+}
+
+// ── Edit Modal ────────────────────────────────────────────────────────────────
+function openEditModal(id){
+  const m=models.find(x=>x.id===id); if(!m)return;
+  document.getElementById('editId').value=id;
+  document.getElementById('m-name').value=m.name||'';
+  document.getElementById('m-alias').value=m.alias||'';
+  document.getElementById('m-niche').value=m.niche||'';
+  document.getElementById('m-status').value=m.status||'active';
+  document.getElementById('m-notes').value=m.notes||'';
+  const accts=normalizeAccounts(m.accounts);
+  PLATFORMS.forEach(p=>buildMultiFields(`m-fields-${p.key}`, p, accts[p.key]));
+  document.getElementById('editOverlay').classList.add('open');
+}
+function closeEdit(){
+  document.getElementById('editOverlay').classList.remove('open');
+}
+function saveFromEdit(){
+  const id=document.getElementById('editId').value;
+  const name=document.getElementById('m-name').value.trim();
+  if(!name){toast('Name is required','err');return;}
+  const idx=models.findIndex(m=>m.id===id); if(idx===-1)return;
+  const accounts={};
+  PLATFORMS.forEach(p=>{ accounts[p.key]=readMultiFields(`m-fields-${p.key}`); });
+  models[idx]={...models[idx], name,
+    alias: document.getElementById('m-alias').value.trim(),
+    niche: document.getElementById('m-niche').value.trim(),
+    status:document.getElementById('m-status').value,
+    notes: document.getElementById('m-notes').value.trim(),
+    accounts, updatedAt:Date.now()
+  };
+  serverSave(models);
+  closeEdit();
+  renderCards();
+  toast(`${name} updated`,'ok');
+}
+
+// ── Delete ────────────────────────────────────────────────────────────────────
+function deleteModel(id){
+  const m=models.find(x=>x.id===id); if(!m)return;
+  if(!confirm(`Delete "${m.name}"? This cannot be undone.`))return;
+  models=models.filter(x=>x.id!==id);
+  serverSave(models);
+  renderCards();
+  toast(`${m.name} removed`,'err');
+}
+
+// ── Analysis ──────────────────────────────────────────────────────────────────
+function openAnalysis(id){
+  const m=models.find(x=>x.id===id); if(!m)return;
+  currentAnalysisModel=m;
+
+  // Header
+  const hdr=document.getElementById('analysisModelHeader');
+  hdr.innerHTML=`
+    <div class="analysis-avatar">${initials(m.name)}</div>
+    <div class="analysis-model-info">
+      <div class="analysis-model-name">${esc(m.name)}${m.alias?` <span style="font-size:.75rem;color:#7a5aaa">(${esc(m.alias)})</span>`:''}</div>
+      <div class="analysis-model-niche">${esc(m.niche||'No niche set')}</div>
+    </div>`;
+
+  // Reset output
+  document.getElementById('loadingState').classList.remove('visible');
+  document.getElementById('analysisOutput').classList.remove('visible');
+  document.getElementById('analysisText').innerHTML='';
+  document.getElementById('generateBtn').disabled=false;
+  document.getElementById('generateBtn').textContent='⚡ Generate Analysis';
+
+  document.getElementById('analysisOverlay').classList.add('open');
+}
+function closeAnalysis(){
+  document.getElementById('analysisOverlay').classList.remove('open');
+  currentAnalysisModel=null;
+}
+
+async function runAnalysis(){
+  if(!currentAnalysisModel)return;
+  const btn=document.getElementById('generateBtn');
+  btn.disabled=true;
+  btn.innerHTML='<span class="spin"></span> Analyzing…';
+  document.getElementById('loadingState').classList.add('visible');
+  document.getElementById('analysisOutput').classList.remove('visible');
+  document.getElementById('analysisText').innerHTML='';
+
+  try{
+    const res=await fetch(API+'/analyze',{
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify(currentAnalysisModel)
+    });
+    const data=await res.json();
+    document.getElementById('loadingState').classList.remove('visible');
+
+    if(data.error){
+      document.getElementById('analysisText').innerHTML=`<div style="color:#f87171;background:#2d0a0a;border:1px solid #7f1d1d;border-radius:8px;padding:14px;font-size:.85rem">⚠ ${esc(data.error)}</div>`;
+    } else {
+      document.getElementById('analysisText').innerHTML=renderMarkdown(data.analysis);
+    }
+    document.getElementById('analysisOutput').classList.add('visible');
+    btn.textContent='↺ Regenerate';
+    btn.disabled=false;
+  }catch(e){
+    document.getElementById('loadingState').classList.remove('visible');
+    document.getElementById('analysisText').innerHTML=`<div style="color:#f87171;background:#2d0a0a;border:1px solid #7f1d1d;border-radius:8px;padding:14px;font-size:.85rem">⚠ Could not reach server. Is server.py running?</div>`;
+    document.getElementById('analysisOutput').classList.add('visible');
+    btn.textContent='↺ Retry';
+    btn.disabled=false;
+  }
+}
+
+// Simple markdown → HTML renderer
+function renderMarkdown(md){
+  return md
+    .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
+    // tables
+    .replace(/\|(.+)\|\n\|[-| :]+\|\n((?:\|.+\|\n?)*)/g,(match,header,rows)=>{
+      const ths=header.split('|').map(c=>c.trim()).filter(Boolean).map(c=>`<th>${c}</th>`).join('');
+      const trs=rows.trim().split('\n').map(row=>{
+        const tds=row.split('|').map(c=>c.trim()).filter(Boolean).map(c=>`<td>${c}</td>`).join('');
+        return `<tr>${tds}</tr>`;
+      }).join('');
+      return `<table><thead><tr>${ths}</tr></thead><tbody>${trs}</tbody></table>`;
+    })
+    .replace(/^## (.+)$/gm,'<h2>$1</h2>')
+    .replace(/^### (.+)$/gm,'<h3 style="font-size:.88rem;font-weight:700;color:#a78bfa;margin:12px 0 6px">$1</h3>')
+    .replace(/\*\*(.+?)\*\*/g,'<strong>$1</strong>')
+    .replace(/\*(.+?)\*/g,'<em style="color:#c4b5fd">$1</em>')
+    .replace(/^(\d+)\. (.+)$/gm,'<li style="list-style:decimal">$2</li>')
+    .replace(/^[-*] (.+)$/gm,'<li>$1</li>')
+    .replace(/(<li.*<\/li>\n?)+/g,s=>`<ul>${s}</ul>`)
+    .replace(/\n\n+/g,'</p><p>')
+    .replace(/^(?!<[hul]|<\/|<p)(.+)$/gm,'<p>$1</p>')
+    .replace(/<p><\/p>/g,'');
+}
+
+// ── Export ────────────────────────────────────────────────────────────────────
+function exportData(){
+  const b=new Blob([JSON.stringify(models,null,2)],{type:'application/json'});
+  const a=document.createElement('a');a.href=URL.createObjectURL(b);a.download='models.json';a.click();
+  toast('Exported models.json','ok');
+}
+
+// ── Toast ─────────────────────────────────────────────────────────────────────
+function toast(msg,type='ok'){
+  const c=document.getElementById('toastWrap');
+  const t=document.createElement('div');
+  t.className=`toast ${type}`;
+  t.textContent=(type==='ok'?'✓ ':'✕ ')+msg;
+  c.appendChild(t);
+  setTimeout(()=>t.remove(),3000);
+}
+
+// ── Keyboard ──────────────────────────────────────────────────────────────────
+document.addEventListener('keydown',e=>{
+  if(e.key==='Escape'){ closeEdit(); closeAnalysis(); }
+  if((e.ctrlKey||e.metaKey)&&e.key==='Enter'){
+    if(document.getElementById('editOverlay').classList.contains('open')) saveFromEdit();
+  }
+});
+document.getElementById('editOverlay').addEventListener('click',function(e){ if(e.target===this)closeEdit(); });
+document.getElementById('analysisOverlay').addEventListener('click',function(e){ if(e.target===this)closeAnalysis(); });
+
+// ── Init ──────────────────────────────────────────────────────────────────────
+(async()=>{
+  models=await serverLoad();
+  initAddForm();
+  renderCards();
+})();
+</script>
+</body>
+</html>

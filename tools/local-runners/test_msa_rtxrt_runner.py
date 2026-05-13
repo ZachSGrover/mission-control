@@ -1,9 +1,12 @@
-"""Tests for the MSA RT/X local Claw runner safety gate + command builder."""
+"""Tests for the MSA RT/X local Claw runner safety gate + command builder + poll loop."""
 
 from __future__ import annotations
 
+import subprocess
 import sys
 from pathlib import Path
+from typing import Any
+from unittest.mock import MagicMock
 
 import pytest
 
@@ -14,9 +17,14 @@ from msa_rtxrt_runner import (  # noqa: E402
     ALL_KINDS,
     DRY_RUN_KINDS,
     LIVE_ONE_KINDS,
+    RunnerConfig,
     build_command,
     evaluate_live_one_gate,
+    execute_job,
     is_mass_live_kind,
+    patch_job_status,
+    poll_for_job,
+    poll_once,
     resolve_bot_dir,
 )
 
@@ -148,3 +156,256 @@ def test_all_kinds_split_into_dry_run_and_live_one_with_no_extras() -> None:
     # No accidental "live-all" / "live-mass" / "live-batch" kinds.
     for kind in ALL_KINDS:
         assert not is_mass_live_kind(kind)
+
+
+# ── RunnerConfig.from_env ───────────────────────────────────────────────────
+
+
+def _base_env() -> dict[str, str]:
+    return {
+        "MSA_RTXRT_BACKEND_URL": "http://mc.test",
+        "MSA_RTXRT_RUNNER_TOKEN": "tok-xyz",
+        "MSA_RTXRT_RUNNER_ID": "claw-test",
+        "MSA_RTXRT_BOT_DIR": "/tmp/luis-bot",
+    }
+
+
+def test_runner_config_reads_env() -> None:
+    cfg = RunnerConfig.from_env(_base_env())
+    assert cfg.base_url == "http://mc.test"
+    assert cfg.runner_token == "tok-xyz"
+    assert cfg.runner_id == "claw-test"
+    assert str(cfg.bot_dir).endswith("luis-bot")
+
+
+def test_runner_config_strips_trailing_slash_from_base_url() -> None:
+    env = _base_env() | {"MSA_RTXRT_BACKEND_URL": "http://mc.test/"}
+    cfg = RunnerConfig.from_env(env)
+    assert cfg.base_url == "http://mc.test"
+
+
+def test_runner_config_clamps_poll_interval_floor() -> None:
+    env = _base_env() | {"MSA_RTXRT_POLL_INTERVAL_SECONDS": "0.1"}
+    cfg = RunnerConfig.from_env(env)
+    assert cfg.poll_interval_seconds >= 1.0
+
+
+def test_runner_config_defaults_runner_id_when_blank() -> None:
+    env = _base_env() | {"MSA_RTXRT_RUNNER_ID": ""}
+    cfg = RunnerConfig.from_env(env)
+    assert cfg.runner_id == "claw-1"
+
+
+# ── poll_for_job ────────────────────────────────────────────────────────────
+
+
+def test_poll_for_job_returns_none_when_backend_unset() -> None:
+    cfg = RunnerConfig.from_env({"MSA_RTXRT_BACKEND_URL": ""})
+    assert poll_for_job(cfg) is None
+
+
+def test_poll_for_job_returns_the_job_dict_from_backend() -> None:
+    cfg = RunnerConfig.from_env(_base_env())
+    http = MagicMock(return_value=(200, {"job": {"id": "j-1", "kind": "smoke"}}))
+    job = poll_for_job(cfg, http=http)
+    assert job == {"id": "j-1", "kind": "smoke"}
+    # The request must include the runner-token header (verified by inspecting
+    # the call kwargs).
+    assert http.call_args.kwargs["token"] == "tok-xyz"
+    assert "runner_id=claw-test" in http.call_args.kwargs["url"]
+
+
+def test_poll_for_job_returns_none_when_queue_empty() -> None:
+    cfg = RunnerConfig.from_env(_base_env())
+    http = MagicMock(return_value=(200, {"job": None}))
+    assert poll_for_job(cfg, http=http) is None
+
+
+def test_poll_for_job_returns_none_on_non_200() -> None:
+    cfg = RunnerConfig.from_env(_base_env())
+    http = MagicMock(return_value=(401, {"detail": "nope"}))
+    assert poll_for_job(cfg, http=http) is None
+
+
+# ── patch_job_status ────────────────────────────────────────────────────────
+
+
+def test_patch_job_status_sends_status_and_runner_id() -> None:
+    cfg = RunnerConfig.from_env(_base_env())
+    http = MagicMock(return_value=(200, {"id": "j-1", "status": "succeeded"}))
+    ok = patch_job_status(
+        cfg, job_id="j-1", status_value="succeeded", summary="hello", http=http
+    )
+    assert ok is True
+    assert http.call_args.kwargs["method"] == "PATCH"
+    body = http.call_args.kwargs["body"]
+    assert body["status"] == "succeeded"
+    assert body["runner_id"] == "claw-test"
+    assert body["summary"] == "hello"
+
+
+def test_patch_job_status_returns_false_on_non_200() -> None:
+    cfg = RunnerConfig.from_env(_base_env())
+    http = MagicMock(return_value=(400, {"detail": "illegal transition"}))
+    assert (
+        patch_job_status(cfg, job_id="j-1", status_value="succeeded", http=http)
+        is False
+    )
+
+
+# ── execute_job (mass-live / unknown / safety gate paths) ───────────────────
+
+
+def test_execute_job_blocks_unknown_kind() -> None:
+    cfg = RunnerConfig.from_env(_base_env())
+    http = MagicMock(return_value=(200, None))
+    result = execute_job(cfg, {"id": "j-1", "kind": "does_not_exist"}, http=http)
+    assert result == "blocked"
+    body = http.call_args.kwargs["body"]
+    assert body["status"] == "blocked"
+
+
+def test_execute_job_blocks_mass_live_kind() -> None:
+    cfg = RunnerConfig.from_env(_base_env())
+    http = MagicMock(return_value=(200, None))
+    result = execute_job(cfg, {"id": "j-1", "kind": "live_all_blast"}, http=http)
+    assert result == "blocked"
+    body = http.call_args.kwargs["body"]
+    assert body["status"] == "blocked"
+    assert "mass live" in (body.get("summary") or "")
+
+
+def test_execute_job_blocks_live_one_without_safety_env() -> None:
+    """Live-one kinds reach build_command, which checks the runner's local
+    env. With nothing set, the safety gate denies → blocked."""
+    cfg = RunnerConfig.from_env(_base_env())
+    http = MagicMock(return_value=(200, None))
+    result = execute_job(cfg, {"id": "j-2", "kind": "live_one_blast"}, http=http)
+    assert result == "blocked"
+
+
+# ── execute_job (success / failure paths via injected runner) ───────────────
+
+
+def _ok(stdout: str = "done", stderr: str = "") -> Any:
+    return subprocess.CompletedProcess(args=["x"], returncode=0, stdout=stdout, stderr=stderr)
+
+
+def _fail(returncode: int, stdout: str = "", stderr: str = "boom") -> Any:
+    return subprocess.CompletedProcess(
+        args=["x"], returncode=returncode, stdout=stdout, stderr=stderr
+    )
+
+
+def test_execute_job_succeeded_path_patches_with_stdout_excerpt() -> None:
+    cfg = RunnerConfig.from_env(_base_env())
+    http = MagicMock(return_value=(200, None))
+    fake_runner = MagicMock(return_value=_ok(stdout="200 candidates processed"))
+    result = execute_job(
+        cfg,
+        {"id": "j-3", "kind": "smoke"},
+        http=http,
+        runner=fake_runner,
+    )
+    assert result == "succeeded"
+    body = http.call_args.kwargs["body"]
+    assert body["status"] == "succeeded"
+    assert body["stdout_excerpt"] == "200 candidates processed"
+    assert "smoke ok" in (body.get("summary") or "")
+
+
+def test_execute_job_failed_path_patches_with_error_excerpt() -> None:
+    cfg = RunnerConfig.from_env(_base_env())
+    http = MagicMock(return_value=(200, None))
+    fake_runner = MagicMock(return_value=_fail(returncode=2, stderr="script crashed"))
+    result = execute_job(
+        cfg,
+        {"id": "j-4", "kind": "dry_run_blast"},
+        http=http,
+        runner=fake_runner,
+    )
+    assert result == "failed"
+    body = http.call_args.kwargs["body"]
+    assert body["status"] == "failed"
+    assert body["error_excerpt"] == "script crashed"
+
+
+def test_execute_job_handles_runner_exception_as_failed() -> None:
+    cfg = RunnerConfig.from_env(_base_env())
+    http = MagicMock(return_value=(200, None))
+
+    def explode(*_args: Any, **_kwargs: Any) -> Any:
+        raise OSError("boom")
+
+    result = execute_job(
+        cfg,
+        {"id": "j-5", "kind": "dry_run_dm"},
+        http=http,
+        runner=explode,
+    )
+    assert result == "failed"
+    body = http.call_args.kwargs["body"]
+    assert body["status"] == "failed"
+    assert "runner crashed" in (body.get("summary") or "")
+
+
+def test_execute_job_truncates_long_stdout_to_excerpt_cap() -> None:
+    cfg = RunnerConfig.from_env(_base_env())
+    http = MagicMock(return_value=(200, None))
+    huge = "X" * 5000
+    fake_runner = MagicMock(return_value=_ok(stdout=huge))
+    execute_job(
+        cfg,
+        {"id": "j-6", "kind": "smoke"},
+        http=http,
+        runner=fake_runner,
+    )
+    body = http.call_args.kwargs["body"]
+    assert body["stdout_excerpt"] is not None
+    assert len(body["stdout_excerpt"]) <= 2000  # 1900 cap + 1 ellipsis ≪ 2000
+    assert body["stdout_excerpt"].endswith("…")
+
+
+# ── poll_once (full cycle) ──────────────────────────────────────────────────
+
+
+def test_poll_once_returns_none_when_queue_empty() -> None:
+    cfg = RunnerConfig.from_env(_base_env())
+    http = MagicMock(return_value=(200, {"job": None}))
+    assert poll_once(cfg, http=http) is None
+
+
+def test_poll_once_runs_and_reports_succeeded() -> None:
+    cfg = RunnerConfig.from_env(_base_env())
+
+    # First HTTP call (poll) returns a job; second (patch) returns 200.
+    http = MagicMock()
+    http.side_effect = [
+        (200, {"job": {"id": "j-7", "kind": "smoke"}}),
+        (200, None),
+    ]
+    fake_runner = MagicMock(return_value=_ok(stdout="ok"))
+    result = poll_once(cfg, http=http, runner=fake_runner)
+    assert result == "succeeded"
+    assert http.call_count == 2
+
+
+# ── Defensive: runner-token never leaks into anything we patch back ─────────
+
+
+def test_runner_token_never_appears_in_patched_body() -> None:
+    cfg = RunnerConfig.from_env(_base_env())
+    captured: list[dict[str, Any]] = []
+
+    def capture(*, method: str, url: str, token: str, body: Any = None, **_: Any) -> tuple[int, Any]:
+        _ = method
+        _ = url
+        _ = token
+        if body is not None:
+            captured.append(body)
+        return 200, None
+
+    fake_runner = MagicMock(return_value=_ok(stdout="ok"))
+    execute_job(cfg, {"id": "j-8", "kind": "smoke"}, http=capture, runner=fake_runner)
+    for body in captured:
+        assert "tok-xyz" not in str(body)

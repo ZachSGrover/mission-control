@@ -145,6 +145,12 @@ class Settings(BaseSettings):
     # regardless of DB state.  Leave blank to use auto-seed (first caller) logic.
     owner_user_id: str = ""
 
+    # Shared-secret token for the MSA RT/X local runner. The Claw computer
+    # sends this in the ``X-MSA-RTXRT-Runner-Token`` header when it polls
+    # /msa-rtxrt/runner/poll or PATCHes a job. Leave blank to disable the
+    # runner endpoints entirely (poll + patch will both 503). Never logged.
+    msa_rtxrt_runner_token: str = ""
+
     # Logging
     log_level: str = "INFO"
     log_format: str = "text"

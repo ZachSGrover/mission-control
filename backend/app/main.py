@@ -43,6 +43,7 @@ from app.api.mc_allowed_users import router as mc_allowed_users_router
 from app.api.mc_roles import router as mc_roles_router
 from app.api.messaging import router as messaging_router
 from app.api.metrics import router as metrics_router
+from app.api.msa_rtxrt import router as msa_rtxrt_router
 from app.api.of_intelligence import router as of_intelligence_router
 from app.api.of_qc_discord import router as of_qc_discord_router
 from app.api.of_qc_scheduler import router as of_qc_scheduler_router
@@ -748,6 +749,7 @@ api_v1.include_router(of_qc_scheduler_router)
 api_v1.include_router(bots_router)
 api_v1.include_router(bot_drafts_router)
 api_v1.include_router(build_requests_router)
+api_v1.include_router(msa_rtxrt_router)
 app.include_router(api_v1)
 
 add_pagination(app)

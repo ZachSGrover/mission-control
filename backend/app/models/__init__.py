@@ -21,6 +21,7 @@ from app.models.connector_approvals import ConnectorApproval
 from app.models.creator_credentials import CreatorCredential
 from app.models.gateways import Gateway
 from app.models.kill_switches import KillSwitch
+from app.models.msa_rtxrt_job import MsaRtxrtJob
 from app.models.of_intelligence import (
     BusinessMemoryEntry,
     OfIntelligenceAccount,
@@ -100,6 +101,7 @@ __all__ = [
     "OfIntelligenceQcFinding",
     "OfQcDiscordStatus",
     "OfQcSchedulerJob",
+    "MsaRtxrtJob",
     "BoardTaskCustomField",
     "TaskCustomFieldDefinition",
     "TaskCustomFieldValue",

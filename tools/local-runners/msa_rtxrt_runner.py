@@ -24,29 +24,34 @@ Safety contract (hard-coded in this file — must not be bypassed):
     live in the Claw computer's local environment and never reach
     the frontend.
 
+The poll loop talks to Mission Control over HTTP:
+  - ``GET  {base}/api/v1/msa-rtxrt/runner/poll``  to claim work
+  - ``PATCH {base}/api/v1/msa-rtxrt/jobs/{id}``    to report status
+
+Auth: the runner sends ``X-MSA-RTXRT-Runner-Token`` matching the value
+the operator stored on the Claw computer in ``MSA_RTXRT_RUNNER_TOKEN``.
+The same token must be configured on the backend. The token is
+NEVER stored in the DB and never appears in any response.
+
 This module is import-safe (no side effects at import time) so the
-tests next door can call into the safety-gate function directly.
-
-The actual Luis bot code is on the ``coo/import-luis-msa`` branch at
-``incoming/luis-msa-import/MSA/Monthly revenue/Automation [RTxRT]``.
-This runner does not copy that code anywhere. It expects the Claw
-operator to have that branch checked out locally and pointed at via
-``MSA_RTXRT_BOT_DIR``.
-
-This PR ships the runner wrapper and the local-command contract.
-The backend job-queue endpoint that lets the runner actually pull
-work is a deliberate follow-up — see the README in this folder.
+tests next door can call into helpers directly. We use ``urllib`` from
+the stdlib so the runner has zero pip deps beyond Python itself.
 """
 
 from __future__ import annotations
 
+import json
 import os
 import shlex
 import subprocess  # noqa: S404 - intentional; called via list args, no shell.
 import sys
+import time
+import urllib.error
+import urllib.parse
+import urllib.request
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Final
+from typing import Any, Final
 
 # ── Job-kind contract ───────────────────────────────────────────────────────
 
@@ -202,32 +207,254 @@ def resolve_bot_dir(env: dict[str, str] | None = None) -> Path:
     ).resolve()
 
 
-# ── Local poll loop (stub until the backend bridge ships) ──────────────────
+# ── HTTP helpers (stdlib only — runner has zero pip deps) ──────────────────
 
 
-def main() -> int:
-    """Stub entrypoint.
+@dataclass(frozen=True)
+class RunnerConfig:
+    """Resolved runner config. Each field reads from ``env`` at construction."""
 
-    The backend bridge that lets the runner pull queued jobs from Mission
-    Control is not in this PR. Running this script today prints the
-    configuration the runner would use and exits 0 so the operator can
-    sanity-check env setup without sending anything anywhere.
+    base_url: str
+    runner_token: str
+    runner_id: str
+    bot_dir: Path
+    poll_interval_seconds: float
+
+    @classmethod
+    def from_env(cls, env: dict[str, str] | None = None) -> "RunnerConfig":
+        env = env if env is not None else dict(os.environ)
+        base = env.get("MSA_RTXRT_BACKEND_URL", "").strip().rstrip("/")
+        token = env.get("MSA_RTXRT_RUNNER_TOKEN", "").strip()
+        runner_id = env.get("MSA_RTXRT_RUNNER_ID", "claw-1").strip() or "claw-1"
+        bot_dir = resolve_bot_dir(env)
+        try:
+            interval = float(env.get("MSA_RTXRT_POLL_INTERVAL_SECONDS", "5") or "5")
+        except ValueError:
+            interval = 5.0
+        return cls(
+            base_url=base,
+            runner_token=token,
+            runner_id=runner_id,
+            bot_dir=bot_dir,
+            poll_interval_seconds=max(1.0, interval),
+        )
+
+
+def _http_request(
+    *,
+    method: str,
+    url: str,
+    token: str,
+    body: dict[str, Any] | None = None,
+    timeout: float = 30.0,
+) -> tuple[int, dict[str, Any] | None]:
+    """Minimal stdlib HTTP wrapper.
+
+    Returns ``(status_code, parsed_body)``. ``parsed_body`` is ``None``
+    when the body is empty or not JSON. The runner-auth token is sent in
+    the header. We never log the URL with a token in it.
     """
-    bot_dir = resolve_bot_dir()
-    env_snapshot = {
-        "MSA_RTXRT_BOT_DIR": str(bot_dir),
-        "ALLOW_LIVE_EXTERNAL_ACTIONS": os.environ.get(
-            "ALLOW_LIVE_EXTERNAL_ACTIONS",
-            "<unset>",
-        ),
-        "CONFIRM_LIVE_TEST": os.environ.get("CONFIRM_LIVE_TEST", "<unset>"),
-        "MAX_TEST_ACTIONS": os.environ.get("MAX_TEST_ACTIONS", "<unset>"),
-        "DRY_RUN": os.environ.get("DRY_RUN", "<unset>"),
+    data: bytes | None = None
+    headers = {
+        "X-MSA-RTXRT-Runner-Token": token,
+        "Accept": "application/json",
+        "User-Agent": "msa-rtxrt-runner/1",
     }
+    if body is not None:
+        data = json.dumps(body).encode("utf-8")
+        headers["Content-Type"] = "application/json"
+    req = urllib.request.Request(url, data=data, method=method, headers=headers)
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as resp:  # noqa: S310 - controlled URL.
+            raw = resp.read()
+            try:
+                parsed = json.loads(raw.decode("utf-8")) if raw else None
+            except (json.JSONDecodeError, UnicodeDecodeError):
+                parsed = None
+            return resp.status, parsed
+    except urllib.error.HTTPError as exc:
+        try:
+            parsed = json.loads(exc.read().decode("utf-8"))
+        except (json.JSONDecodeError, UnicodeDecodeError, AttributeError):
+            parsed = None
+        return exc.code, parsed
+
+
+def poll_for_job(
+    cfg: RunnerConfig,
+    *,
+    http: Any = None,
+) -> dict[str, Any] | None:
+    """Call ``GET /runner/poll`` and return the claimed job dict, or None.
+
+    ``http`` defaults to :func:`_http_request` and is parameterized so
+    tests can inject a stub without touching the network.
+    """
+    if not cfg.base_url or not cfg.runner_token:
+        return None
+    http = http if http is not None else _http_request
+    query = urllib.parse.urlencode({"runner_id": cfg.runner_id})
+    url = f"{cfg.base_url}/api/v1/msa-rtxrt/runner/poll?{query}"
+    status, body = http(method="GET", url=url, token=cfg.runner_token)
+    if status != 200 or not isinstance(body, dict):
+        return None
+    job = body.get("job")
+    return job if isinstance(job, dict) else None
+
+
+def patch_job_status(
+    cfg: RunnerConfig,
+    *,
+    job_id: str,
+    status_value: str,
+    summary: str | None = None,
+    stdout_excerpt: str | None = None,
+    error_excerpt: str | None = None,
+    http: Any = None,
+) -> bool:
+    """PATCH a job with a new status. Returns True on success."""
+    http = http if http is not None else _http_request
+    payload: dict[str, Any] = {"status": status_value, "runner_id": cfg.runner_id}
+    if summary is not None:
+        payload["summary"] = summary
+    if stdout_excerpt is not None:
+        payload["stdout_excerpt"] = stdout_excerpt
+    if error_excerpt is not None:
+        payload["error_excerpt"] = error_excerpt
+    url = f"{cfg.base_url}/api/v1/msa-rtxrt/jobs/{job_id}"
+    status, _body = http(
+        method="PATCH",
+        url=url,
+        token=cfg.runner_token,
+        body=payload,
+    )
+    return status == 200
+
+
+# Privacy caps on excerpts we send back. The backend re-caps too.
+MAX_SUMMARY_LEN: Final[int] = 240
+MAX_EXCERPT_LEN: Final[int] = 1900
+
+
+def _excerpt(text: str | None, *, cap: int) -> str | None:
+    if text is None:
+        return None
+    text = text.strip()
+    if not text:
+        return None
+    if len(text) <= cap:
+        return text
+    return text[:cap] + "…"
+
+
+def execute_job(
+    cfg: RunnerConfig,
+    job: dict[str, Any],
+    *,
+    http: Any = None,
+    runner: Any = None,
+) -> str:
+    """Run one queued job to completion and PATCH the result back.
+
+    ``runner`` defaults to :func:`run_job` and is parameterized so tests
+    can inject a stub that doesn't actually spawn a subprocess.
+    Returns the final status string (``succeeded``/``failed``/``blocked``).
+    """
+    runner = runner if runner is not None else run_job
+    job_id = str(job.get("id", "")).strip()
+    kind = str(job.get("kind", "")).strip()
+    if not job_id or not kind:
+        return "blocked"
+
+    # If the runner can't even build the command (gate / unknown / mass
+    # live), report `blocked` immediately with a privacy-safe reason.
+    try:
+        _ = build_command(kind, cfg.bot_dir)
+    except ValueError as exc:
+        patch_job_status(
+            cfg,
+            job_id=job_id,
+            status_value="blocked",
+            summary=_excerpt(str(exc), cap=MAX_SUMMARY_LEN),
+            http=http,
+        )
+        return "blocked"
+
+    try:
+        result = runner(kind, bot_dir=cfg.bot_dir)
+    except Exception as exc:  # noqa: BLE001 — surface any failure as `failed`.
+        patch_job_status(
+            cfg,
+            job_id=job_id,
+            status_value="failed",
+            summary=_excerpt(f"runner crashed: {exc!r}", cap=MAX_SUMMARY_LEN),
+            error_excerpt=_excerpt(str(exc), cap=MAX_EXCERPT_LEN),
+            http=http,
+        )
+        return "failed"
+
+    if result.returncode == 0:
+        patch_job_status(
+            cfg,
+            job_id=job_id,
+            status_value="succeeded",
+            summary=_excerpt(f"{kind} ok", cap=MAX_SUMMARY_LEN),
+            stdout_excerpt=_excerpt(result.stdout, cap=MAX_EXCERPT_LEN),
+            http=http,
+        )
+        return "succeeded"
+
+    patch_job_status(
+        cfg,
+        job_id=job_id,
+        status_value="failed",
+        summary=_excerpt(
+            f"{kind} exited {result.returncode}", cap=MAX_SUMMARY_LEN
+        ),
+        stdout_excerpt=_excerpt(result.stdout, cap=MAX_EXCERPT_LEN),
+        error_excerpt=_excerpt(result.stderr, cap=MAX_EXCERPT_LEN),
+        http=http,
+    )
+    return "failed"
+
+
+def poll_once(cfg: RunnerConfig, *, http: Any = None, runner: Any = None) -> str | None:
+    """One poll → run → patch round trip.
+
+    Returns the final status string, or ``None`` if no job was available
+    (or if backend connection failed).
+    """
+    job = poll_for_job(cfg, http=http)
+    if job is None:
+        return None
+    return execute_job(cfg, job, http=http, runner=runner)
+
+
+# ── Entrypoint ─────────────────────────────────────────────────────────────
+
+
+def main(argv: list[str] | None = None) -> int:
+    """CLI entrypoint.
+
+    Default behavior is "print config and exit 0" so the operator can
+    sanity-check env without hitting the network. Pass ``--poll`` to
+    run the live poll loop.
+    """
+    argv = argv if argv is not None else sys.argv[1:]
+    cfg = RunnerConfig.from_env()
+
+    if argv and argv[0] == "--poll":
+        return _run_poll_loop(cfg)
+
     print("MSA RT/X Local Runner — configuration check")  # noqa: T201
     print("--------------------------------------------")  # noqa: T201
-    for key, value in env_snapshot.items():
-        print(f"  {key}: {value}")  # noqa: T201
+    print(f"  MSA_RTXRT_BOT_DIR:                  {cfg.bot_dir}")  # noqa: T201
+    print(f"  MSA_RTXRT_BACKEND_URL:              {cfg.base_url or '<unset>'}")  # noqa: T201
+    print(f"  MSA_RTXRT_RUNNER_TOKEN:             {'<set>' if cfg.runner_token else '<unset>'}")  # noqa: T201
+    print(f"  MSA_RTXRT_RUNNER_ID:                {cfg.runner_id}")  # noqa: T201
+    print(f"  MSA_RTXRT_POLL_INTERVAL_SECONDS:    {cfg.poll_interval_seconds}")  # noqa: T201
+    for key in ("ALLOW_LIVE_EXTERNAL_ACTIONS", "CONFIRM_LIVE_TEST", "MAX_TEST_ACTIONS", "DRY_RUN"):
+        print(f"  {key}: {os.environ.get(key, '<unset>')}")  # noqa: T201
     print()  # noqa: T201
     print("Supported job kinds (dry-run):")  # noqa: T201
     for kind in DRY_RUN_KINDS:
@@ -239,9 +466,30 @@ def main() -> int:
         script, args = _LIVE_ONE_COMMANDS[kind]
         print(f"  {kind}: {script} {shlex.join(args)}")  # noqa: T201
     print()  # noqa: T201
-    print("Backend bridge: NOT CONNECTED YET (see README in this folder).")  # noqa: T201
+    print("Run with --poll to start the live poll loop.")  # noqa: T201
     print("Mass live runs: BLOCKED by design.")  # noqa: T201
     return 0
+
+
+def _run_poll_loop(cfg: RunnerConfig) -> int:  # pragma: no cover - exercised manually
+    if not cfg.base_url:
+        print("MSA_RTXRT_BACKEND_URL is required to --poll", file=sys.stderr)  # noqa: T201
+        return 2
+    if not cfg.runner_token:
+        print("MSA_RTXRT_RUNNER_TOKEN is required to --poll", file=sys.stderr)  # noqa: T201
+        return 2
+    print(  # noqa: T201
+        f"Polling {cfg.base_url}/api/v1/msa-rtxrt/runner/poll every "
+        f"{cfg.poll_interval_seconds}s as {cfg.runner_id}…"
+    )
+    while True:
+        try:
+            result = poll_once(cfg)
+            if result is not None:
+                print(f"  job → {result}")  # noqa: T201
+        except Exception as exc:  # noqa: BLE001 - never let one bad iteration kill the loop
+            print(f"  poll error: {exc!r}", file=sys.stderr)  # noqa: T201
+        time.sleep(cfg.poll_interval_seconds)
 
 
 # Provide a wired-up ``run_job`` for tests + future backend wiring. Lives

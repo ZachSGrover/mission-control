@@ -13,12 +13,12 @@ import {
   rowsToJobs,
   type BackendJobRow,
 } from "@/components/bots/MsaRtxrtClient";
-import {
-  MsaRtxrtControlPanel,
-  type JobKind,
-  type MsaRtxrtJob,
-  type RunnerStatus,
+import type {
+  JobKind,
+  MsaRtxrtJob,
+  RunnerStatus,
 } from "@/components/bots/MsaRtxrtControlPanel";
+import { MsaRtxrtDashboard } from "@/components/bots/MsaRtxrtDashboard";
 import { DashboardSidebar } from "@/components/organisms/DashboardSidebar";
 import { DashboardShell } from "@/components/templates/DashboardShell";
 import { useAuthFetch } from "@/hooks/use-auth-fetch";
@@ -98,20 +98,13 @@ function MsaRtxrtPageContent() {
   );
 
   return (
-    <main
-      className="flex-1 overflow-y-auto"
-      style={{ background: "var(--bg)" }}
-    >
-      <div className="mx-auto max-w-3xl px-6 py-10">
-        <MsaRtxrtControlPanel
-          runnerStatus={runnerStatus}
-          recentJobs={recentJobs}
-          isOwner={isOwner}
-          onSubmitJob={handleSubmitJob}
-          onRefresh={refresh}
-        />
-      </div>
-    </main>
+    <MsaRtxrtDashboard
+      runnerStatus={runnerStatus}
+      recentJobs={recentJobs}
+      isOwner={isOwner}
+      onSubmitJob={handleSubmitJob}
+      onRefresh={refresh}
+    />
   );
 }
 

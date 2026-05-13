@@ -202,7 +202,11 @@ async def list_jobs(
     """List recent MSA RT/X jobs. Operator or higher only."""
     _ = auth
     _ = role
-    stmt = select(MsaRtxrtJob).order_by(MsaRtxrtJob.created_at.desc()).limit(limit)
+    stmt = (
+        select(MsaRtxrtJob)
+        .order_by(MsaRtxrtJob.created_at.desc())  # type: ignore[attr-defined]
+        .limit(limit)
+    )
     if status_filter:
         if status_filter not in VALID_STATUSES:
             raise HTTPException(
@@ -212,7 +216,7 @@ async def list_jobs(
         stmt = (
             select(MsaRtxrtJob)
             .where(MsaRtxrtJob.status == status_filter)
-            .order_by(MsaRtxrtJob.created_at.desc())
+            .order_by(MsaRtxrtJob.created_at.desc())  # type: ignore[attr-defined]
             .limit(limit)
         )
     result = await session.exec(stmt)
@@ -352,7 +356,7 @@ async def runner_poll(
     stmt = (
         select(MsaRtxrtJob)
         .where(MsaRtxrtJob.status == STATUS_QUEUED)
-        .order_by(MsaRtxrtJob.created_at.asc())
+        .order_by(MsaRtxrtJob.created_at.asc())  # type: ignore[attr-defined]
         .limit(1)
     )
     result = await session.exec(stmt)

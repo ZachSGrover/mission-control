@@ -22,6 +22,7 @@ Privacy contract:
 from __future__ import annotations
 
 from datetime import datetime
+from typing import Any
 from uuid import UUID, uuid4
 
 from sqlalchemy import JSON, Column, Index
@@ -142,7 +143,7 @@ class MsaRtxrtJob(SQLModel, table=True):
 
     # Free-form structured metadata (always a dict). Reserved for future
     # use; the API today writes an empty object on insert.
-    metadata_json: dict = Field(
+    metadata_json: dict[str, Any] = Field(
         default_factory=dict,
         sa_column=Column("metadata_json", JSON, nullable=False, default=dict),
     )

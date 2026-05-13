@@ -32,7 +32,6 @@ from app.models.msa_rtxrt_job import (
     STATUS_QUEUED,
     STATUS_RUNNING,
     STATUS_SUCCEEDED,
-    MsaRtxrtJob,
 )
 
 RUNNER_TOKEN = "test-runner-token-msa-rtxrt"

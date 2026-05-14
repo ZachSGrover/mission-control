@@ -33,6 +33,7 @@ from app.models.msa_rtxrt_job import (
     STATUS_RUNNING,
     STATUS_SUCCEEDED,
 )
+from app.models.msa_rtxrt_runner_heartbeat import MsaRtxrtRunnerHeartbeat
 
 RUNNER_TOKEN = "test-runner-token-msa-rtxrt"
 
@@ -486,3 +487,118 @@ def test_service_validate_transition_blocks_terminal() -> None:
 
     with pytest.raises(IllegalTransitionError):
         validate_transition(STATUS_SUCCEEDED, STATUS_RUNNING)
+
+
+# ── Heartbeat / runner-status ───────────────────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_runner_poll_writes_heartbeat_on_empty_queue() -> None:
+    """An idle poll (empty queue) still upserts a heartbeat row."""
+    async with _make_client(role="owner") as (client, maker):
+        res = await client.get(
+            "/api/v1/msa-rtxrt/runner/poll?runner_id=claw-1",
+            headers={"X-MSA-RTXRT-Runner-Token": RUNNER_TOKEN},
+        )
+        assert res.status_code == 200
+        assert res.json() == {"job": None}
+        async with maker() as session:
+            rows = (await session.exec(select(MsaRtxrtRunnerHeartbeat))).all()
+        assert len(rows) == 1
+        assert rows[0].runner_id == "claw-1"
+        assert rows[0].last_status == "idle"
+
+
+@pytest.mark.asyncio
+async def test_runner_poll_writes_busy_heartbeat_when_claiming_job() -> None:
+    async with _make_client(role="owner") as (client, maker):
+        # Enqueue something for the runner to claim.
+        await client.post("/api/v1/msa-rtxrt/jobs", json={"kind": "smoke"})
+        res = await client.get(
+            "/api/v1/msa-rtxrt/runner/poll?runner_id=claw-1",
+            headers={"X-MSA-RTXRT-Runner-Token": RUNNER_TOKEN},
+        )
+        assert res.status_code == 200
+        assert res.json()["job"]["kind"] == "smoke"
+        async with maker() as session:
+            rows = (await session.exec(select(MsaRtxrtRunnerHeartbeat))).all()
+        assert rows[0].last_status == "busy"
+
+
+@pytest.mark.asyncio
+async def test_invalid_token_does_not_write_heartbeat() -> None:
+    """Wrong runner token must not produce any heartbeat row."""
+    async with _make_client(role="owner") as (client, maker):
+        res = await client.get(
+            "/api/v1/msa-rtxrt/runner/poll?runner_id=intruder",
+            headers={"X-MSA-RTXRT-Runner-Token": "definitely-wrong"},
+        )
+        assert res.status_code == 401
+        async with maker() as session:
+            rows = (await session.exec(select(MsaRtxrtRunnerHeartbeat))).all()
+        assert rows == []
+
+
+@pytest.mark.asyncio
+async def test_runner_poll_without_runner_id_does_not_crash_or_write() -> None:
+    async with _make_client(role="owner") as (client, maker):
+        res = await client.get(
+            "/api/v1/msa-rtxrt/runner/poll",
+            headers={"X-MSA-RTXRT-Runner-Token": RUNNER_TOKEN},
+        )
+        assert res.status_code == 200
+        async with maker() as session:
+            rows = (await session.exec(select(MsaRtxrtRunnerHeartbeat))).all()
+        assert rows == []  # No id → no row written
+
+
+@pytest.mark.asyncio
+async def test_runner_status_endpoint_operator_can_read() -> None:
+    """Operator+ can read /runner/status; structure is privacy-safe."""
+    async with _make_client(role="operator") as (client, _maker):
+        # Seed a heartbeat by polling once (operator token isn't valid for
+        # poll — use the runner token).
+        await client.get(
+            "/api/v1/msa-rtxrt/runner/poll?runner_id=claw-1",
+            headers={"X-MSA-RTXRT-Runner-Token": RUNNER_TOKEN},
+        )
+        res = await client.get("/api/v1/msa-rtxrt/runner/status")
+        assert res.status_code == 200
+        body = res.json()
+        assert body["any_online"] is True
+        assert body["freshness_seconds"] == 90
+        assert len(body["runners"]) == 1
+        runner = body["runners"][0]
+        assert runner["runner_id"] == "claw-1"
+        assert runner["status"] == "online"
+        assert runner["last_status"] == "idle"
+        assert runner["seconds_since_seen"] <= 90
+
+
+@pytest.mark.asyncio
+async def test_runner_status_endpoint_viewer_blocked() -> None:
+    async with _make_client(role="viewer") as (client, _maker):
+        res = await client.get("/api/v1/msa-rtxrt/runner/status")
+        assert res.status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_runner_status_returns_empty_when_no_runners_ever_polled() -> None:
+    async with _make_client(role="operator") as (client, _maker):
+        res = await client.get("/api/v1/msa-rtxrt/runner/status")
+        assert res.status_code == 200
+        body = res.json()
+        assert body["runners"] == []
+        assert body["any_online"] is False
+
+
+@pytest.mark.asyncio
+async def test_runner_status_does_not_leak_runner_token() -> None:
+    """Sanity: the runner-token value never appears in /runner/status output."""
+    async with _make_client(role="operator") as (client, _maker):
+        await client.get(
+            "/api/v1/msa-rtxrt/runner/poll?runner_id=claw-1",
+            headers={"X-MSA-RTXRT-Runner-Token": RUNNER_TOKEN},
+        )
+        res = await client.get("/api/v1/msa-rtxrt/runner/status")
+        assert RUNNER_TOKEN not in res.text

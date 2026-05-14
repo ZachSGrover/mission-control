@@ -125,18 +125,78 @@ describe("rowsToJobs", () => {
   });
 });
 
-// ── deriveRunnerStatus ─────────────────────────────────────────────────────
+// ── deriveRunnerStatus (with heartbeat — preferred path) ───────────────────
 
 const NOW = new Date("2026-05-12T12:00:00Z");
 
-describe("deriveRunnerStatus", () => {
+function hb(any_online: boolean): import("./MsaRtxrtClient").BackendRunnerStatus {
+  return {
+    runners: [
+      {
+        runner_id: "claw-1",
+        last_seen_at: NOW.toISOString(),
+        seconds_since_seen: any_online ? 3 : 999,
+        status: any_online ? "online" : "offline",
+        last_status: "idle",
+      },
+    ],
+    any_online,
+    freshness_seconds: 90,
+  };
+}
+
+describe("deriveRunnerStatus (heartbeat-aware)", () => {
+  it("returns idle when heartbeat says online and no job is running", () => {
+    expect(deriveRunnerStatus([], hb(true), NOW)).toBe("idle");
+  });
+
+  it("returns idle even when there are ZERO jobs ever — chicken-and-egg fix", () => {
+    // The original bug: empty queue → button disabled forever.
+    expect(deriveRunnerStatus([], hb(true), NOW)).toBe("idle");
+  });
+
+  it("returns busy when heartbeat is online AND a job is currently running", () => {
+    expect(
+      deriveRunnerStatus(
+        [makeRow({ status: "running", started_at: "2026-05-12T11:59:00Z" })],
+        hb(true),
+        NOW,
+      ),
+    ).toBe("busy");
+  });
+
+  it("returns offline when heartbeat says no runner is online", () => {
+    expect(deriveRunnerStatus([], hb(false), NOW)).toBe("offline");
+  });
+
+  it("trusts heartbeat over recent terminal jobs (online → idle even with no recent job)", () => {
+    expect(deriveRunnerStatus([], hb(true), NOW)).toBe("idle");
+  });
+
+  it("falls back to job-derived status when heartbeat is null (graceful degradation)", () => {
+    // No heartbeat snapshot, no running job, but a fresh terminal job → idle.
+    expect(
+      deriveRunnerStatus(
+        [makeRow({ status: "succeeded", finished_at: "2026-05-12T11:59:30Z" })],
+        null,
+        NOW,
+      ),
+    ).toBe("idle");
+  });
+});
+
+// ── deriveRunnerStatusFromJobs (legacy, fallback) ──────────────────────────
+
+import { deriveRunnerStatusFromJobs } from "./MsaRtxrtClient";
+
+describe("deriveRunnerStatusFromJobs (legacy fallback)", () => {
   it("returns offline for an empty list", () => {
-    expect(deriveRunnerStatus([], NOW)).toBe("offline");
+    expect(deriveRunnerStatusFromJobs([], NOW)).toBe("offline");
   });
 
   it("returns busy when any row is running", () => {
     expect(
-      deriveRunnerStatus(
+      deriveRunnerStatusFromJobs(
         [makeRow({ status: "running", started_at: "2026-05-12T11:59:00Z" })],
         NOW,
       ),
@@ -144,7 +204,7 @@ describe("deriveRunnerStatus", () => {
   });
 
   it("returns idle when the most recent terminal job finished within freshness window", () => {
-    const result = deriveRunnerStatus(
+    const result = deriveRunnerStatusFromJobs(
       [
         makeRow({
           status: "succeeded",
@@ -157,7 +217,7 @@ describe("deriveRunnerStatus", () => {
   });
 
   it("returns offline when the most recent terminal job is older than freshness window", () => {
-    const result = deriveRunnerStatus(
+    const result = deriveRunnerStatusFromJobs(
       [
         makeRow({
           status: "succeeded",
@@ -171,7 +231,7 @@ describe("deriveRunnerStatus", () => {
 
   it("returns offline when there are only queued rows (no runner activity)", () => {
     expect(
-      deriveRunnerStatus(
+      deriveRunnerStatusFromJobs(
         [makeRow({ status: "queued", finished_at: null })],
         NOW,
       ),
@@ -179,7 +239,7 @@ describe("deriveRunnerStatus", () => {
   });
 
   it("ignores rows with null/invalid finished_at while still working off the rest", () => {
-    const result = deriveRunnerStatus(
+    const result = deriveRunnerStatusFromJobs(
       [
         makeRow({ id: "a", status: "queued", finished_at: null }),
         makeRow({ id: "b", status: "succeeded", finished_at: "not-a-date" }),

@@ -52,6 +52,12 @@ from app.models.msa_rtxrt_job import (
     VALID_STATUSES,
     MsaRtxrtJob,
 )
+from app.models.msa_rtxrt_runner_heartbeat import (
+    ONLINE_FRESHNESS_SECONDS,
+    RUNNER_STATUS_BUSY,
+    RUNNER_STATUS_IDLE,
+    MsaRtxrtRunnerHeartbeat,
+)
 from app.services.audit_log import actor_from_auth, record_audit
 from app.services.msa_rtxrt_jobs import (
     IllegalTransitionError,
@@ -341,6 +347,39 @@ async def create_job(
 # ── GET /runner/poll ────────────────────────────────────────────────────────
 
 
+async def _upsert_runner_heartbeat(
+    session: "AsyncSession",
+    *,
+    runner_id: str | None,
+    busy: bool,
+) -> None:
+    """Update (or insert) the heartbeat row for ``runner_id``.
+
+    Called on every valid ``/runner/poll`` regardless of whether work is
+    returned. ``busy`` is True when this poll claimed a job; the row is
+    set to ``idle`` immediately afterwards when the runner's next poll
+    returns no work, so the status reflects the most recent observation.
+    """
+    if runner_id is None or not runner_id.strip():
+        return  # No identifier → no heartbeat (the v1 frontend asserts on claw-1).
+    rid = runner_id.strip()
+    now = utcnow()
+    heartbeat = await session.get(MsaRtxrtRunnerHeartbeat, rid)
+    target_status = RUNNER_STATUS_BUSY if busy else RUNNER_STATUS_IDLE
+    if heartbeat is None:
+        heartbeat = MsaRtxrtRunnerHeartbeat(
+            runner_id=rid,
+            last_seen_at=now,
+            last_poll_at=now,
+            last_status=target_status,
+        )
+    else:
+        heartbeat.last_seen_at = now
+        heartbeat.last_poll_at = now
+        heartbeat.last_status = target_status
+    session.add(heartbeat)
+
+
 @router.get("/runner/poll", response_model=PollResponse)
 async def runner_poll(
     request: Request,
@@ -350,8 +389,9 @@ async def runner_poll(
 ) -> PollResponse:
     """Atomically claim the next queued job for the runner.
 
-    Returns ``{"job": null}`` when the queue is empty. Marks the row
-    ``running`` and stamps ``started_at`` + ``runner_id`` on the way out.
+    Also writes the runner's heartbeat row. Returns ``{"job": null}``
+    when the queue is empty; the heartbeat still gets stamped so the UI
+    can show *Runner online (idle)* even before the first job ships.
     """
     stmt = (
         select(MsaRtxrtJob)
@@ -362,6 +402,9 @@ async def runner_poll(
     result = await session.exec(stmt)
     candidate = result.first()
     if candidate is None:
+        # Empty queue → still heartbeat (idle) so the UI knows we're alive.
+        await _upsert_runner_heartbeat(session, runner_id=runner_id, busy=False)
+        await session.commit()
         return PollResponse(job=None)
 
     # Atomic-ish claim: flip queued→running and refresh. The
@@ -371,6 +414,8 @@ async def runner_poll(
     try:
         validate_transition(candidate.status, STATUS_RUNNING)
     except IllegalTransitionError:
+        await _upsert_runner_heartbeat(session, runner_id=runner_id, busy=False)
+        await session.commit()
         return PollResponse(job=None)
 
     candidate.status = STATUS_RUNNING
@@ -378,6 +423,8 @@ async def runner_poll(
     if runner_id is not None and runner_id.strip():
         candidate.runner_id = runner_id.strip()
     session.add(candidate)
+
+    await _upsert_runner_heartbeat(session, runner_id=runner_id, busy=True)
 
     await record_audit(
         session,
@@ -392,6 +439,69 @@ async def runner_poll(
     await session.commit()
     await session.refresh(candidate)
     return PollResponse(job=_job_to_row(candidate))
+
+
+# ── GET /runner/status ──────────────────────────────────────────────────────
+
+
+class RunnerHeartbeatRow(BaseModel):
+    """One heartbeat snapshot. Privacy-safe — runner_id is operator-chosen."""
+
+    runner_id: str
+    last_seen_at: datetime
+    seconds_since_seen: int
+    status: str  # "online" | "offline"
+    last_status: str  # "idle" | "busy"
+
+
+class RunnerStatusResponse(BaseModel):
+    """Aggregate runner-status snapshot returned by GET /runner/status."""
+
+    runners: list[RunnerHeartbeatRow]
+    any_online: bool
+    freshness_seconds: int
+
+
+@router.get("/runner/status", response_model=RunnerStatusResponse)
+async def runner_status_endpoint(
+    auth: AuthContext = AUTH_DEP,
+    role: str = OPERATOR_DEP,
+    session: "AsyncSession" = SESSION_DEP,
+) -> RunnerStatusResponse:
+    """Operator-facing runner heartbeat snapshot.
+
+    Online == observed within ``ONLINE_FRESHNESS_SECONDS``. Used by the
+    frontend pill to flip *Runner online (idle)* even when no jobs have
+    ever run. No secrets exposed; runner_id is operator-chosen.
+    """
+    _ = auth
+    _ = role
+    result = await session.exec(select(MsaRtxrtRunnerHeartbeat))
+    rows = result.all()
+    now = utcnow()
+    out: list[RunnerHeartbeatRow] = []
+    any_online = False
+    for row in rows:
+        age = max(0, int((now - row.last_seen_at).total_seconds()))
+        online = age <= ONLINE_FRESHNESS_SECONDS
+        if online:
+            any_online = True
+        out.append(
+            RunnerHeartbeatRow(
+                runner_id=row.runner_id,
+                last_seen_at=row.last_seen_at,
+                seconds_since_seen=age,
+                status="online" if online else "offline",
+                last_status=row.last_status,
+            )
+        )
+    # Sort newest-seen first so the most relevant runner is index 0.
+    out.sort(key=lambda r: r.seconds_since_seen)
+    return RunnerStatusResponse(
+        runners=out,
+        any_online=any_online,
+        freshness_seconds=ONLINE_FRESHNESS_SECONDS,
+    )
 
 
 # ── PATCH /jobs/{id} ────────────────────────────────────────────────────────

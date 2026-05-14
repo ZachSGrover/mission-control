@@ -22,6 +22,7 @@ from app.models.creator_credentials import CreatorCredential
 from app.models.gateways import Gateway
 from app.models.kill_switches import KillSwitch
 from app.models.msa_rtxrt_job import MsaRtxrtJob
+from app.models.msa_rtxrt_runner_heartbeat import MsaRtxrtRunnerHeartbeat
 from app.models.of_intelligence import (
     BusinessMemoryEntry,
     OfIntelligenceAccount,
@@ -102,6 +103,7 @@ __all__ = [
     "OfQcDiscordStatus",
     "OfQcSchedulerJob",
     "MsaRtxrtJob",
+    "MsaRtxrtRunnerHeartbeat",
     "BoardTaskCustomField",
     "TaskCustomFieldDefinition",
     "TaskCustomFieldValue",

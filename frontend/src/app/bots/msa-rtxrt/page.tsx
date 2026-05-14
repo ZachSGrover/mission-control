@@ -12,6 +12,7 @@ import {
   jobBodyForKind,
   rowsToJobs,
   type BackendJobRow,
+  type BackendRunnerStatus,
 } from "@/components/bots/MsaRtxrtClient";
 import type {
   JobKind,
@@ -49,21 +50,37 @@ function MsaRtxrtPageContent() {
   }, [fetchWithAuth]);
 
   const refresh = useCallback(async () => {
+    // Fire both fetches in parallel — the bridge supplies one for jobs
+    // (the source of truth for "busy") and one for runner heartbeat
+    // (the source of truth for "online vs offline").
+    const apiBase = getApiBaseUrl();
     try {
-      const res = await fetchRef.current(
-        `${getApiBaseUrl()}/api/v1/msa-rtxrt/jobs?limit=${MAX_JOBS}`,
-      );
-      if (!res.ok) {
-        setRunnerStatus("offline");
-        return;
+      const [jobsRes, statusRes] = await Promise.all([
+        fetchRef.current(`${apiBase}/api/v1/msa-rtxrt/jobs?limit=${MAX_JOBS}`),
+        fetchRef.current(`${apiBase}/api/v1/msa-rtxrt/runner/status`),
+      ]);
+
+      let rows: BackendJobRow[] = [];
+      if (jobsRes.ok) {
+        const data = (await jobsRes.json()) as { items?: unknown };
+        rows = Array.isArray(data.items) ? (data.items as BackendJobRow[]) : [];
+        setRecentJobs(rowsToJobs(rows));
       }
-      const data = (await res.json()) as { items?: unknown };
-      const rows = Array.isArray(data.items) ? (data.items as BackendJobRow[]) : [];
-      setRecentJobs(rowsToJobs(rows));
-      setRunnerStatus(deriveRunnerStatus(rows));
+
+      let heartbeat: BackendRunnerStatus | null = null;
+      if (statusRes.ok) {
+        const data = (await statusRes.json()) as Partial<BackendRunnerStatus>;
+        if (Array.isArray(data.runners) && typeof data.any_online === "boolean") {
+          heartbeat = data as BackendRunnerStatus;
+        }
+      }
+
+      // Heartbeat is the preferred signal; falls back to job-derived
+      // status if /runner/status was unavailable (graceful degradation).
+      setRunnerStatus(deriveRunnerStatus(rows, heartbeat));
     } catch {
-      // Network / auth fail → behave like the runner is offline. The
-      // UI gates run buttons accordingly.
+      // Network / auth fail → behave like the runner is offline so run
+      // buttons stay gated.
       setRunnerStatus("offline");
     }
   }, []);

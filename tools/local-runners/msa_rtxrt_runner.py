@@ -430,21 +430,219 @@ def poll_once(cfg: RunnerConfig, *, http: Any = None, runner: Any = None) -> str
     return execute_job(cfg, job, http=http, runner=runner)
 
 
+# ── Preflight + AdsPower connectivity check ────────────────────────────────
+#
+# `--preflight` (recommended for Luis) prints a structured JSON report of
+# every safety/runtime precondition, without sending anything anywhere
+# except (1) a /healthz GET to the configured backend and (2) a single
+# GET to the AdsPower local API. Neither call opens a browser profile,
+# logs in to X, or touches OnlyFans / OnlyMonster.
+#
+# `--check-adspower` is a narrower variant that only probes AdsPower.
+
+ADSPOWER_LOCAL_BASE: Final[str] = "http://local.adspower.net:50325"
+ADSPOWER_LIST_PATH: Final[str] = "/api/v1/user/list?page=1&page_size=1"
+
+
+def _bool_env(name: str) -> bool:
+    val = os.environ.get(name)
+    return bool(val and val.strip().lower() in ("1", "true", "yes", "on"))
+
+
+def check_python_imports() -> dict[str, bool]:
+    """Soft-import the deps Luis's bot folder declares. Never raises."""
+    out: dict[str, bool] = {}
+    for mod in ("requests", "playwright", "playwright.sync_api"):
+        try:
+            __import__(mod)
+            out[mod] = True
+        except Exception:  # noqa: BLE001 - missing deps must not crash preflight
+            out[mod] = False
+    return out
+
+
+def check_backend_reachable(cfg: RunnerConfig, *, http: Any = None) -> dict[str, Any]:
+    """GET {base}/healthz with no auth. Reports HTTP status + reachable bool."""
+    if not cfg.base_url:
+        return {"configured": False, "reachable": False, "http_status": None}
+    http = http if http is not None else _http_request
+    try:
+        status, _body = http(
+            method="GET",
+            url=f"{cfg.base_url}/healthz",
+            token="",  # /healthz takes no auth header
+            timeout=10.0,
+        )
+    except Exception as exc:  # noqa: BLE001 - any error counts as unreachable
+        return {
+            "configured": True,
+            "reachable": False,
+            "http_status": None,
+            "error": type(exc).__name__,
+        }
+    return {
+        "configured": True,
+        "reachable": status == 200,
+        "http_status": status,
+    }
+
+
+def check_backend_token(cfg: RunnerConfig, *, http: Any = None) -> dict[str, Any]:
+    """Probe the runner-auth endpoint with the configured token.
+
+    Returns ``accepted: True`` if HTTP 200 (token valid), ``accepted: False``
+    if 401 (token configured but wrong) or 503 (token not configured on
+    backend). Does NOT consume a job (the poll endpoint is idempotent and
+    returns ``{"job": null}`` if no work is queued).
+    """
+    if not cfg.base_url or not cfg.runner_token:
+        return {"configured": False, "accepted": False, "http_status": None}
+    http = http if http is not None else _http_request
+    try:
+        status, _body = http(
+            method="GET",
+            url=f"{cfg.base_url}/api/v1/msa-rtxrt/runner/poll?runner_id={urllib.parse.quote(cfg.runner_id)}",
+            token=cfg.runner_token,
+            timeout=10.0,
+        )
+    except Exception as exc:  # noqa: BLE001 - report cleanly
+        return {
+            "configured": True,
+            "accepted": False,
+            "http_status": None,
+            "error": type(exc).__name__,
+        }
+    return {
+        "configured": True,
+        "accepted": status == 200,
+        "http_status": status,
+    }
+
+
+def check_adspower(*, http: Any = None) -> dict[str, Any]:
+    """Probe the local AdsPower API. Does NOT open any profile.
+
+    Calls the documented profile-list endpoint with a tiny page size.
+    If the AdsPower app isn't running locally, the request raises a
+    connection error which we report cleanly. We never log API responses.
+    """
+    api_key_present = bool((os.environ.get("ADSPOWER_API_KEY") or "").strip())
+    http = http if http is not None else _http_request
+    try:
+        status, _body = http(
+            method="GET",
+            url=f"{ADSPOWER_LOCAL_BASE}{ADSPOWER_LIST_PATH}",
+            token="",  # AdsPower local API uses no auth by default
+            timeout=5.0,
+        )
+        reachable = status == 200
+        return {
+            "api_reachable": reachable,
+            "http_status": status,
+            "api_key_present": api_key_present,
+        }
+    except Exception as exc:  # noqa: BLE001 - "not running" is a normal outcome
+        return {
+            "api_reachable": False,
+            "http_status": None,
+            "api_key_present": api_key_present,
+            "error": type(exc).__name__,
+        }
+
+
+def check_local_config_files(bot_dir: Path) -> dict[str, bool]:
+    """Report which canonical config files are present (booleans only).
+
+    Never prints file contents. The bot's docs list these names as the
+    runtime configs Luis needs to fill in from the ``.example.json``
+    templates.
+    """
+    names = (
+        "auftrag.json",
+        "contacts.json",
+        "blast_auftrag.json",
+        "repost_auftrag.json",
+        "schedule.json",
+    )
+    return {name: (bot_dir / name).is_file() for name in names}
+
+
+def build_preflight_report(cfg: RunnerConfig, *, http: Any = None) -> dict[str, Any]:
+    """Aggregate every preflight check into one privacy-safe dict.
+
+    Used by ``--preflight`` and exposed so the Mission Control UI can
+    (in a future PR) request this same report from the Claw machine
+    via a small local HTTP endpoint.
+    """
+    return {
+        "env": {
+            "backend_url_set": bool(cfg.base_url),
+            "runner_token_set": bool(cfg.runner_token),
+            "runner_id": cfg.runner_id,
+            "bot_dir": str(cfg.bot_dir),
+            "bot_dir_exists": cfg.bot_dir.is_dir(),
+            "poll_interval_seconds": cfg.poll_interval_seconds,
+            "live_flags": {
+                "ALLOW_LIVE_EXTERNAL_ACTIONS": _bool_env("ALLOW_LIVE_EXTERNAL_ACTIONS"),
+                "CONFIRM_LIVE_TEST": os.environ.get("CONFIRM_LIVE_TEST") == "YES",
+                "MAX_TEST_ACTIONS_is_1": os.environ.get("MAX_TEST_ACTIONS") == "1",
+                "DRY_RUN_explicitly_false": os.environ.get("DRY_RUN", "").strip().lower() == "false",
+            },
+        },
+        "python_imports": check_python_imports(),
+        "backend": {
+            "health": check_backend_reachable(cfg, http=http),
+            "runner_token_check": check_backend_token(cfg, http=http),
+        },
+        "adspower": check_adspower(http=http),
+        "config_files": check_local_config_files(cfg.bot_dir),
+        "safety": {
+            "mass_live_kinds_blocked": True,  # always — by code
+            "live_one_requires_three_flags": True,  # always — by code
+            "bot_dir_safety_guard_module_present": (cfg.bot_dir / "safety_guard.py").is_file(),
+        },
+    }
+
+
 # ── Entrypoint ─────────────────────────────────────────────────────────────
 
 
 def main(argv: list[str] | None = None) -> int:
     """CLI entrypoint.
 
-    Default behavior is "print config and exit 0" so the operator can
-    sanity-check env without hitting the network. Pass ``--poll`` to
-    run the live poll loop.
+    Subcommands (only one allowed at a time):
+      (no args)         print config snapshot and exit 0 (no network)
+      --poll            start the live poll loop (blocks)
+      --preflight       print structured JSON report of every precondition
+      --check-adspower  probe AdsPower local API only (no profile open)
     """
     argv = argv if argv is not None else sys.argv[1:]
     cfg = RunnerConfig.from_env()
 
     if argv and argv[0] == "--poll":
         return _run_poll_loop(cfg)
+
+    if argv and argv[0] == "--preflight":
+        report = build_preflight_report(cfg)
+        print(json.dumps(report, indent=2, default=str))  # noqa: T201
+        # Exit code reflects whether the runner is ready to do anything safe.
+        # Backend reachable + runner token accepted + python imports OK =>
+        # exit 0 (ready). Anything else => exit 1. The full report is on
+        # stdout so the operator (or a future UI panel) can read details.
+        ready = (
+            report["env"]["backend_url_set"]
+            and report["env"]["runner_token_set"]
+            and report["env"]["bot_dir_exists"]
+            and report["backend"]["health"]["reachable"]
+            and report["backend"]["runner_token_check"]["accepted"]
+            and all(report["python_imports"].values())
+        )
+        return 0 if ready else 1
+
+    if argv and argv[0] == "--check-adspower":
+        result = check_adspower()
+        print(json.dumps(result, indent=2, default=str))  # noqa: T201
+        return 0 if result.get("api_reachable") else 1
 
     print("MSA RT/X Local Runner — configuration check")  # noqa: T201
     print("--------------------------------------------")  # noqa: T201

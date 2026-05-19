@@ -36,6 +36,7 @@ import {
   Repeat,
   Settings,
   ShieldAlert,
+  ShieldCheck,
   Signal,
   TerminalSquare,
   Users,
@@ -893,6 +894,216 @@ function SetupTab({ isOwner }: { isOwner: boolean }) {
           another laptop — will not work. That is by design.
         </p>
       </NumberedCard>
+
+      <NumberedCard n={8} title="AdsPower checklist (Claw computer)">
+        <ChecklistRow label="AdsPower app running locally" />
+        <ChecklistRow label={(<><code>http://local.adspower.net:50325</code> reachable</>) as React.ReactNode} />
+        <ChecklistRow label={(<><code>ADSPOWER_API_KEY</code> set in the Claw shell (never committed)</>) as React.ReactNode} />
+        <ChecklistRow label="AdsPower profile IDs configured for each X account" />
+        <ChecklistRow label="X is logged in on each AdsPower profile" />
+        <p
+          className="mt-3 text-[11px] leading-relaxed"
+          style={{ color: THEME.textQuiet }}
+          data-testid="adspower-note"
+        >
+          The runner exposes <code>python3 tools/local-runners/msa_rtxrt_runner.py
+          --check-adspower</code> for a no-side-effects probe of the local
+          API. It only hits the user-list endpoint; it never opens a
+          profile or touches X.
+        </p>
+      </NumberedCard>
+
+      <NumberedCard n={9} title="Config files (Claw computer, never committed)">
+        <p
+          className="text-[12px] leading-relaxed"
+          style={{ color: THEME.textSoft }}
+        >
+          Copy each example to its non-example name in the bot folder
+          and fill in. The repo&apos;s exclude rules keep these from
+          ever being staged for git.
+        </p>
+        <div className="mt-3 space-y-2">
+          <ChecklistRow label={(<><code>auftrag.json</code> &larr; copied from <code>auftrag.example.json</code></>) as React.ReactNode} />
+          <ChecklistRow label={(<><code>contacts.json</code> &larr; copied from <code>contacts.example.json</code></>) as React.ReactNode} />
+          <ChecklistRow label={(<><code>blast_auftrag.json</code> if running blast bot</>) as React.ReactNode} />
+          <ChecklistRow label={(<><code>repost_auftrag.json</code> if running repost bot</>) as React.ReactNode} />
+        </div>
+        <HintBox icon={ShieldCheck}>
+          Never commit any of these files. They may contain real recipient
+          handles, AdsPower profile IDs, and other client data that must
+          stay on the Claw computer.
+        </HintBox>
+      </NumberedCard>
+
+      <NumberedCard n={10} title="Runner control commands (Claw computer)">
+        <p
+          className="text-[12px] leading-relaxed"
+          style={{ color: THEME.textSoft }}
+        >
+          Copy-paste into a terminal on the Claw computer.
+        </p>
+
+        <div className="mt-3 space-y-3">
+          <div
+            className="rounded-md p-3"
+            style={{
+              background: THEME.cardBg,
+              border: `1px solid ${THEME.cardBorder}`,
+            }}
+          >
+            <div className="flex items-center justify-between gap-2">
+              <p
+                className="text-[10px] font-semibold uppercase tracking-wider"
+                style={{ color: THEME.textQuiet }}
+              >
+                Start / restart the runner
+              </p>
+              <CopyButton
+                text="cd /Users/zachary/mission-control-postmerge-main && ./.start-msa-rtxrt-runner.sh"
+                label="Copy"
+                ariaLabel="Copy restart command"
+              />
+            </div>
+            <code
+              className="mt-2 block break-all text-[11px]"
+              style={{ color: THEME.text }}
+              data-testid="restart-command"
+            >
+              cd /Users/zachary/mission-control-postmerge-main && ./.start-msa-rtxrt-runner.sh
+            </code>
+          </div>
+
+          <div
+            className="rounded-md p-3"
+            style={{
+              background: THEME.cardBg,
+              border: `1px solid ${THEME.cardBorder}`,
+            }}
+          >
+            <div className="flex items-center justify-between gap-2">
+              <p
+                className="text-[10px] font-semibold uppercase tracking-wider"
+                style={{ color: THEME.textQuiet }}
+              >
+                Stop the runner
+              </p>
+              <CopyButton
+                text='kill "$(cat /Users/zachary/mission-control-postmerge-main/.msa-rtxrt-runner.pid)"'
+                label="Copy"
+                ariaLabel="Copy stop command"
+              />
+            </div>
+            <code
+              className="mt-2 block break-all text-[11px]"
+              style={{ color: THEME.text }}
+              data-testid="stop-command"
+            >
+              {'kill "$(cat /Users/zachary/mission-control-postmerge-main/.msa-rtxrt-runner.pid)"'}
+            </code>
+          </div>
+
+          <div
+            className="rounded-md p-3"
+            style={{
+              background: THEME.cardBg,
+              border: `1px solid ${THEME.cardBorder}`,
+            }}
+          >
+            <div className="flex items-center justify-between gap-2">
+              <p
+                className="text-[10px] font-semibold uppercase tracking-wider"
+                style={{ color: THEME.textQuiet }}
+              >
+                Preflight (no side effects)
+              </p>
+              <CopyButton
+                text="cd /Users/zachary/mission-control-postmerge-main && set -a && . ./.msa-rtxrt-runner.env && set +a && python3 tools/local-runners/msa_rtxrt_runner.py --preflight"
+                label="Copy"
+                ariaLabel="Copy preflight command"
+              />
+            </div>
+            <code
+              className="mt-2 block break-all text-[11px]"
+              style={{ color: THEME.text }}
+              data-testid="preflight-command"
+            >
+              ./.msa-rtxrt-runner.env + python3 tools/local-runners/msa_rtxrt_runner.py --preflight
+            </code>
+          </div>
+        </div>
+      </NumberedCard>
+
+      <NumberedCard n={11} title="What Luis can do vs what only Zach can do">
+        <div className="space-y-3">
+          <div>
+            <p
+              className="text-[10px] font-semibold uppercase tracking-wider"
+              style={{ color: THEME.textQuiet }}
+            >
+              Luis (operator role)
+            </p>
+            <ul
+              className="mt-2 list-disc pl-5 space-y-1 text-[12px] leading-relaxed"
+              style={{ color: THEME.textSoft }}
+              data-testid="luis-can-do"
+            >
+              <li>Open Mission Control from phone or computer</li>
+              <li>View runner status</li>
+              <li>Run smoke test</li>
+              <li>Run dry-run actions</li>
+              <li>See run history</li>
+              <li>Edit local configs on the runner machine</li>
+              <li>Tell Zach when AdsPower / X is ready</li>
+            </ul>
+          </div>
+          <div>
+            <p
+              className="text-[10px] font-semibold uppercase tracking-wider"
+              style={{ color: THEME.textQuiet }}
+            >
+              Zach / owner only
+            </p>
+            <ul
+              className="mt-2 list-disc pl-5 space-y-1 text-[12px] leading-relaxed"
+              style={{ color: THEME.textSoft }}
+              data-testid="owner-only"
+            >
+              <li>Arm and confirm live-one</li>
+              <li>Set the three live-mode env vars on the Claw shell</li>
+              <li>Restart the runner with live-mode env in scope</li>
+              <li>Change Render / Vercel / Clerk / DNS / billing</li>
+              <li>Rotate the runner token</li>
+              <li>Approve merging changes to <code>main</code></li>
+            </ul>
+          </div>
+          <HintBox icon={ShieldCheck}>
+            Mass-live actions do not exist anywhere in the system and are
+            blocked at four independent layers (UI, backend validator,
+            runner gate, bot&apos;s own safety_guard).
+          </HintBox>
+        </div>
+      </NumberedCard>
+    </div>
+  );
+}
+
+function ChecklistRow({ label }: { label: React.ReactNode }) {
+  return (
+    <div className="flex items-start gap-2">
+      <span
+        className="mt-[3px] inline-block h-3 w-3 rounded-sm"
+        style={{
+          border: `1.5px solid ${THEME.cardBorder}`,
+          background: "transparent",
+        }}
+        aria-hidden="true"
+      />
+      <span
+        className="text-[12px] leading-snug"
+        style={{ color: THEME.textSoft }}
+      >
+        {label}
+      </span>
     </div>
   );
 }

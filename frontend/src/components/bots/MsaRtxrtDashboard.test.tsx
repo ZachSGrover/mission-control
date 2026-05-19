@@ -380,3 +380,99 @@ describe("MsaRtxrtDashboard — no secrets", () => {
     }
   });
 });
+
+// ── Setup tab additions (heartbeat-aware UX, restart/stop, AdsPower + configs)
+
+describe("SetupTab — new operational sections", () => {
+  function openSetup() {
+    render(<MsaRtxrtDashboard {...makeProps()} />);
+    fireEvent.click(screen.getByTestId("tab-setup"));
+  }
+
+  it("renders the AdsPower checklist with the local API URL", () => {
+    openSetup();
+    const note = screen.getByTestId("adspower-note");
+    expect(note).toBeInTheDocument();
+    // The local API URL appears at least once somewhere in setup content.
+    const setupPane = screen.getByTestId("tab-pane-setup");
+    expect(setupPane.textContent || "").toMatch(/local\.adspower\.net:50325/);
+  });
+
+  it("renders the config-files checklist by name (no contents)", () => {
+    openSetup();
+    expect(screen.getByText(/auftrag\.example\.json/)).toBeInTheDocument();
+    expect(screen.getByText(/contacts\.example\.json/)).toBeInTheDocument();
+  });
+
+  it("exposes restart, stop, and preflight commands with copy buttons", () => {
+    openSetup();
+    expect(screen.getByTestId("restart-command")).toBeInTheDocument();
+    expect(screen.getByTestId("stop-command")).toBeInTheDocument();
+    expect(screen.getByTestId("preflight-command")).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: /copy restart command/i }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: /copy stop command/i }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: /copy preflight command/i }),
+    ).toBeInTheDocument();
+  });
+
+  it("renders the 'Luis vs Zach' role separation, with no mass-live affordance", () => {
+    openSetup();
+    expect(screen.getByTestId("luis-can-do")).toBeInTheDocument();
+    expect(screen.getByTestId("owner-only")).toBeInTheDocument();
+    const ownerText = screen.getByTestId("owner-only").textContent ?? "";
+    expect(ownerText).not.toMatch(/run mass[- ]live/i);
+  });
+});
+
+// ── Heartbeat-enabled smoke gate (the chicken-and-egg fix) ──────────────────
+
+describe("Smoke button is enabled by heartbeat-derived idle even with no jobs", () => {
+  it("Smoke is enabled when runnerStatus === 'idle' and recentJobs === []", () => {
+    render(
+      <MsaRtxrtDashboard
+        runnerStatus="idle"
+        recentJobs={[]}
+        isOwner={false}
+        onSubmitJob={vi.fn()}
+        onRefresh={vi.fn()}
+      />,
+    );
+    fireEvent.click(screen.getByTestId("tab-runner-status"));
+    const smoke = screen.getByTestId("run-smoke") as HTMLButtonElement;
+    expect(smoke.disabled).toBe(false);
+  });
+
+  it("Smoke is disabled when runnerStatus === 'offline'", () => {
+    render(
+      <MsaRtxrtDashboard
+        runnerStatus="offline"
+        recentJobs={[]}
+        isOwner={false}
+        onSubmitJob={vi.fn()}
+        onRefresh={vi.fn()}
+      />,
+    );
+    fireEvent.click(screen.getByTestId("tab-runner-status"));
+    const smoke = screen.getByTestId("run-smoke") as HTMLButtonElement;
+    expect(smoke.disabled).toBe(true);
+  });
+
+  it("Live-one stays owner-gated regardless of heartbeat-driven idle", () => {
+    render(
+      <MsaRtxrtDashboard
+        runnerStatus="idle"
+        recentJobs={[]}
+        isOwner={false}
+        onSubmitJob={vi.fn()}
+        onRefresh={vi.fn()}
+      />,
+    );
+    fireEvent.click(screen.getByTestId("tab-runner-status"));
+    expect(screen.queryByTestId("live-one-arm")).toBeNull();
+  });
+});

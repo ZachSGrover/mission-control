@@ -409,3 +409,140 @@ def test_runner_token_never_appears_in_patched_body() -> None:
     execute_job(cfg, {"id": "j-8", "kind": "smoke"}, http=capture, runner=fake_runner)
     for body in captured:
         assert "tok-xyz" not in str(body)
+
+
+# ── Preflight + AdsPower checks ────────────────────────────────────────────
+
+from msa_rtxrt_runner import (  # noqa: E402
+    build_preflight_report,
+    check_adspower,
+    check_backend_reachable,
+    check_backend_token,
+    check_local_config_files,
+    check_python_imports,
+)
+
+
+def test_check_python_imports_reports_each_module() -> None:
+    result = check_python_imports()
+    assert set(result) == {"requests", "playwright", "playwright.sync_api"}
+    for v in result.values():
+        assert isinstance(v, bool)
+
+
+def test_check_backend_reachable_when_url_blank() -> None:
+    cfg = RunnerConfig.from_env({"MSA_RTXRT_BACKEND_URL": ""})
+    result = check_backend_reachable(cfg)
+    assert result == {"configured": False, "reachable": False, "http_status": None}
+
+
+def test_check_backend_reachable_200() -> None:
+    cfg = RunnerConfig.from_env(_base_env())
+    http = MagicMock(return_value=(200, {"ok": True}))
+    result = check_backend_reachable(cfg, http=http)
+    assert result == {"configured": True, "reachable": True, "http_status": 200}
+
+
+def test_check_backend_reachable_5xx_or_error() -> None:
+    cfg = RunnerConfig.from_env(_base_env())
+    http = MagicMock(return_value=(503, None))
+    result = check_backend_reachable(cfg, http=http)
+    assert result == {"configured": True, "reachable": False, "http_status": 503}
+
+
+def test_check_backend_token_accepted() -> None:
+    cfg = RunnerConfig.from_env(_base_env())
+    http = MagicMock(return_value=(200, {"job": None}))
+    result = check_backend_token(cfg, http=http)
+    assert result == {"configured": True, "accepted": True, "http_status": 200}
+
+
+def test_check_backend_token_wrong_returns_401() -> None:
+    cfg = RunnerConfig.from_env(_base_env())
+    http = MagicMock(return_value=(401, {"detail": "Invalid runner token."}))
+    result = check_backend_token(cfg, http=http)
+    assert result == {"configured": True, "accepted": False, "http_status": 401}
+
+
+def test_check_backend_token_unconfigured_returns_503() -> None:
+    cfg = RunnerConfig.from_env(_base_env())
+    http = MagicMock(return_value=(503, {"detail": "MSA RT/X runner endpoint is disabled..."}))
+    result = check_backend_token(cfg, http=http)
+    assert result["accepted"] is False
+    assert result["http_status"] == 503
+
+
+def test_check_adspower_unreachable_clean_failure() -> None:
+    def boom(*_a: Any, **_kw: Any) -> tuple[int, Any]:
+        raise ConnectionError("local.adspower.net unreachable")
+
+    result = check_adspower(http=boom)
+    assert result["api_reachable"] is False
+    assert result["http_status"] is None
+    assert "error" in result
+
+
+def test_check_adspower_reports_api_key_presence_via_env(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("ADSPOWER_API_KEY", "some-non-empty-value")
+    http = MagicMock(return_value=(200, {"data": {"list": []}}))
+    result = check_adspower(http=http)
+    assert result["api_key_present"] is True
+    assert result["api_reachable"] is True
+
+
+def test_check_adspower_does_not_open_any_profile() -> None:
+    """Sanity: only the LIST endpoint, never /browser/start or /browser/stop."""
+    seen_urls: list[str] = []
+
+    def capture(*, method: str, url: str, token: str, body: Any = None, **_: Any) -> tuple[int, Any]:
+        _ = method
+        _ = token
+        _ = body
+        seen_urls.append(url)
+        return 200, {"data": {"list": []}}
+
+    check_adspower(http=capture)
+    for url in seen_urls:
+        assert "/browser/start" not in url
+        assert "/browser/stop" not in url
+        assert "/api/v1/user/list" in url
+
+
+def test_check_local_config_files_returns_bools_only() -> None:
+    cfg = RunnerConfig.from_env(_base_env())
+    result = check_local_config_files(cfg.bot_dir)
+    for name in ("auftrag.json", "contacts.json", "blast_auftrag.json", "repost_auftrag.json", "schedule.json"):
+        assert name in result
+        assert isinstance(result[name], bool)
+
+
+def test_build_preflight_report_shape_and_no_token_leak() -> None:
+    cfg = RunnerConfig.from_env(_base_env())
+    http = MagicMock(
+        side_effect=[(200, {"ok": True}), (200, {"job": None}), (200, {"data": {"list": []}})]
+    )
+    report = build_preflight_report(cfg, http=http)
+    assert set(report) == {"env", "python_imports", "backend", "adspower", "config_files", "safety"}
+    assert "runner_token_set" in report["env"]
+    # The token value itself must not appear anywhere in the serialized report.
+    assert "tok-xyz" not in str(report)
+    assert report["safety"]["mass_live_kinds_blocked"] is True
+    assert report["safety"]["live_one_requires_three_flags"] is True
+
+
+def test_preflight_report_live_flags_all_false_by_default(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    for k in ("ALLOW_LIVE_EXTERNAL_ACTIONS", "CONFIRM_LIVE_TEST", "MAX_TEST_ACTIONS", "DRY_RUN"):
+        monkeypatch.delenv(k, raising=False)
+    cfg = RunnerConfig.from_env(_base_env())
+    http = MagicMock(return_value=(200, {}))
+    report = build_preflight_report(cfg, http=http)
+    flags = report["env"]["live_flags"]
+    for key in (
+        "ALLOW_LIVE_EXTERNAL_ACTIONS",
+        "CONFIRM_LIVE_TEST",
+        "MAX_TEST_ACTIONS_is_1",
+        "DRY_RUN_explicitly_false",
+    ):
+        assert flags[key] is False

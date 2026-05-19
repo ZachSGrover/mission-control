@@ -111,19 +111,52 @@ export function jobBodyForKind(kind: JobKind): {
   return { kind };
 }
 
+/** Shape returned by `GET /api/v1/msa-rtxrt/runner/status`. */
+export interface BackendRunnerHeartbeat {
+  runner_id: string;
+  last_seen_at: string;
+  seconds_since_seen: number;
+  status: "online" | "offline";
+  last_status: "idle" | "busy";
+}
+
+export interface BackendRunnerStatus {
+  runners: BackendRunnerHeartbeat[];
+  any_online: boolean;
+  freshness_seconds: number;
+}
+
 /**
- * Derive the runner-status badge from the most-recent job rows.
+ * Derive the runner-status badge from BOTH the heartbeat snapshot AND
+ * the most-recent job rows. Heartbeat is the source of truth for
+ * online/offline; jobs are the source of truth for busy.
  *
  *   busy    → any job is currently `running`
- *   idle    → the most recent terminal job finished in the last 90s
- *             (i.e. a runner *was* alive recently — close enough for v1)
- *   offline → empty queue, or the most recent terminal job is older
- *             than the freshness window
+ *   idle    → heartbeat says any runner is online (and no job is running)
+ *   offline → no heartbeat OR no online runner
  *
- * Anything else (e.g. only `queued` rows with no running yet) is also
- * "offline" — the runner clearly hasn't picked them up.
+ * When `heartbeat` is null (e.g. the /runner/status endpoint failed,
+ * which can happen during deploy windows or transient 5xx), the function
+ * falls back to the legacy jobs-only derivation in
+ * `deriveRunnerStatusFromJobs` so the UI degrades gracefully rather
+ * than locking.
  */
 export function deriveRunnerStatus(
+  rows: BackendJobRow[],
+  heartbeat: BackendRunnerStatus | null = null,
+  now: Date = new Date(),
+  freshnessMs = 90_000,
+): RunnerStatus {
+  const anyRunning = Array.isArray(rows) && rows.some((r) => r.status === "running");
+  if (heartbeat !== null) {
+    if (anyRunning) return "busy";
+    return heartbeat.any_online ? "idle" : "offline";
+  }
+  return deriveRunnerStatusFromJobs(rows, now, freshnessMs);
+}
+
+/** Legacy jobs-only derivation. Public for the fallback path + back-compat tests. */
+export function deriveRunnerStatusFromJobs(
   rows: BackendJobRow[],
   now: Date = new Date(),
   freshnessMs = 90_000,

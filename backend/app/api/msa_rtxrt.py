@@ -261,10 +261,22 @@ async def create_job(
     """Enqueue a new MSA RT/X job.
 
     Dry-run kinds (``smoke``, ``dry_run_*``) require operator+.
-    Live-one kinds (``live_one_*``) require owner AND
-    ``confirm_live="YES"`` AND ``max_test_actions=1``.
+    Live-one kinds (``live_one_*``) ALSO require operator+ AND the
+    three safety flags (``confirm_live="YES"`` AND
+    ``max_test_actions=1``). Builders / viewers are already blocked
+    upstream by ``OPERATOR_DEP``.
+
+    Note: prior to 2026-05-20, live-one was owner-only. That was too
+    restrictive for the day-to-day bot operator (Luis), who needs to
+    run a controlled live-one as part of normal bot operations. The
+    safety story is unchanged: the three-flag gate, mass-live
+    blocking, runner-local env gates, and bot's own
+    ``safety_guard.require_live_or_exit()`` all still apply — operator+
+    can *request* a live-one, but the bot still refuses unless every
+    local env flag is set on the calling runner.
     """
     _ = role  # operator+ already enforced by OPERATOR_DEP
+    _ = viewer_role  # role gate already enforced; kept for future-use audit hooks
     actor_id, actor_email = actor_from_auth(auth)
 
     # Validate the kind first (mass-live block + membership).
@@ -286,26 +298,9 @@ async def create_job(
     except UnknownKindError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
 
-    # Live-one path: owner + safety flags.
+    # Live-one path: operator+ (already enforced upstream) + safety flags.
     live_one = is_live_one_kind(body.kind)
     if live_one:
-        if viewer_role != "owner":
-            await record_audit(
-                session,
-                actor_clerk_user_id=actor_id,
-                actor_email=actor_email,
-                actor_role=viewer_role,
-                action="msa_rtxrt.job.create.denied_non_owner",
-                target_type="msa_rtxrt_job",
-                outcome="denied",
-                safe_summary=f"non-owner attempted live-one kind {body.kind!r}",
-                request=request,
-            )
-            await session.commit()
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="Live-one jobs require owner role.",
-            )
         try:
             validate_live_one_request(
                 kind=body.kind,
@@ -317,7 +312,7 @@ async def create_job(
                 session,
                 actor_clerk_user_id=actor_id,
                 actor_email=actor_email,
-                actor_role="owner",
+                actor_role=viewer_role,
                 action="msa_rtxrt.job.create.blocked_safety_gate",
                 target_type="msa_rtxrt_job",
                 outcome="blocked",
@@ -345,7 +340,11 @@ async def create_job(
         session,
         actor_clerk_user_id=actor_id,
         actor_email=actor_email,
-        actor_role="owner" if live_one else None,
+        # Record the real role on the audit row so a post-hoc review can
+        # see which operator actually fired a live-one. (Prior to
+        # 2026-05-20 this was hard-coded "owner" because only owners
+        # could; now operators can too.)
+        actor_role=viewer_role if live_one else None,
         action=("msa_rtxrt.job.create.live_one" if live_one else "msa_rtxrt.job.create"),
         target_type="msa_rtxrt_job",
         target_id=str(job.id),

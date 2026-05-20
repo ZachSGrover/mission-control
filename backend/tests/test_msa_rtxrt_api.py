@@ -147,19 +147,30 @@ async def test_builder_or_viewer_cannot_create_job(role: str) -> None:
         assert res.status_code == 403
 
 
-# ── POST /jobs — live-one gates ─────────────────────────────────────────────
+# ── POST /jobs — live-one role + safety gates (operator+ as of 2026-05-20) ──
+#
+# Live-one used to be owner-only. The role-expansion change (2026-05-20)
+# lets the day-to-day bot operator (Luis, operator-tier) arm + run a
+# controlled live-one — provided the three safety flags are present AND
+# the runner-side env vars are set on the runner machine (the latter is
+# enforced by the runner's safety gate, not the API).
 
 
 @pytest.mark.asyncio
-async def test_operator_cannot_create_live_one_job() -> None:
+async def test_operator_can_create_live_one_with_all_flags() -> None:
+    """Operator-tier user can now create live-one jobs (post 2026-05-20)."""
     async with _make_client(role="operator") as (client, _maker):
         res = await client.post("/api/v1/msa-rtxrt/jobs", json=_live_one_body())
-        assert res.status_code == 403
-        assert "owner" in res.text.lower()
+        assert res.status_code == 201, res.text
+        body = res.json()
+        assert body["live_one"] is True
+        assert body["dry_run"] is False
+        assert body["max_test_actions"] == 1
 
 
 @pytest.mark.asyncio
 async def test_owner_can_create_live_one_with_all_flags() -> None:
+    """Owner can still create live-one (back-compat with the prior model)."""
     async with _make_client(role="owner") as (client, _maker):
         res = await client.post("/api/v1/msa-rtxrt/jobs", json=_live_one_body())
         assert res.status_code == 201, res.text
@@ -170,8 +181,21 @@ async def test_owner_can_create_live_one_with_all_flags() -> None:
 
 
 @pytest.mark.asyncio
-async def test_owner_live_one_requires_confirm_live_yes() -> None:
-    async with _make_client(role="owner") as (client, _maker):
+@pytest.mark.parametrize("role", ["builder", "viewer"])
+async def test_builder_or_viewer_cannot_create_live_one(role: str) -> None:
+    """Builder + viewer remain blocked from live-one (and all job creation)
+    by ``OPERATOR_DEP``, which 403s before the live-one safety check runs.
+    """
+    async with _make_client(role=role) as (client, _maker):
+        res = await client.post("/api/v1/msa-rtxrt/jobs", json=_live_one_body())
+        assert res.status_code == 403
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("role", ["operator", "owner"])
+async def test_live_one_requires_confirm_live_yes(role: str) -> None:
+    """Both operator+ paths still 400 if ``confirm_live`` isn't exactly ``YES``."""
+    async with _make_client(role=role) as (client, _maker):
         body = _live_one_body()
         body["confirm_live"] = "yes"  # case-sensitive
         res = await client.post("/api/v1/msa-rtxrt/jobs", json=body)
@@ -180,13 +204,28 @@ async def test_owner_live_one_requires_confirm_live_yes() -> None:
 
 
 @pytest.mark.asyncio
-async def test_owner_live_one_requires_max_test_actions_one() -> None:
-    async with _make_client(role="owner") as (client, _maker):
+@pytest.mark.parametrize("role", ["operator", "owner"])
+async def test_live_one_requires_max_test_actions_one(role: str) -> None:
+    """Both operator+ paths still 400 if ``max_test_actions`` isn't 1."""
+    async with _make_client(role=role) as (client, _maker):
         body = _live_one_body()
         body["max_test_actions"] = 0
         res = await client.post("/api/v1/msa-rtxrt/jobs", json=body)
         assert res.status_code == 400
         assert "MAX_TEST_ACTIONS" in res.text
+
+
+@pytest.mark.asyncio
+async def test_live_one_requires_confirm_live_field_present() -> None:
+    """Missing ``confirm_live`` entirely is treated the same as wrong value."""
+    async with _make_client(role="operator") as (client, _maker):
+        # Body without confirm_live at all.
+        res = await client.post(
+            "/api/v1/msa-rtxrt/jobs",
+            json={"kind": "live_one_blast", "max_test_actions": 1},
+        )
+        assert res.status_code == 400
+        assert "CONFIRM_LIVE_TEST" in res.text
 
 
 # ── POST /jobs — mass-live rejection ────────────────────────────────────────
@@ -237,13 +276,52 @@ async def test_mass_live_attempt_writes_blocked_audit_event() -> None:
 
 
 @pytest.mark.asyncio
-async def test_non_owner_live_one_attempt_writes_denied_audit_event() -> None:
+async def test_operator_live_one_writes_live_one_audit_event() -> None:
+    """Operator-tier live-one creation writes the ``.live_one`` audit event
+    (NOT the legacy ``denied_non_owner`` action, which was removed when
+    live-one became operator+ on 2026-05-20).
+    """
+    async with _make_client(role="operator", actor_user_id="u-op") as (client, maker):
+        res = await client.post("/api/v1/msa-rtxrt/jobs", json=_live_one_body())
+        assert res.status_code == 201, res.text
+        async with maker() as session:
+            rows = (await session.exec(select(AuditEvent))).all()
+        actions = {r.action for r in rows}
+        assert "msa_rtxrt.job.create.live_one" in actions
+        # The legacy denied path no longer exists — make sure it isn't
+        # accidentally re-introduced.
+        assert "msa_rtxrt.job.create.denied_non_owner" not in actions
+
+
+@pytest.mark.asyncio
+async def test_live_one_audit_records_real_role_not_hardcoded_owner() -> None:
+    """The audit row for a live-one stores the actor's REAL role (so a
+    post-hoc review can tell which operator ran the action), not a
+    hard-coded ``owner`` string.
+    """
     async with _make_client(role="operator", actor_user_id="u-op") as (client, maker):
         await client.post("/api/v1/msa-rtxrt/jobs", json=_live_one_body())
         async with maker() as session:
             rows = (await session.exec(select(AuditEvent))).all()
-        actions = {r.action for r in rows}
-        assert "msa_rtxrt.job.create.denied_non_owner" in actions
+        live_one_rows = [r for r in rows if r.action == "msa_rtxrt.job.create.live_one"]
+        assert len(live_one_rows) == 1
+        assert live_one_rows[0].actor_role == "operator"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("role", ["builder", "viewer"])
+async def test_builder_or_viewer_live_one_attempt_does_not_create_row(role: str) -> None:
+    """Builder + viewer attempts to live-one are stopped by ``OPERATOR_DEP``
+    BEFORE any DB row or audit event is created. They get a 403; no
+    ``msa_rtxrt.*`` audit row appears.
+    """
+    async with _make_client(role=role, actor_user_id=f"u-{role}") as (client, maker):
+        res = await client.post("/api/v1/msa-rtxrt/jobs", json=_live_one_body())
+        assert res.status_code == 403
+        async with maker() as session:
+            rows = (await session.exec(select(AuditEvent))).all()
+        msa_actions = [r.action for r in rows if r.action.startswith("msa_rtxrt.")]
+        assert msa_actions == [], f"unexpected MSA RT/X audit rows from {role}: {msa_actions}"
 
 
 # ── Runner poll ─────────────────────────────────────────────────────────────

@@ -14,7 +14,7 @@ function makeProps(
   return {
     runnerStatus: "offline",
     recentJobs: [],
-    isOwner: false,
+    canRunLiveOne: false,
     onSubmitJob: vi.fn().mockResolvedValue(undefined),
     onRefresh: vi.fn().mockResolvedValue(undefined),
     ...overrides,
@@ -85,16 +85,16 @@ describe("MsaRtxrtControlPanel — dry-run buttons", () => {
 describe("MsaRtxrtControlPanel — live-one gating", () => {
   it("non-owner sees the locked notice and no arm button", () => {
     render(
-      <MsaRtxrtControlPanel {...makeProps({ runnerStatus: "idle", isOwner: false })} />,
+      <MsaRtxrtControlPanel {...makeProps({ runnerStatus: "idle", canRunLiveOne: false })} />,
     );
-    expect(screen.getByTestId("live-one-locked-not-owner")).toBeInTheDocument();
+    expect(screen.getByTestId("live-one-locked-insufficient-role")).toBeInTheDocument();
     expect(screen.queryByTestId("live-one-arm")).toBeNull();
     expect(screen.queryByTestId("live-one-confirm")).toBeNull();
   });
 
   it("owner sees an arm button before any live-one is offered", () => {
     render(
-      <MsaRtxrtControlPanel {...makeProps({ runnerStatus: "idle", isOwner: true })} />,
+      <MsaRtxrtControlPanel {...makeProps({ runnerStatus: "idle", canRunLiveOne: true })} />,
     );
     expect(screen.getByTestId("live-one-arm")).toBeInTheDocument();
     expect(screen.queryByTestId("live-one-confirm")).toBeNull();
@@ -103,7 +103,7 @@ describe("MsaRtxrtControlPanel — live-one gating", () => {
 
   it("arming reveals the kind picker + Confirm/Cancel; Confirm is disabled until a kind is chosen", () => {
     render(
-      <MsaRtxrtControlPanel {...makeProps({ runnerStatus: "idle", isOwner: true })} />,
+      <MsaRtxrtControlPanel {...makeProps({ runnerStatus: "idle", canRunLiveOne: true })} />,
     );
     fireEvent.click(screen.getByTestId("live-one-arm"));
 
@@ -120,7 +120,7 @@ describe("MsaRtxrtControlPanel — live-one gating", () => {
     const onSubmitJob = vi.fn().mockResolvedValue(undefined);
     render(
       <MsaRtxrtControlPanel
-        {...makeProps({ runnerStatus: "idle", isOwner: true, onSubmitJob })}
+        {...makeProps({ runnerStatus: "idle", canRunLiveOne: true, onSubmitJob })}
       />,
     );
     fireEvent.click(screen.getByTestId("live-one-arm"));
@@ -139,7 +139,7 @@ describe("MsaRtxrtControlPanel — live-one gating", () => {
     const onSubmitJob = vi.fn().mockResolvedValue(undefined);
     render(
       <MsaRtxrtControlPanel
-        {...makeProps({ runnerStatus: "idle", isOwner: true, onSubmitJob })}
+        {...makeProps({ runnerStatus: "idle", canRunLiveOne: true, onSubmitJob })}
       />,
     );
     fireEvent.click(screen.getByTestId("live-one-arm"));
@@ -154,7 +154,7 @@ describe("MsaRtxrtControlPanel — live-one gating", () => {
 
   it("disables Confirm when the runner is offline even after arming", () => {
     render(
-      <MsaRtxrtControlPanel {...makeProps({ isOwner: true, runnerStatus: "offline" })} />,
+      <MsaRtxrtControlPanel {...makeProps({ canRunLiveOne: true, runnerStatus: "offline" })} />,
     );
     // Arm button itself is disabled when offline — operator can't even get to the picker.
     expect(screen.getByTestId("live-one-arm")).toBeDisabled();

@@ -15,28 +15,31 @@ enqueues a smoke / dry-run job (no external side effects), or — for
 owner-only live-one — enqueues a single capped action that the Claw
 runner refuses unless three local env flags are set.
 
-## What Luis can do
+## What Luis can do (operator/admin role)
 
 | Capability | Notes |
 |---|---|
 | Open `hq.digidle.com/bots/msa-rtxrt` from phone or laptop | Sign in via Clerk; operator role required |
+| Select which runner to target | Top-bar selector lists every connected runner (claw-1, luis-pc-1, …) |
 | See live runner status (online / idle / busy / offline) | Backed by the heartbeat endpoint; flips in real time as runner polls |
 | Click **Run smoke test** | Enqueues a `smoke` job — no external action |
 | Click any dry-run button | Enqueues `dry_run_*` — Luis's bot refuses to actually send via its own `safety_guard.require_live_or_exit()` unless DRY_RUN=false AND ALLOW_LIVE_EXTERNAL_ACTIONS=true |
+| **Arm + confirm a controlled live-one** | Two-step Arm → Confirm; backend re-checks operator+ role AND `confirm_live="YES"` AND `max_test_actions=1`; bot still refuses unless the three local env vars are set on the calling runner |
 | See run history (queued / running / succeeded / failed / blocked) | Privacy-safe summary + stdout/stderr excerpts, capped server-side |
-| Edit local configs on the Claw computer (auftrag.json, contacts.json) | NEVER commit; the worktree's exclude rules already block these |
-| Tell Zach when AdsPower / X is ready | Required before any live test |
+| Edit local configs on his runner machine (auftrag.json, contacts.json) | NEVER commit; the worktree's exclude rules already block these |
+| Iterate on bot code on `coo/*` / `feat/*` / `fix/*` branches and open PRs | Standard PR workflow; CI gates apply; cannot push to `main` |
 
 ## What only Zach (owner) can do
 
 | Capability | Notes |
 |---|---|
-| Arm + confirm live-one | UI surface is owner-gated; backend also rechecks role |
-| Set the three live-mode env vars on the Claw shell | `ALLOW_LIVE_EXTERNAL_ACTIONS=true` + `CONFIRM_LIVE_TEST=YES` + `MAX_TEST_ACTIONS=1` |
-| Restart the runner with live-mode env in scope | Without restart, the runner's env doesn't pick up live flags |
+| Push directly to `main` / merge PRs | Default branch protection — operators open PRs and Zach merges |
 | Change Render / Vercel / Clerk / DNS / billing | Production surfaces |
-| Rotate the runner token | `openssl rand -hex 32 | pbcopy` → paste into Render → restart runner with new value in `.msa-rtxrt-runner.env` |
-| Approve merging changes to `main` | Default branch protection |
+| Change Cloudflare / auth / security policy | Production security |
+| Rotate the runner token | `openssl rand -hex 32 \| pbcopy` → paste into Render → re-paste to each runner's `.msa-rtxrt-runner.env` and restart |
+| Assign Mission Control roles to other users | `PUT /api/v1/roles/users/{clerk_user_id}` — owner only |
+| Add a new `live_one_*` kind or relax the safety gate | Requires code change + PR + Zach merge |
+| Set the three live-mode env vars on a runner machine | Per-runner-machine task — anyone with shell access on that machine can do it, but they only affect that machine |
 
 **Mass-live actions do not exist anywhere in the system** and are
 blocked at four independent layers:

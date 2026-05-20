@@ -42,7 +42,7 @@ function makeProps(
   return {
     runnerStatus,
     recentJobs: [],
-    isOwner: false,
+    canRunLiveOne: false,
     onSubmitJob: vi.fn().mockResolvedValue(undefined),
     onRefresh: vi.fn().mockResolvedValue(undefined),
     ...defaultsForLive,
@@ -181,7 +181,7 @@ describe("MsaRtxrtDashboard — run buttons", () => {
 
 describe("MsaRtxrtDashboard — mass-live safety", () => {
   it("does not render any mass-live button (no testid contains live_all / live_mass / live_batch / live_many)", () => {
-    render(<MsaRtxrtDashboard {...makeProps({ runnerStatus: "idle", isOwner: true })} />);
+    render(<MsaRtxrtDashboard {...makeProps({ runnerStatus: "idle", canRunLiveOne: true })} />);
     // Open the live-one section so the kind dropdown is rendered.
     fireEvent.click(screen.getByTestId("live-one-arm"));
     const select = screen.getByTestId("live-one-kind-select");
@@ -205,21 +205,27 @@ describe("MsaRtxrtDashboard — mass-live safety", () => {
 // ── Live-one gating ─────────────────────────────────────────────────────────
 
 describe("MsaRtxrtDashboard — live-one gating", () => {
-  it("non-owner sees the locked notice and no arm button", () => {
+  it("builder / viewer (canRunLiveOne=false) sees the locked notice and no arm button", () => {
     render(
       <MsaRtxrtDashboard
-        {...makeProps({ runnerStatus: "idle", isOwner: false })}
+        {...makeProps({ runnerStatus: "idle", canRunLiveOne: false })}
       />,
     );
-    expect(screen.getByTestId("live-one-locked-not-owner")).toBeInTheDocument();
+    expect(
+      screen.getByTestId("live-one-locked-insufficient-role"),
+    ).toBeInTheDocument();
+    // Copy reads Operator/Admin, NOT Owner only (post 2026-05-20).
+    expect(
+      screen.getByTestId("live-one-locked-insufficient-role").textContent,
+    ).toMatch(/Operator\/Admin access required/i);
     expect(screen.queryByTestId("live-one-arm")).toBeNull();
     expect(screen.queryByTestId("live-one-confirm")).toBeNull();
   });
 
-  it("owner sees an arm button before any live-one is offered", () => {
+  it("operator+ (canRunLiveOne=true) sees an arm button before any live-one is offered", () => {
     render(
       <MsaRtxrtDashboard
-        {...makeProps({ runnerStatus: "idle", isOwner: true })}
+        {...makeProps({ runnerStatus: "idle", canRunLiveOne: true })}
       />,
     );
     expect(screen.getByTestId("live-one-arm")).toBeInTheDocument();
@@ -230,7 +236,7 @@ describe("MsaRtxrtDashboard — live-one gating", () => {
     const onSubmitJob = vi.fn().mockResolvedValue(undefined);
     render(
       <MsaRtxrtDashboard
-        {...makeProps({ runnerStatus: "idle", isOwner: true, onSubmitJob })}
+        {...makeProps({ runnerStatus: "idle", canRunLiveOne: true, onSubmitJob })}
       />,
     );
     fireEvent.click(screen.getByTestId("live-one-arm"));
@@ -248,7 +254,7 @@ describe("MsaRtxrtDashboard — live-one gating", () => {
     const onSubmitJob = vi.fn().mockResolvedValue(undefined);
     render(
       <MsaRtxrtDashboard
-        {...makeProps({ runnerStatus: "idle", isOwner: true, onSubmitJob })}
+        {...makeProps({ runnerStatus: "idle", canRunLiveOne: true, onSubmitJob })}
       />,
     );
     fireEvent.click(screen.getByTestId("live-one-arm"));
@@ -396,7 +402,7 @@ describe("MsaRtxrtDashboard — no secrets", () => {
     // The bridge UI should never receive such material from the backend
     // either. This guard ensures we don't accidentally bake one into the
     // dashboard's static catalog (env checklist, hints, notices).
-    render(<MsaRtxrtDashboard {...makeProps({ runnerStatus: "idle", isOwner: true })} />);
+    render(<MsaRtxrtDashboard {...makeProps({ runnerStatus: "idle", canRunLiveOne: true })} />);
     for (const tabId of ALL_TABS) {
       fireEvent.click(screen.getByTestId(`tab-${tabId}`));
       const root = screen.getByTestId("msa-rtxrt-dashboard");
@@ -451,10 +457,16 @@ describe("SetupTab — new operational sections", () => {
 
   it("renders the 'Luis vs Zach' role separation, with no mass-live affordance", () => {
     openSetup();
-    expect(screen.getByTestId("luis-can-do")).toBeInTheDocument();
-    expect(screen.getByTestId("owner-only")).toBeInTheDocument();
-    const ownerText = screen.getByTestId("owner-only").textContent ?? "";
-    expect(ownerText).not.toMatch(/run mass[- ]live/i);
+    const luis = screen.getByTestId("luis-can-do");
+    const ownerOnly = screen.getByTestId("owner-only");
+    expect(luis).toBeInTheDocument();
+    expect(ownerOnly).toBeInTheDocument();
+    // Post 2026-05-20: Luis can run controlled live-one (operator role).
+    expect(luis.textContent ?? "").toMatch(/controlled live-one/i);
+    // Owner-only column should still exist for production / security.
+    expect(ownerOnly.textContent ?? "").toMatch(/main/i);
+    // No mass-live affordance anywhere.
+    expect(ownerOnly.textContent ?? "").not.toMatch(/run mass[- ]live/i);
   });
 });
 
@@ -473,7 +485,7 @@ describe("Smoke button is enabled by heartbeat-derived idle even with no jobs", 
       <MsaRtxrtDashboard
         runnerStatus="offline"
         recentJobs={[]}
-        isOwner={false}
+        canRunLiveOne={false}
         onSubmitJob={vi.fn()}
         onRefresh={vi.fn()}
       />,
@@ -483,12 +495,12 @@ describe("Smoke button is enabled by heartbeat-derived idle even with no jobs", 
     expect(smoke.disabled).toBe(true);
   });
 
-  it("Live-one stays owner-gated regardless of heartbeat-driven idle", () => {
+  it("Live-one stays role-gated (Operator+) regardless of heartbeat-driven idle", () => {
     render(
       <MsaRtxrtDashboard
         runnerStatus="idle"
         recentJobs={[]}
-        isOwner={false}
+        canRunLiveOne={false}
         onSubmitJob={vi.fn()}
         onRefresh={vi.fn()}
       />,
@@ -654,13 +666,14 @@ describe("MsaRtxrtDashboard — multi-runner selector", () => {
     expect(screen.getByTestId("history-row-runner-j2").textContent).toBe("→ luis-pc-1");
   });
 
-  it("live-one stays owner-gated AND requires a selected online runner", () => {
-    // No runner selected → live-one arm button stays disabled even for owner.
+  it("live-one stays role-gated AND requires a selected online runner", () => {
+    // No runner selected → live-one arm button stays disabled even when
+    // canRunLiveOne is true (operator+).
     render(
       <MsaRtxrtDashboard
         {...makeProps({
           runnerStatus: "idle",
-          isOwner: true,
+          canRunLiveOne: true,
           runners: TWO_RUNNERS,
           selectedRunnerId: null,
         })}

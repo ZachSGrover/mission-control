@@ -44,6 +44,7 @@ import {
 
 import { CopyButton } from "@/components/hermes/CopyButton";
 
+import type { BackendRunnerHeartbeat } from "./MsaRtxrtClient";
 import type {
   JobKind,
   JobStatus,
@@ -55,12 +56,25 @@ import type {
 //
 // Same data shape as the existing MsaRtxrtControlPanel — this lets the page
 // drop one in for the other without changing the page-level data fetch.
+//
+// Multi-runner additions (v2):
+//   - ``runners`` is the heartbeat snapshot from /api/v1/msa-rtxrt/runner/status
+//     so the selector knows which IDs to render + each one's online state.
+//   - ``selectedRunnerId`` + ``onSelectRunner`` drive the dropdown.
+//   - ``onSubmitJob`` receives the target runner the operator chose so
+//     the POST body carries it through.
 
 export interface MsaRtxrtDashboardProps {
   runnerStatus: RunnerStatus;
   recentJobs: MsaRtxrtJob[];
   isOwner: boolean;
-  onSubmitJob: (kind: JobKind) => Promise<void>;
+  /** Heartbeat snapshot — drives the runner selector. May be empty list. */
+  runners?: BackendRunnerHeartbeat[];
+  /** Currently selected runner id, or ``null`` if the operator hasn't picked one. */
+  selectedRunnerId?: string | null;
+  /** Operator picks a runner from the selector. */
+  onSelectRunner?: (runnerId: string | null) => void;
+  onSubmitJob: (kind: JobKind, targetRunnerId: string | null) => Promise<void>;
   onRefresh: () => Promise<void> | void;
 }
 
@@ -299,6 +313,73 @@ function AccountRail({
   );
 }
 
+// ── Runner selector (multi-runner v2) ───────────────────────────────────────
+//
+// Renders a small dropdown of every runner the backend's heartbeat
+// snapshot knows about, plus the "no runner picked" sentinel. The dashboard
+// uses this to decide which runner each Submit Job goes to.
+//
+// The selector is intentionally tiny and self-contained — it only takes
+// the heartbeat list + selection state. It does NOT itself fetch
+// (the page-level component does that, then passes the data down).
+
+interface RunnerSelectorProps {
+  runners: BackendRunnerHeartbeat[];
+  selectedRunnerId: string | null;
+  onSelect: (runnerId: string | null) => void;
+}
+
+function RunnerSelector({
+  runners,
+  selectedRunnerId,
+  onSelect,
+}: RunnerSelectorProps) {
+  const value = selectedRunnerId ?? "";
+  const handleChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
+    const next = e.target.value;
+    onSelect(next === "" ? null : next);
+  };
+  // Friendly label per row: "claw-1 · online · idle" or "luis-mac-1 · offline".
+  const labelFor = (r: BackendRunnerHeartbeat) => {
+    if (r.status === "online") {
+      return `${r.runner_id} · online · ${r.last_status}`;
+    }
+    return `${r.runner_id} · offline`;
+  };
+  return (
+    <label
+      className="inline-flex items-center gap-2 rounded-md px-2 py-1 text-xs"
+      style={{
+        background: THEME.cardBg,
+        border: `1px solid ${THEME.cardBorder}`,
+        color: THEME.textMuted,
+      }}
+      data-testid="runner-selector-wrap"
+    >
+      <span style={{ color: THEME.textSoft }}>Runner:</span>
+      <select
+        value={value}
+        onChange={handleChange}
+        data-testid="runner-selector"
+        className="bg-transparent outline-none"
+        style={{ color: THEME.text, minWidth: 160 }}
+        aria-label="Target runner for new jobs"
+      >
+        <option value="">— pick a runner —</option>
+        {runners.map((r) => (
+          <option
+            key={r.runner_id}
+            value={r.runner_id}
+            data-testid={`runner-option-${r.runner_id}`}
+          >
+            {labelFor(r)}
+          </option>
+        ))}
+      </select>
+    </label>
+  );
+}
+
 // ── Status pill ─────────────────────────────────────────────────────────────
 
 function RunnerStatusPill({ status }: { status: RunnerStatus }) {
@@ -456,6 +537,10 @@ interface BotActionTabProps {
   primaryLabel: string;
   primaryIcon: React.ElementType;
   runnerOffline: boolean;
+  /** True iff the operator has not picked a runner from the selector. */
+  noRunnerSelected: boolean;
+  /** True iff the selected runner's heartbeat says offline. */
+  selectedRunnerOffline: boolean;
   busyKind: JobKind | null;
   onRun: (kind: JobKind) => void;
   testIdPrefix: string;
@@ -468,10 +553,18 @@ function BotActionTab({
   primaryLabel,
   primaryIcon,
   runnerOffline,
+  noRunnerSelected,
+  selectedRunnerOffline,
   busyKind,
   onRun,
   testIdPrefix,
 }: BotActionTabProps) {
+  const disabled = runnerOffline || noRunnerSelected || selectedRunnerOffline;
+  const disabledReason = noRunnerSelected
+    ? "Pick a runner from the selector above before enqueuing a job."
+    : selectedRunnerOffline
+      ? "The selected runner is offline — start its local runner before enqueuing a job."
+      : null;
   return (
     <div data-testid={`tab-pane-${testIdPrefix}`}>
       <HintBox icon={Inbox}>{hint}</HintBox>
@@ -510,13 +603,22 @@ function BotActionTab({
         <RunButton
           kind={primaryKind}
           label={primaryLabel}
-          description={`Enqueue ${primaryKind} for the Claw runner.`}
-          disabled={runnerOffline}
+          description={`Enqueue ${primaryKind} for the selected runner.`}
+          disabled={disabled}
           busy={busyKind === primaryKind}
           onClick={() => onRun(primaryKind)}
           testId={`run-${primaryKind}`}
           icon={primaryIcon}
         />
+        {disabledReason && (
+          <p
+            className="mt-2 text-[11px] leading-relaxed"
+            style={{ color: THEME.warn }}
+            data-testid={`tab-pane-${testIdPrefix}-disabled-reason`}
+          >
+            {disabledReason}
+          </p>
+        )}
       </NumberedCard>
     </div>
   );
@@ -528,12 +630,21 @@ function RunnerStatusTab({
   runnerStatus,
   busyKind,
   onRun,
+  runners,
+  selectedRunnerId,
+  noRunnerSelected,
+  selectedRunnerOffline,
 }: {
   runnerStatus: RunnerStatus;
   busyKind: JobKind | null;
   onRun: (kind: JobKind) => void;
+  runners: BackendRunnerHeartbeat[];
+  selectedRunnerId: string | null;
+  noRunnerSelected: boolean;
+  selectedRunnerOffline: boolean;
 }) {
   const offline = runnerStatus === "offline" || runnerStatus === "unknown";
+  const disabled = offline || noRunnerSelected || selectedRunnerOffline;
   return (
     <div data-testid="tab-pane-runner-status">
       <HintBox icon={Signal}>
@@ -553,25 +664,97 @@ function RunnerStatusTab({
             className="mt-3 text-xs leading-relaxed"
             style={{ color: THEME.err }}
           >
-            The Claw runner is not connected. All run buttons stay disabled
-            until the runner starts polling.
+            No runner is online. All run buttons stay disabled until at
+            least one runner starts polling.
+          </p>
+        )}
+        {!offline && noRunnerSelected && (
+          <p
+            className="mt-3 text-xs leading-relaxed"
+            style={{ color: THEME.warn }}
+            data-testid="status-tab-no-runner-warning"
+          >
+            Pick a runner from the selector in the top bar before
+            enqueuing a job.
+          </p>
+        )}
+        {!offline && !noRunnerSelected && selectedRunnerOffline && (
+          <p
+            className="mt-3 text-xs leading-relaxed"
+            style={{ color: THEME.warn }}
+            data-testid="status-tab-selected-offline-warning"
+          >
+            The selected runner ({selectedRunnerId}) is offline. Start
+            its local runner before enqueuing a job, or pick a runner
+            that&apos;s online.
           </p>
         )}
       </NumberedCard>
 
-      <NumberedCard n={2} title="Smoke test">
+      <NumberedCard n={2} title="Connected runners">
+        {runners.length === 0 ? (
+          <p
+            className="text-xs leading-relaxed"
+            style={{ color: THEME.textQuiet }}
+            data-testid="connected-runners-empty"
+          >
+            No runners have polled yet. Start a local runner on the Claw
+            computer (or Luis&apos;s Mac) and refresh this page.
+          </p>
+        ) : (
+          <ul
+            className="space-y-1.5"
+            data-testid="connected-runners-list"
+          >
+            {runners.map((r) => (
+              <li
+                key={r.runner_id}
+                className="flex items-center justify-between rounded-md px-3 py-2 font-mono text-xs"
+                style={{
+                  background: THEME.cardSoftBg,
+                  border: `1px solid ${THEME.cardBorder}`,
+                  color: THEME.text,
+                }}
+                data-testid={`connected-runner-${r.runner_id}`}
+              >
+                <span>
+                  <span style={{ color: THEME.textSoft }}>{r.runner_id}</span>
+                  {selectedRunnerId === r.runner_id && (
+                    <span
+                      className="ml-2 rounded-full px-1.5 py-0.5 text-[10px]"
+                      style={{
+                        background: THEME.accentFrom,
+                        color: "#fff",
+                      }}
+                    >
+                      selected
+                    </span>
+                  )}
+                </span>
+                <span style={{ color: r.status === "online" ? THEME.ok : THEME.warn }}>
+                  {r.status === "online"
+                    ? `online · ${r.last_status}`
+                    : `offline · ${r.seconds_since_seen}s`}
+                </span>
+              </li>
+            ))}
+          </ul>
+        )}
+      </NumberedCard>
+
+      <NumberedCard n={3} title="Smoke test">
         <p
           className="mb-3 text-xs"
           style={{ color: THEME.textQuiet }}
         >
-          Verifies runner ↔ bot wiring without touching any external service.
-          Always safe to run.
+          Verifies runner ↔ bot wiring on the selected runner without
+          touching any external service. Always safe to run.
         </p>
         <RunButton
           kind="smoke"
           label="Run smoke test"
           description="Verify runner ↔ bot wiring."
-          disabled={offline}
+          disabled={disabled}
           busy={busyKind === "smoke"}
           onClick={() => onRun("smoke")}
           testId="run-smoke"
@@ -579,7 +762,7 @@ function RunnerStatusTab({
         />
       </NumberedCard>
 
-      <NumberedCard n={3} title="Other dry-run actions">
+      <NumberedCard n={4} title="Other dry-run actions">
         <div className="flex flex-wrap gap-2">
           {OTHER_DRY_RUN_BUTTONS.map((b) => (
             <RunButton
@@ -587,7 +770,7 @@ function RunnerStatusTab({
               kind={b.kind}
               label={b.label}
               description={b.description}
-              disabled={offline}
+              disabled={disabled}
               busy={busyKind === b.kind}
               onClick={() => onRun(b.kind)}
               testId={`run-${b.kind}`}
@@ -674,6 +857,20 @@ function RunHistoryTab({ jobs }: { jobs: MsaRtxrtJob[] }) {
                     style={{ color: THEME.textQuiet }}
                   >
                     {new Date(job.createdAt).toLocaleString()}
+                    {(job.runnerId || job.targetRunnerId) && (
+                      <>
+                        {" · "}
+                        <span
+                          data-testid={`history-row-runner-${job.id}`}
+                          style={{ color: THEME.textSoft }}
+                        >
+                          {job.runnerId ??
+                            (job.targetRunnerId
+                              ? `→ ${job.targetRunnerId}`
+                              : "—")}
+                        </span>
+                      </>
+                    )}
                   </p>
                   {job.summary && (
                     <p
@@ -728,7 +925,80 @@ function SetupTab({ isOwner }: { isOwner: boolean }) {
         </dl>
       </NumberedCard>
 
-      <NumberedCard n={2} title="Required env on the Claw computer">
+      <NumberedCard n={2} title="Add another runner computer">
+        <p
+          className="text-xs leading-relaxed"
+          style={{ color: THEME.textMuted }}
+          data-testid="setup-add-runner-intro"
+        >
+          MSA RT/X supports multiple runner machines (claw-1, luis-mac-1,
+          zach-laptop-1, mac-mini-1, …). Each runs its own local Python
+          runner with its own ID, its own bot folder, its own AdsPower
+          install, and its own config files. Mission Control routes jobs
+          to whichever runner the operator picks in the top-bar selector.
+        </p>
+        <ol
+          className="mt-3 list-decimal space-y-1.5 pl-5 text-xs leading-relaxed"
+          style={{ color: THEME.textMuted }}
+          data-testid="setup-add-runner-steps"
+        >
+          <li>Clone the repo (or copy the runner package) onto the new computer.</li>
+          <li>
+            Install Python deps:{" "}
+            <code style={{ color: THEME.textSoft }}>
+              python3 -m pip install --user requests playwright
+            </code>
+            .
+          </li>
+          <li>
+            Place the bot folder locally (e.g.{" "}
+            <code style={{ color: THEME.textSoft }}>
+              ~/msa-rtxrt-bot/Automation [RTxRT]
+            </code>
+            ).
+          </li>
+          <li>
+            Create a local{" "}
+            <code style={{ color: THEME.textSoft }}>
+              .msa-rtxrt-runner.env
+            </code>{" "}
+            file with{" "}
+            <code style={{ color: THEME.textSoft }}>chmod 600</code>{" "}
+            permissions; set <code>MSA_RTXRT_BACKEND_URL</code>,{" "}
+            <code>MSA_RTXRT_RUNNER_TOKEN</code> (same token as Render env),{" "}
+            <code>MSA_RTXRT_RUNNER_ID</code> (unique per computer:{" "}
+            <code>luis-mac-1</code>, <code>zach-laptop-1</code>, …), and{" "}
+            <code>MSA_RTXRT_BOT_DIR</code>.
+          </li>
+          <li>Optional: add ADSPOWER_API_KEY when AdsPower is being used live.</li>
+          <li>
+            Run preflight first:{" "}
+            <code style={{ color: THEME.textSoft }}>
+              python3 tools/local-runners/msa_rtxrt_runner.py --preflight
+            </code>
+            .
+          </li>
+          <li>
+            Start the poll loop:{" "}
+            <code style={{ color: THEME.textSoft }}>
+              python3 tools/local-runners/msa_rtxrt_runner.py --poll
+            </code>
+            .
+          </li>
+          <li>
+            Refresh this page — the new runner appears in the top-bar
+            selector within 5 seconds.
+          </li>
+        </ol>
+        <p
+          className="mt-3 text-[11px] italic"
+          style={{ color: THEME.textQuiet }}
+        >
+          Full guide: <code>docs/operations/msa-rtxrt-multi-runner.md</code>
+        </p>
+      </NumberedCard>
+
+      <NumberedCard n={3} title="Required env on each runner computer">
         <ul
           className="space-y-2 text-xs"
           style={{ color: THEME.textMuted }}
@@ -766,7 +1036,7 @@ function SetupTab({ isOwner }: { isOwner: boolean }) {
         </ul>
       </NumberedCard>
 
-      <NumberedCard n={3} title="Safety posture">
+      <NumberedCard n={4} title="Safety posture">
         <ul
           className="space-y-1.5 text-xs leading-relaxed"
           style={{ color: THEME.textMuted }}
@@ -788,7 +1058,7 @@ function SetupTab({ isOwner }: { isOwner: boolean }) {
         </ul>
       </NumberedCard>
 
-      <NumberedCard n={4} title="Required external accounts (notice)">
+      <NumberedCard n={5} title="Required external accounts (notice)">
         <ul
           className="space-y-2 text-xs leading-relaxed"
           style={{ color: THEME.textMuted }}
@@ -837,7 +1107,7 @@ function SetupTab({ isOwner }: { isOwner: boolean }) {
         </ul>
       </NumberedCard>
 
-      <NumberedCard n={5} title="Working local dashboard">
+      <NumberedCard n={6} title="Working local dashboard">
         <p
           className="mb-3 text-xs leading-relaxed"
           style={{ color: THEME.textMuted }}
@@ -1140,14 +1410,22 @@ function SetupRow({
 function LiveOneCard({
   isOwner,
   runnerOffline,
+  noRunnerSelected,
+  selectedRunnerOffline,
+  selectedRunnerId,
   busyKind,
   onRun,
 }: {
   isOwner: boolean;
   runnerOffline: boolean;
+  noRunnerSelected: boolean;
+  selectedRunnerOffline: boolean;
+  selectedRunnerId: string | null;
   busyKind: JobKind | null;
   onRun: (kind: JobKind) => void;
 }) {
+  const disabled =
+    runnerOffline || noRunnerSelected || selectedRunnerOffline;
   const [armed, setArmed] = useState(false);
   const [kind, setKind] = useState<JobKind | "">("");
 
@@ -1192,7 +1470,7 @@ function LiveOneCard({
             <button
               type="button"
               onClick={() => setArmed(true)}
-              disabled={runnerOffline}
+              disabled={disabled}
               data-testid="live-one-arm"
               className="mt-3 inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs disabled:opacity-50"
               style={{
@@ -1209,6 +1487,16 @@ function LiveOneCard({
               className="mt-3 space-y-2"
               data-testid="live-one-confirm-block"
             >
+              <p
+                className="text-[11px]"
+                style={{ color: THEME.textQuiet }}
+                data-testid="live-one-targeting"
+              >
+                Targeting runner:{" "}
+                <code style={{ color: THEME.textSoft }}>
+                  {selectedRunnerId ?? "—"}
+                </code>
+              </p>
               <select
                 value={kind}
                 onChange={(e) => setKind(e.target.value as JobKind | "")}
@@ -1236,7 +1524,7 @@ function LiveOneCard({
                     setArmed(false);
                     setKind("");
                   }}
-                  disabled={!kind || runnerOffline || busyKind !== null}
+                  disabled={!kind || disabled || busyKind !== null}
                   className="flex-1 rounded-md px-3 py-1.5 text-xs font-semibold disabled:opacity-50"
                   style={{
                     background: "#dc2626",
@@ -1277,6 +1565,9 @@ export function MsaRtxrtDashboard({
   runnerStatus,
   recentJobs,
   isOwner,
+  runners = [],
+  selectedRunnerId = null,
+  onSelectRunner,
   onSubmitJob,
   onRefresh,
 }: MsaRtxrtDashboardProps) {
@@ -1284,16 +1575,54 @@ export function MsaRtxrtDashboard({
   const [selectedLane, setSelectedLane] = useState<string | null>(null);
   const [busyKind, setBusyKind] = useState<JobKind | null>(null);
   const [refreshing, setRefreshing] = useState(false);
+  // Internal selection state — used only when the parent doesn't supply
+  // ``onSelectRunner``. The page-level component always supplies it;
+  // tests that pass ``selectedRunnerId`` directly without an
+  // ``onSelectRunner`` callback still get their value respected.
+  const [internalSelectedRunner, setInternalSelectedRunner] = useState<
+    string | null
+  >(selectedRunnerId);
+  // The effective selection is:
+  //   - the prop value when the parent passes ``onSelectRunner`` (fully
+  //     controlled — page level)
+  //   - the prop value if it's non-null (controlled snapshot in tests)
+  //   - the internal state otherwise
+  const effectiveSelected = onSelectRunner
+    ? selectedRunnerId
+    : selectedRunnerId !== null
+      ? selectedRunnerId
+      : internalSelectedRunner;
+  const setSelected = (next: string | null) => {
+    if (onSelectRunner) onSelectRunner(next);
+    else setInternalSelectedRunner(next);
+  };
 
   const lanes = useMemo(() => deriveRunnerLanes(recentJobs), [recentJobs]);
   const runnerOffline =
     runnerStatus === "offline" || runnerStatus === "unknown";
+  // Multi-runner v2: the run buttons need BOTH a selected runner AND
+  // the runner pill to show idle (== online + not currently busy).
+  // ``noRunnerSelected`` is exposed to the tab components so they can
+  // render a precise reason-for-disable.
+  const noRunnerSelected = !effectiveSelected;
+  // If the selected runner is offline (per heartbeat list), block the
+  // buttons too — otherwise the operator could enqueue a job that never
+  // gets claimed.
+  const selectedRunnerOffline =
+    !!effectiveSelected &&
+    runners.length > 0 &&
+    !runners.some(
+      (r) => r.runner_id === effectiveSelected && r.status === "online",
+    );
+  const buttonsDisabled =
+    runnerOffline || noRunnerSelected || selectedRunnerOffline;
 
   const handleRun = async (kind: JobKind) => {
     if (busyKind) return;
+    if (buttonsDisabled) return;
     setBusyKind(kind);
     try {
-      await onSubmitJob(kind);
+      await onSubmitJob(kind, effectiveSelected);
     } finally {
       setBusyKind(null);
     }
@@ -1339,6 +1668,11 @@ export function MsaRtxrtDashboard({
           Mission Control bridge
         </span>
         <div className="ml-auto flex items-center gap-2">
+          <RunnerSelector
+            runners={runners}
+            selectedRunnerId={effectiveSelected}
+            onSelect={setSelected}
+          />
           <RunnerStatusPill status={runnerStatus} />
           <button
             type="button"
@@ -1413,11 +1747,13 @@ export function MsaRtxrtDashboard({
               <BotActionTab
                 testIdPrefix="all-chats"
                 hint="RTxRT mode — sends a DM to every chat in the inbox of the selected account. AdsPower must be running and the X profile logged in. 24h filter applies."
-                intro="Replicates Luis's All Chats tab. Mission Control enqueues a dry-run DM sweep; the Claw runner walks the inbox of whichever account is active on the Claw side."
+                intro="Replicates Luis's All Chats tab. Mission Control enqueues a dry-run DM sweep; the selected runner walks the inbox of whichever account is active on its side."
                 primaryKind="dry_run_dm"
                 primaryLabel="Dry-run DM sweep"
                 primaryIcon={MessageSquare}
                 runnerOffline={runnerOffline}
+                noRunnerSelected={noRunnerSelected}
+                selectedRunnerOffline={selectedRunnerOffline}
                 busyKind={busyKind}
                 onRun={handleRun}
               />
@@ -1432,6 +1768,8 @@ export function MsaRtxrtDashboard({
                 primaryLabel="Dry-run blast"
                 primaryIcon={Inbox}
                 runnerOffline={runnerOffline}
+                noRunnerSelected={noRunnerSelected}
+                selectedRunnerOffline={selectedRunnerOffline}
                 busyKind={busyKind}
                 onRun={handleRun}
               />
@@ -1446,6 +1784,8 @@ export function MsaRtxrtDashboard({
                 primaryLabel="Dry-run builder"
                 primaryIcon={Hammer}
                 runnerOffline={runnerOffline}
+                noRunnerSelected={noRunnerSelected}
+                selectedRunnerOffline={selectedRunnerOffline}
                 busyKind={busyKind}
                 onRun={handleRun}
               />
@@ -1460,6 +1800,8 @@ export function MsaRtxrtDashboard({
                 primaryLabel="Dry-run repost"
                 primaryIcon={Repeat}
                 runnerOffline={runnerOffline}
+                noRunnerSelected={noRunnerSelected}
+                selectedRunnerOffline={selectedRunnerOffline}
                 busyKind={busyKind}
                 onRun={handleRun}
               />
@@ -1470,6 +1812,10 @@ export function MsaRtxrtDashboard({
                 runnerStatus={runnerStatus}
                 busyKind={busyKind}
                 onRun={handleRun}
+                runners={runners}
+                selectedRunnerId={effectiveSelected}
+                noRunnerSelected={noRunnerSelected}
+                selectedRunnerOffline={selectedRunnerOffline}
               />
             )}
 
@@ -1484,6 +1830,9 @@ export function MsaRtxrtDashboard({
             <LiveOneCard
               isOwner={isOwner}
               runnerOffline={runnerOffline}
+              noRunnerSelected={noRunnerSelected}
+              selectedRunnerOffline={selectedRunnerOffline}
+              selectedRunnerId={effectiveSelected}
               busyKind={busyKind}
               onRun={handleRun}
             />

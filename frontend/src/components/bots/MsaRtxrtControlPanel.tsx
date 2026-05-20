@@ -61,6 +61,10 @@ export interface MsaRtxrtJob {
   finishedAt?: string;
   /** Short, privacy-safe summary line (no fan data, no message bodies). */
   summary?: string;
+  /** Runner that actually claimed + ran this job (undefined while queued). */
+  runnerId?: string;
+  /** Runner the operator targeted at enqueue time (undefined = any runner). */
+  targetRunnerId?: string;
 }
 
 export interface MsaRtxrtControlPanelProps {

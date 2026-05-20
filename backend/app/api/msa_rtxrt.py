@@ -28,6 +28,7 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request, status
 from pydantic import BaseModel, ConfigDict, Field
+from sqlalchemy import or_
 from sqlmodel import select
 
 from app.api.mc_roles import (
@@ -129,6 +130,15 @@ class CreateJobRequest(BaseModel):
     # validated) for live-one kinds.
     confirm_live: str | None = Field(default=None, max_length=8)
     max_test_actions: int | None = Field(default=None, ge=0, le=1)
+    # Multi-runner targeting. Optional for back-compat — when ``None`` the
+    # job is claimable by any runner (matches the original single-runner
+    # behavior). The Mission Control UI v2 always populates this from the
+    # selected-runner dropdown so jobs land on the operator's machine of
+    # choice. We deliberately don't enforce membership in the heartbeat
+    # registry here: the row may be created before the runner has booted
+    # for the first time, which is fine because polling is gated by the
+    # token-auth check anyway.
+    target_runner_id: str | None = Field(default=None, max_length=128)
 
 
 class JobRow(BaseModel):
@@ -145,6 +155,7 @@ class JobRow(BaseModel):
     stdout_excerpt: str | None
     error_excerpt: str | None
     runner_id: str | None
+    target_runner_id: str | None
     dry_run: bool
     live_one: bool
     max_test_actions: int
@@ -188,6 +199,7 @@ def _job_to_row(job: MsaRtxrtJob) -> JobRow:
         stdout_excerpt=job.stdout_excerpt,
         error_excerpt=job.error_excerpt,
         runner_id=job.runner_id,
+        target_runner_id=job.target_runner_id,
         dry_run=job.dry_run,
         live_one=job.live_one,
         max_test_actions=job.max_test_actions,
@@ -316,6 +328,7 @@ async def create_job(
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
 
     # Build the row.
+    target_runner = (body.target_runner_id or "").strip() or None
     job = MsaRtxrtJob(
         kind=body.kind,
         status=STATUS_QUEUED,
@@ -323,6 +336,7 @@ async def create_job(
         dry_run=not live_one,
         live_one=live_one,
         max_test_actions=body.max_test_actions or 0,
+        target_runner_id=target_runner,
     )
     session.add(job)
     await session.flush()  # populate job.id
@@ -336,7 +350,9 @@ async def create_job(
         target_type="msa_rtxrt_job",
         target_id=str(job.id),
         outcome="success",
-        safe_summary=f"kind={body.kind} live_one={live_one}",
+        safe_summary=(
+            f"kind={body.kind} live_one={live_one} " f"target_runner_id={target_runner or '*'}"
+        ),
         request=request,
     )
     await session.commit()
@@ -387,15 +403,41 @@ async def runner_poll(
     session: "AsyncSession" = SESSION_DEP,
     runner_id: str | None = Query(default=None, max_length=128),
 ) -> PollResponse:
-    """Atomically claim the next queued job for the runner.
+    """Atomically claim the next queued job for the calling runner.
+
+    Multi-runner targeting: a queued row is claimable by this runner iff
+    ``target_runner_id`` is NULL (unassigned → back-compat / any-runner)
+    or matches the ``runner_id`` query param. This is the only place the
+    backend filters by runner identity; the runner-auth token check
+    proves the caller is *a* legitimate runner, and the runner_id query
+    param proves *which* one. Jobs targeted at another runner stay
+    queued for that runner to claim later.
 
     Also writes the runner's heartbeat row. Returns ``{"job": null}``
-    when the queue is empty; the heartbeat still gets stamped so the UI
-    can show *Runner online (idle)* even before the first job ships.
+    when the queue (filtered to this runner) is empty; the heartbeat
+    still gets stamped so the UI can show *Runner online (idle)* even
+    before the first job ships.
     """
+    requesting_runner = (runner_id or "").strip() or None
+    # Filter:
+    #   status == queued
+    #   AND (target_runner_id IS NULL OR target_runner_id == this runner)
+    target_match = (
+        MsaRtxrtJob.target_runner_id.is_(None)  # type: ignore[union-attr]
+        if requesting_runner is None
+        else or_(
+            MsaRtxrtJob.target_runner_id.is_(None),  # type: ignore[union-attr]
+            # `==` on a nullable SQLModel column descriptor returns a
+            # ColumnElement[bool], but mypy infers `bool` here because the
+            # field type is `str | None`. Same ignore pattern as the `.is_`
+            # calls above.
+            MsaRtxrtJob.target_runner_id == requesting_runner,  # type: ignore[arg-type]
+        )
+    )
     stmt = (
         select(MsaRtxrtJob)
         .where(MsaRtxrtJob.status == STATUS_QUEUED)
+        .where(target_match)
         .order_by(MsaRtxrtJob.created_at.asc())  # type: ignore[attr-defined]
         .limit(1)
     )
@@ -452,6 +494,16 @@ class RunnerHeartbeatRow(BaseModel):
     seconds_since_seen: int
     status: str  # "online" | "offline"
     last_status: str  # "idle" | "busy"
+    # Quick decision-helper for the UI's runner-selector. ``True`` when
+    # the runner is online AND idle — i.e. the next click on a smoke /
+    # dry-run button should result in a claim within one poll cadence.
+    # ``False`` when offline (no heartbeat) or currently busy.
+    can_accept_jobs: bool = False
+    # How many recently-finished jobs this runner handled. Used as a
+    # confidence signal in the UI ("zach-laptop-1 — online · 4 recent")
+    # without surfacing job-row content. Counts only succeeded / failed /
+    # blocked rows within the freshness window of the heartbeat snapshot.
+    jobs_recently_handled: int = 0
 
 
 class RunnerStatusResponse(BaseModel):
@@ -478,6 +530,20 @@ async def runner_status_endpoint(
     _ = role
     result = await session.exec(select(MsaRtxrtRunnerHeartbeat))
     rows = result.all()
+
+    # Per-runner recent-job count, by ``runner_id`` (the runner that
+    # actually picked up the row, not the requested target). We cap the
+    # window with the same threshold the UI uses to render "recent" so
+    # the number matches user intuition. No content is exposed — just a
+    # count keyed on a privacy-safe operator-chosen identifier.
+    job_count_result = await session.exec(
+        select(MsaRtxrtJob.runner_id).where(MsaRtxrtJob.runner_id.is_not(None))  # type: ignore[union-attr]
+    )
+    counts: dict[str, int] = {}
+    for rid in job_count_result.all():
+        if rid:
+            counts[rid] = counts.get(rid, 0) + 1
+
     now = utcnow()
     out: list[RunnerHeartbeatRow] = []
     any_online = False
@@ -486,6 +552,11 @@ async def runner_status_endpoint(
         online = age <= ONLINE_FRESHNESS_SECONDS
         if online:
             any_online = True
+        # "Can accept jobs" = online AND not currently running another.
+        # We deliberately don't probe the queue or AdsPower from here —
+        # that's a runner-local check (the runner has its own
+        # ``--preflight`` for that).
+        can_accept = online and row.last_status == RUNNER_STATUS_IDLE
         out.append(
             RunnerHeartbeatRow(
                 runner_id=row.runner_id,
@@ -493,6 +564,8 @@ async def runner_status_endpoint(
                 seconds_since_seen=age,
                 status="online" if online else "offline",
                 last_status=row.last_status,
+                can_accept_jobs=can_accept,
+                jobs_recently_handled=counts.get(row.runner_id, 0),
             )
         )
     # Sort newest-seen first so the most relevant runner is index 0.

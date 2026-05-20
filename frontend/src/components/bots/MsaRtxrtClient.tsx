@@ -21,7 +21,15 @@ export interface BackendJobRow {
   summary: string | null;
   stdout_excerpt: string | null;
   error_excerpt: string | null;
+  /** Runner that *claimed* the job. ``null`` while still queued. */
   runner_id: string | null;
+  /**
+   * Runner the job was *targeted at* by the operator when enqueued.
+   * ``null`` means "any runner may claim it" — back-compat with rows
+   * created before multi-runner targeting. May be present even before
+   * the job is claimed.
+   */
+  target_runner_id: string | null;
   dry_run: boolean;
   live_one: boolean;
   max_test_actions: number;
@@ -84,6 +92,8 @@ export function rowToJob(row: BackendJobRow): MsaRtxrtJob | null {
     createdAt: row.created_at,
     finishedAt: row.finished_at ?? undefined,
     summary,
+    runnerId: row.runner_id ?? undefined,
+    targetRunnerId: row.target_runner_id ?? undefined,
   };
 }
 
@@ -96,19 +106,32 @@ export function rowsToJobs(rows: BackendJobRow[]): MsaRtxrtJob[] {
   return mapped;
 }
 
-/** What body to POST to `/api/v1/msa-rtxrt/jobs` for a given kind. */
-export function jobBodyForKind(kind: JobKind): {
+/** What body to POST to `/api/v1/msa-rtxrt/jobs` for a given kind.
+ *
+ * Multi-runner targeting: when ``targetRunnerId`` is provided, it's
+ * passed through to the backend so only that runner can claim the
+ * row. The UI populates this from the selected-runner dropdown on
+ * every click. When omitted (or empty), the backend treats the row
+ * as any-runner (back-compat for tests + the very first deploy).
+ */
+export function jobBodyForKind(
+  kind: JobKind,
+  targetRunnerId?: string | null,
+): {
   kind: JobKind;
   confirm_live?: "YES";
   max_test_actions?: 1;
+  target_runner_id?: string;
 } {
+  const cleaned = (targetRunnerId ?? "").trim();
+  const targetBody = cleaned ? { target_runner_id: cleaned } : {};
   if (kind.startsWith("live_one_")) {
     // The UI's owner-only two-step Confirm flow is what gates this — the
     // operator never sees the path that produces this body without
     // re-confirming. The server re-checks owner + flags on every call.
-    return { kind, confirm_live: "YES", max_test_actions: 1 };
+    return { kind, confirm_live: "YES", max_test_actions: 1, ...targetBody };
   }
-  return { kind };
+  return { kind, ...targetBody };
 }
 
 /** Shape returned by `GET /api/v1/msa-rtxrt/runner/status`. */
@@ -118,6 +141,10 @@ export interface BackendRunnerHeartbeat {
   seconds_since_seen: number;
   status: "online" | "offline";
   last_status: "idle" | "busy";
+  /** Optional in older deploys; back-compat default is ``false``. */
+  can_accept_jobs?: boolean;
+  /** Optional in older deploys; back-compat default is ``0``. */
+  jobs_recently_handled?: number;
 }
 
 export interface BackendRunnerStatus {
@@ -126,14 +153,36 @@ export interface BackendRunnerStatus {
   freshness_seconds: number;
 }
 
+/** Find a runner row by ID, case-insensitively trimming as the API does. */
+export function findHeartbeatById(
+  heartbeat: BackendRunnerStatus | null,
+  runnerId: string | null,
+): BackendRunnerHeartbeat | null {
+  if (heartbeat === null || runnerId === null) return null;
+  const key = runnerId.trim();
+  if (!key) return null;
+  for (const r of heartbeat.runners) {
+    if (r.runner_id === key) return r;
+  }
+  return null;
+}
+
 /**
  * Derive the runner-status badge from BOTH the heartbeat snapshot AND
  * the most-recent job rows. Heartbeat is the source of truth for
  * online/offline; jobs are the source of truth for busy.
  *
- *   busy    → any job is currently `running`
- *   idle    → heartbeat says any runner is online (and no job is running)
- *   offline → no heartbeat OR no online runner
+ * Multi-runner: when a ``selectedRunnerId`` is passed, we narrow the
+ * decision to that runner's heartbeat row, not "any runner online" —
+ * because in v2 the UI's run buttons target one specific runner. If
+ * the selected runner has no heartbeat row, the pill reads offline
+ * (Luis hasn't started his runner yet, etc.).
+ *
+ *   busy    → any job is currently `running` (irrespective of
+ *             which runner — the pill is for the whole bridge)
+ *   idle    → selected runner's heartbeat is online (and no job is running),
+ *             OR — when no runner selected — any runner online
+ *   offline → otherwise
  *
  * When `heartbeat` is null (e.g. the /runner/status endpoint failed,
  * which can happen during deploy windows or transient 5xx), the function
@@ -146,10 +195,15 @@ export function deriveRunnerStatus(
   heartbeat: BackendRunnerStatus | null = null,
   now: Date = new Date(),
   freshnessMs = 90_000,
+  selectedRunnerId: string | null = null,
 ): RunnerStatus {
   const anyRunning = Array.isArray(rows) && rows.some((r) => r.status === "running");
   if (heartbeat !== null) {
     if (anyRunning) return "busy";
+    if (selectedRunnerId !== null && selectedRunnerId.trim() !== "") {
+      const row = findHeartbeatById(heartbeat, selectedRunnerId);
+      return row !== null && row.status === "online" ? "idle" : "offline";
+    }
     return heartbeat.any_online ? "idle" : "offline";
   }
   return deriveRunnerStatusFromJobs(rows, now, freshnessMs);

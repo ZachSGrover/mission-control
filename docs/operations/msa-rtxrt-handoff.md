@@ -225,6 +225,7 @@ Audit events written by the bridge:
 
 ## See also
 
+- `docs/operations/msa-rtxrt-multi-runner.md` — adding Luis's Mac, Zach's laptop, or a future Mac mini as additional runners
 - `docs/operations/product-map.md` — Bots vs Agents vs Workflows
 - `docs/operations/local-web-parity.md` — keeping the Claw machine on main
 - `tools/local-runners/README.md` — runner internals + safety contract

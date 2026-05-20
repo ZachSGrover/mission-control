@@ -10,15 +10,42 @@ import {
 } from "./MsaRtxrtDashboard";
 import type { JobKind, MsaRtxrtJob } from "./MsaRtxrtControlPanel";
 
+/** Default test runner the multi-runner-v2 dashboard pre-selects when the
+ *  caller passes ``runnerStatus: "idle"`` or ``"busy"``. */
+const TEST_RUNNER_ID = "claw-1";
+
 function makeProps(
   overrides: Partial<MsaRtxrtDashboardProps> = {},
 ): MsaRtxrtDashboardProps {
+  const runnerStatus = overrides.runnerStatus ?? "offline";
+  // When the caller wants buttons enabled (idle / busy), default the
+  // multi-runner props to a single online runner that's already
+  // selected — that preserves the v1 "buttons are clickable when
+  // idle" contract for legacy tests that don't care about targeting.
+  const defaultsForLive =
+    runnerStatus === "idle" || runnerStatus === "busy"
+      ? {
+          runners: [
+            {
+              runner_id: TEST_RUNNER_ID,
+              last_seen_at: "2026-05-20T12:00:00Z",
+              seconds_since_seen: 0,
+              status: "online" as const,
+              last_status: "idle" as const,
+              can_accept_jobs: true,
+              jobs_recently_handled: 0,
+            },
+          ],
+          selectedRunnerId: TEST_RUNNER_ID,
+        }
+      : {};
   return {
-    runnerStatus: "offline",
+    runnerStatus,
     recentJobs: [],
     isOwner: false,
     onSubmitJob: vi.fn().mockResolvedValue(undefined),
     onRefresh: vi.fn().mockResolvedValue(undefined),
+    ...defaultsForLive,
     ...overrides,
   };
 }
@@ -113,7 +140,7 @@ describe("MsaRtxrtDashboard — run buttons", () => {
     // Smoke lives on the Runner Status tab.
     fireEvent.click(screen.getByTestId("tab-runner-status"));
     fireEvent.click(screen.getByTestId("run-smoke"));
-    expect(onSubmitJob).toHaveBeenCalledWith("smoke");
+    expect(onSubmitJob).toHaveBeenCalledWith("smoke", TEST_RUNNER_ID);
   });
 
   it.each([
@@ -132,7 +159,7 @@ describe("MsaRtxrtDashboard — run buttons", () => {
       );
       fireEvent.click(screen.getByTestId(`tab-${tabId}`));
       fireEvent.click(screen.getByTestId(`run-${kind}`));
-      expect(onSubmitJob).toHaveBeenCalledWith(kind);
+      expect(onSubmitJob).toHaveBeenCalledWith(kind, TEST_RUNNER_ID);
     },
   );
 
@@ -212,7 +239,7 @@ describe("MsaRtxrtDashboard — live-one gating", () => {
     });
     fireEvent.click(screen.getByTestId("live-one-confirm"));
 
-    expect(onSubmitJob).toHaveBeenCalledWith("live_one_dm");
+    expect(onSubmitJob).toHaveBeenCalledWith("live_one_dm", TEST_RUNNER_ID);
     // Disarms back to the Arm button.
     expect(screen.getByTestId("live-one-arm")).toBeInTheDocument();
   });
@@ -338,7 +365,9 @@ describe("MsaRtxrtDashboard — runner status tab", () => {
     render(<MsaRtxrtDashboard {...makeProps()} />);
     fireEvent.click(screen.getByTestId("tab-runner-status"));
     const pane = screen.getByTestId("tab-pane-runner-status");
-    expect(pane.textContent).toMatch(/Claw runner is not connected/i);
+    // Copy updated in multi-runner v2: "No runner is online" replaces
+    // the single-runner-specific "Claw runner is not connected".
+    expect(pane.textContent).toMatch(/No runner is online/i);
   });
 
   it("flips to the online label when status is idle", () => {
@@ -432,16 +461,8 @@ describe("SetupTab — new operational sections", () => {
 // ── Heartbeat-enabled smoke gate (the chicken-and-egg fix) ──────────────────
 
 describe("Smoke button is enabled by heartbeat-derived idle even with no jobs", () => {
-  it("Smoke is enabled when runnerStatus === 'idle' and recentJobs === []", () => {
-    render(
-      <MsaRtxrtDashboard
-        runnerStatus="idle"
-        recentJobs={[]}
-        isOwner={false}
-        onSubmitJob={vi.fn()}
-        onRefresh={vi.fn()}
-      />,
-    );
+  it("Smoke is enabled when runnerStatus === 'idle' and recentJobs === [] (with a selected online runner)", () => {
+    render(<MsaRtxrtDashboard {...makeProps({ runnerStatus: "idle" })} />);
     fireEvent.click(screen.getByTestId("tab-runner-status"));
     const smoke = screen.getByTestId("run-smoke") as HTMLButtonElement;
     expect(smoke.disabled).toBe(false);
@@ -474,5 +495,203 @@ describe("Smoke button is enabled by heartbeat-derived idle even with no jobs", 
     );
     fireEvent.click(screen.getByTestId("tab-runner-status"));
     expect(screen.queryByTestId("live-one-arm")).toBeNull();
+  });
+});
+
+// ── Multi-runner v2 ─────────────────────────────────────────────────────────
+
+describe("MsaRtxrtDashboard — multi-runner selector", () => {
+  const TWO_RUNNERS = [
+    {
+      runner_id: "claw-1",
+      last_seen_at: "2026-05-20T12:00:00Z",
+      seconds_since_seen: 0,
+      status: "online" as const,
+      last_status: "idle" as const,
+      can_accept_jobs: true,
+      jobs_recently_handled: 0,
+    },
+    {
+      runner_id: "luis-mac-1",
+      last_seen_at: "2026-05-20T11:50:00Z",
+      seconds_since_seen: 600,
+      status: "offline" as const,
+      last_status: "idle" as const,
+      can_accept_jobs: false,
+      jobs_recently_handled: 0,
+    },
+  ];
+
+  it("runner selector renders one <option> per known runner", () => {
+    render(
+      <MsaRtxrtDashboard
+        {...makeProps({
+          runnerStatus: "idle",
+          runners: TWO_RUNNERS,
+          selectedRunnerId: "claw-1",
+        })}
+      />,
+    );
+    const select = screen.getByTestId("runner-selector") as HTMLSelectElement;
+    expect(within(select).getAllByRole("option").length).toBe(1 + TWO_RUNNERS.length);
+    // The disabled-by-default sentinel is the first option.
+    expect(
+      (within(select).getAllByRole("option")[0] as HTMLOptionElement).value,
+    ).toBe("");
+  });
+
+  it("buttons disabled when no runner is selected (even if a runner is online)", () => {
+    render(
+      <MsaRtxrtDashboard
+        {...makeProps({
+          runnerStatus: "idle",
+          runners: TWO_RUNNERS,
+          selectedRunnerId: null,
+        })}
+      />,
+    );
+    fireEvent.click(screen.getByTestId("tab-runner-status"));
+    expect((screen.getByTestId("run-smoke") as HTMLButtonElement).disabled).toBe(true);
+    expect(screen.getByTestId("status-tab-no-runner-warning")).toBeInTheDocument();
+  });
+
+  it("buttons disabled when the selected runner is offline", () => {
+    render(
+      <MsaRtxrtDashboard
+        {...makeProps({
+          runnerStatus: "offline",
+          runners: TWO_RUNNERS,
+          selectedRunnerId: "luis-mac-1",
+        })}
+      />,
+    );
+    fireEvent.click(screen.getByTestId("tab-runner-status"));
+    expect((screen.getByTestId("run-smoke") as HTMLButtonElement).disabled).toBe(true);
+  });
+
+  it("smoke job sends the selected runner_id through to onSubmitJob", () => {
+    const onSubmitJob = vi.fn().mockResolvedValue(undefined);
+    render(
+      <MsaRtxrtDashboard
+        {...makeProps({
+          runnerStatus: "idle",
+          runners: TWO_RUNNERS,
+          selectedRunnerId: "claw-1",
+          onSubmitJob,
+        })}
+      />,
+    );
+    fireEvent.click(screen.getByTestId("tab-runner-status"));
+    fireEvent.click(screen.getByTestId("run-smoke"));
+    expect(onSubmitJob).toHaveBeenCalledWith("smoke", "claw-1");
+  });
+
+  it("dry-run job sends the selected runner_id through to onSubmitJob", () => {
+    const onSubmitJob = vi.fn().mockResolvedValue(undefined);
+    render(
+      <MsaRtxrtDashboard
+        {...makeProps({
+          runnerStatus: "idle",
+          runners: TWO_RUNNERS,
+          selectedRunnerId: "claw-1",
+          onSubmitJob,
+        })}
+      />,
+    );
+    fireEvent.click(screen.getByTestId("tab-all-chats"));
+    fireEvent.click(screen.getByTestId("run-dry_run_dm"));
+    expect(onSubmitJob).toHaveBeenCalledWith("dry_run_dm", "claw-1");
+  });
+
+  it("changing the selected runner threads through onSelectRunner", () => {
+    const onSelectRunner = vi.fn();
+    render(
+      <MsaRtxrtDashboard
+        {...makeProps({
+          runnerStatus: "idle",
+          runners: TWO_RUNNERS,
+          selectedRunnerId: "claw-1",
+          onSelectRunner,
+        })}
+      />,
+    );
+    fireEvent.change(screen.getByTestId("runner-selector"), {
+      target: { value: "luis-mac-1" },
+    });
+    expect(onSelectRunner).toHaveBeenCalledWith("luis-mac-1");
+  });
+
+  it("run history rows show the runner_id (or target_runner_id with arrow)", () => {
+    const jobs: MsaRtxrtJob[] = [
+      {
+        id: "j1",
+        kind: "smoke",
+        status: "succeeded",
+        createdAt: "2026-05-20T11:50:00Z",
+        finishedAt: "2026-05-20T11:50:30Z",
+        runnerId: "claw-1",
+        targetRunnerId: "claw-1",
+      },
+      {
+        id: "j2",
+        kind: "dry_run_dm",
+        status: "queued",
+        createdAt: "2026-05-20T11:51:00Z",
+        targetRunnerId: "luis-mac-1",
+      },
+    ];
+    render(
+      <MsaRtxrtDashboard
+        {...makeProps({
+          runnerStatus: "idle",
+          recentJobs: jobs,
+        })}
+      />,
+    );
+    fireEvent.click(screen.getByTestId("tab-run-history"));
+    expect(screen.getByTestId("history-row-runner-j1").textContent).toBe("claw-1");
+    // Queued + no claimer yet → render the target with the arrow prefix.
+    expect(screen.getByTestId("history-row-runner-j2").textContent).toBe("→ luis-mac-1");
+  });
+
+  it("live-one stays owner-gated AND requires a selected online runner", () => {
+    // No runner selected → live-one arm button stays disabled even for owner.
+    render(
+      <MsaRtxrtDashboard
+        {...makeProps({
+          runnerStatus: "idle",
+          isOwner: true,
+          runners: TWO_RUNNERS,
+          selectedRunnerId: null,
+        })}
+      />,
+    );
+    const arm = screen.getByTestId("live-one-arm") as HTMLButtonElement;
+    expect(arm.disabled).toBe(true);
+  });
+
+  it("setup tab includes the 'Add another runner computer' panel", () => {
+    render(<MsaRtxrtDashboard {...makeProps()} />);
+    fireEvent.click(screen.getByTestId("tab-setup"));
+    expect(screen.getByTestId("setup-add-runner-intro")).toBeInTheDocument();
+    expect(screen.getByTestId("setup-add-runner-steps")).toBeInTheDocument();
+    // No secrets in the copy.
+    const pane = screen.getByTestId("tab-pane-setup");
+    expect(pane.textContent).not.toMatch(/api[_ -]?key\s*[:=]/i);
+  });
+
+  it("connected-runners list renders every runner with status", () => {
+    render(
+      <MsaRtxrtDashboard
+        {...makeProps({
+          runnerStatus: "idle",
+          runners: TWO_RUNNERS,
+          selectedRunnerId: "claw-1",
+        })}
+      />,
+    );
+    fireEvent.click(screen.getByTestId("tab-runner-status"));
+    expect(screen.getByTestId("connected-runner-claw-1")).toBeInTheDocument();
+    expect(screen.getByTestId("connected-runner-luis-mac-1")).toBeInTheDocument();
   });
 });

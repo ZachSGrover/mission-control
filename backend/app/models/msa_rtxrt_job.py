@@ -108,6 +108,9 @@ class MsaRtxrtJob(SQLModel, table=True):
     __table_args__ = (
         Index("ix_msa_rtxrt_jobs_status_created", "status", "created_at"),
         Index("ix_msa_rtxrt_jobs_created_at", "created_at"),
+        # Lookup path for the multi-runner poll filter:
+        # ``WHERE status=queued AND (target_runner_id IS NULL OR target_runner_id=?)``.
+        Index("ix_msa_rtxrt_jobs_target_runner_id", "target_runner_id"),
     )
 
     id: UUID = Field(default_factory=uuid4, primary_key=True)
@@ -134,6 +137,14 @@ class MsaRtxrtJob(SQLModel, table=True):
     # The runner identifies itself with a stable name when it claims a job.
     # ``None`` until the first poll picks the row up.
     runner_id: str | None = Field(default=None, max_length=128)
+
+    # Multi-runner assignment: which runner is this job *intended* for?
+    # ``None`` means "any runner may claim it" — the back-compat path for
+    # rows enqueued before multi-runner targeting landed. The Mission
+    # Control UI sets this from a selected-runner dropdown on every
+    # create. Distinct from ``runner_id`` (which is the runner that
+    # actually picked it up).
+    target_runner_id: str | None = Field(default=None, max_length=128)
 
     # Mirrors of the safety posture for fast audit / list rendering. The
     # service layer sets these on insert.

@@ -546,3 +546,57 @@ def test_preflight_report_live_flags_all_false_by_default(
         "DRY_RUN_explicitly_false",
     ):
         assert flags[key] is False
+
+
+# ── Multi-runner v2: env-driven runner_id + privacy ────────────────────────
+
+
+def test_runner_config_distinct_runner_ids_per_machine() -> None:
+    """Each machine's env can pick its own ``MSA_RTXRT_RUNNER_ID``."""
+    for rid in ("claw-1", "luis-mac-1", "zach-laptop-1", "mac-mini-1"):
+        env = _base_env() | {"MSA_RTXRT_RUNNER_ID": rid}
+        cfg = RunnerConfig.from_env(env)
+        assert cfg.runner_id == rid
+
+
+def test_poll_for_job_url_carries_runner_id_through() -> None:
+    """The poll URL always carries the calling runner's ID for backend filtering."""
+    env = _base_env() | {"MSA_RTXRT_RUNNER_ID": "luis-mac-1"}
+    cfg = RunnerConfig.from_env(env)
+    http = MagicMock(return_value=(200, {"job": None}))
+    poll_for_job(cfg, http=http)
+    assert "runner_id=luis-mac-1" in http.call_args.kwargs["url"]
+
+
+def test_patch_job_status_url_carries_runner_id_for_each_runner() -> None:
+    """The PATCH body carries the calling runner's ID — backend uses this
+    to populate the row's ``runner_id`` field."""
+    env = _base_env() | {"MSA_RTXRT_RUNNER_ID": "zach-laptop-1"}
+    cfg = RunnerConfig.from_env(env)
+    http = MagicMock(return_value=(200, {}))
+    patch_job_status(cfg, job_id="j-1", status_value="succeeded", http=http)
+    body = http.call_args.kwargs["body"]
+    assert body["runner_id"] == "zach-laptop-1"
+
+
+def test_preflight_report_contains_runner_id_but_never_token() -> None:
+    """`build_preflight_report` exposes the runner_id (operator-chosen, not
+    secret) but never the token value, only ``runner_token_set: bool``.
+    """
+    env = _base_env() | {"MSA_RTXRT_RUNNER_ID": "mac-mini-1"}
+    cfg = RunnerConfig.from_env(env)
+    http = MagicMock(
+        side_effect=[
+            (200, {"ok": True}),  # /healthz
+            (200, {"job": None}),  # /runner/poll
+            (200, {"data": {"list": []}}),  # AdsPower
+        ]
+    )
+    report = build_preflight_report(cfg, http=http)
+    # Runner ID surfaces (privacy-safe, operator-chosen).
+    assert report["env"]["runner_id"] == "mac-mini-1"
+    # Token presence surfaces as a boolean only — never the value.
+    assert report["env"]["runner_token_set"] is True
+    assert "tok-xyz" not in str(report), (
+        "preflight must never serialize the token value"
+    )

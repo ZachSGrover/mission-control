@@ -369,7 +369,7 @@ def execute_job(
     # If the runner can't even build the command (gate / unknown / mass
     # live), report `blocked` immediately with a privacy-safe reason.
     try:
-        _ = build_command(kind, cfg.bot_dir)
+        _ = build_command(kind, cfg.bot_dir, env=dict(os.environ))
     except ValueError as exc:
         patch_job_status(
             cfg,

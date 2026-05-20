@@ -339,7 +339,7 @@ function RunnerSelector({
     const next = e.target.value;
     onSelect(next === "" ? null : next);
   };
-  // Friendly label per row: "claw-1 · online · idle" or "luis-mac-1 · offline".
+  // Friendly label per row: "claw-1 · online · idle" or "luis-pc-1 · offline".
   const labelFor = (r: BackendRunnerHeartbeat) => {
     if (r.status === "online") {
       return `${r.runner_id} · online · ${r.last_status}`;
@@ -699,7 +699,7 @@ function RunnerStatusTab({
             data-testid="connected-runners-empty"
           >
             No runners have polled yet. Start a local runner on the Claw
-            computer (or Luis&apos;s Mac) and refresh this page.
+            computer (or Luis&apos;s Windows PC) and refresh this page.
           </p>
         ) : (
           <ul
@@ -931,11 +931,12 @@ function SetupTab({ isOwner }: { isOwner: boolean }) {
           style={{ color: THEME.textMuted }}
           data-testid="setup-add-runner-intro"
         >
-          MSA RT/X supports multiple runner machines (claw-1, luis-mac-1,
+          MSA RT/X supports multiple runner machines (claw-1, luis-pc-1,
           zach-laptop-1, mac-mini-1, …). Each runs its own local Python
           runner with its own ID, its own bot folder, its own AdsPower
-          install, and its own config files. Mission Control routes jobs
-          to whichever runner the operator picks in the top-bar selector.
+          install, and its own config files. Luis runs on Windows; Zach
+          runs on macOS. Mission Control routes jobs to whichever runner
+          the operator picks in the top-bar selector.
         </p>
         <ol
           className="mt-3 list-decimal space-y-1.5 pl-5 text-xs leading-relaxed"
@@ -967,7 +968,7 @@ function SetupTab({ isOwner }: { isOwner: boolean }) {
             permissions; set <code>MSA_RTXRT_BACKEND_URL</code>,{" "}
             <code>MSA_RTXRT_RUNNER_TOKEN</code> (same token as Render env),{" "}
             <code>MSA_RTXRT_RUNNER_ID</code> (unique per computer:{" "}
-            <code>luis-mac-1</code>, <code>zach-laptop-1</code>, …), and{" "}
+            <code>luis-pc-1</code>, <code>zach-laptop-1</code>, …), and{" "}
             <code>MSA_RTXRT_BOT_DIR</code>.
           </li>
           <li>Optional: add ADSPOWER_API_KEY when AdsPower is being used live.</li>

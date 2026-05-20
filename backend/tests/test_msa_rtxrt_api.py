@@ -613,27 +613,27 @@ async def test_create_job_with_target_runner_id_persists_it() -> None:
     async with _make_client(role="operator") as (client, _maker):
         res = await client.post(
             "/api/v1/msa-rtxrt/jobs",
-            json={"kind": "smoke", "target_runner_id": "luis-mac-1"},
+            json={"kind": "smoke", "target_runner_id": "luis-pc-1"},
         )
         assert res.status_code == 201, res.text
         body = res.json()
-        assert body["target_runner_id"] == "luis-mac-1"
+        assert body["target_runner_id"] == "luis-pc-1"
         # runner_id is still null until the job is claimed.
         assert body["runner_id"] is None
 
 
 @pytest.mark.asyncio
 async def test_runner_a_cannot_claim_job_targeted_at_runner_b() -> None:
-    """A job targeted at ``luis-mac-1`` must NOT be claimed by ``claw-1``."""
+    """A job targeted at ``luis-pc-1`` must NOT be claimed by ``claw-1``."""
     async with _make_client(role="operator") as (client, _maker):
-        # Operator enqueues for luis-mac-1.
+        # Operator enqueues for luis-pc-1.
         created = (
             await client.post(
                 "/api/v1/msa-rtxrt/jobs",
-                json={"kind": "smoke", "target_runner_id": "luis-mac-1"},
+                json={"kind": "smoke", "target_runner_id": "luis-pc-1"},
             )
         ).json()
-        # claw-1 polls — should NOT see the luis-mac-1 job.
+        # claw-1 polls — should NOT see the luis-pc-1 job.
         res = await client.get(
             "/api/v1/msa-rtxrt/runner/poll?runner_id=claw-1",
             headers={"X-MSA-RTXRT-Runner-Token": RUNNER_TOKEN},
@@ -655,19 +655,19 @@ async def test_runner_b_can_claim_job_targeted_at_itself() -> None:
         created = (
             await client.post(
                 "/api/v1/msa-rtxrt/jobs",
-                json={"kind": "smoke", "target_runner_id": "luis-mac-1"},
+                json={"kind": "smoke", "target_runner_id": "luis-pc-1"},
             )
         ).json()
         res = await client.get(
-            "/api/v1/msa-rtxrt/runner/poll?runner_id=luis-mac-1",
+            "/api/v1/msa-rtxrt/runner/poll?runner_id=luis-pc-1",
             headers={"X-MSA-RTXRT-Runner-Token": RUNNER_TOKEN},
         )
         assert res.status_code == 200
         body = res.json()
         assert body["job"] is not None
         assert body["job"]["id"] == created["id"]
-        assert body["job"]["runner_id"] == "luis-mac-1"
-        assert body["job"]["target_runner_id"] == "luis-mac-1"
+        assert body["job"]["runner_id"] == "luis-pc-1"
+        assert body["job"]["target_runner_id"] == "luis-pc-1"
         assert body["job"]["status"] == "running"
 
 
@@ -698,13 +698,13 @@ async def test_poll_filter_picks_oldest_eligible_when_mixed_targets() -> None:
     """
     async with _make_client(role="operator") as (client, _maker):
         # Enqueue in this order:
-        #   1. for luis-mac-1
+        #   1. for luis-pc-1
         #   2. for claw-1
         #   3. unassigned
         ja = (
             await client.post(
                 "/api/v1/msa-rtxrt/jobs",
-                json={"kind": "smoke", "target_runner_id": "luis-mac-1"},
+                json={"kind": "smoke", "target_runner_id": "luis-pc-1"},
             )
         ).json()
         jb = (
@@ -730,7 +730,7 @@ async def test_poll_filter_picks_oldest_eligible_when_mixed_targets() -> None:
         ), f"claw-1 expected job {jb['id']!r} but got {body['job']['id']!r}"
 
         # Then claw-1 polls again — should pick up jc (the unassigned one).
-        # jc is OLDER than the as-yet-unclaimed ja (luis-mac-1), but ja
+        # jc is OLDER than the as-yet-unclaimed ja (luis-pc-1), but ja
         # is invisible to claw-1.
         res2 = await client.get(
             "/api/v1/msa-rtxrt/runner/poll?runner_id=claw-1",
@@ -740,9 +740,9 @@ async def test_poll_filter_picks_oldest_eligible_when_mixed_targets() -> None:
         assert body2["job"] is not None
         assert body2["job"]["id"] == jc["id"]
 
-        # luis-mac-1 polls — should finally get ja.
+        # luis-pc-1 polls — should finally get ja.
         res3 = await client.get(
-            "/api/v1/msa-rtxrt/runner/poll?runner_id=luis-mac-1",
+            "/api/v1/msa-rtxrt/runner/poll?runner_id=luis-pc-1",
             headers={"X-MSA-RTXRT-Runner-Token": RUNNER_TOKEN},
         )
         body3 = res3.json()
@@ -757,7 +757,7 @@ async def test_runner_status_lists_multiple_runners() -> None:
     """
     async with _make_client(role="operator") as (client, _maker):
         # Three runners poll in turn (each becomes "seen").
-        for rid in ("claw-1", "luis-mac-1", "zach-laptop-1"):
+        for rid in ("claw-1", "luis-pc-1", "zach-laptop-1"):
             await client.get(
                 f"/api/v1/msa-rtxrt/runner/poll?runner_id={rid}",
                 headers={"X-MSA-RTXRT-Runner-Token": RUNNER_TOKEN},
@@ -767,7 +767,7 @@ async def test_runner_status_lists_multiple_runners() -> None:
         body = res.json()
         assert body["any_online"] is True
         runner_ids = {r["runner_id"] for r in body["runners"]}
-        assert runner_ids == {"claw-1", "luis-mac-1", "zach-laptop-1"}
+        assert runner_ids == {"claw-1", "luis-pc-1", "zach-laptop-1"}
         for r in body["runners"]:
             assert r["status"] == "online"
             assert r["last_status"] == "idle"
@@ -779,14 +779,14 @@ async def test_runner_status_lists_multiple_runners() -> None:
 async def test_runner_status_jobs_recently_handled_counts_per_runner() -> None:
     """The `jobs_recently_handled` field counts jobs the runner actually claimed."""
     async with _make_client(role="operator") as (client, _maker):
-        # luis-mac-1 claims two; claw-1 claims one.
+        # luis-pc-1 claims two; claw-1 claims one.
         for _ in range(2):
             await client.post(
                 "/api/v1/msa-rtxrt/jobs",
-                json={"kind": "smoke", "target_runner_id": "luis-mac-1"},
+                json={"kind": "smoke", "target_runner_id": "luis-pc-1"},
             )
             await client.get(
-                "/api/v1/msa-rtxrt/runner/poll?runner_id=luis-mac-1",
+                "/api/v1/msa-rtxrt/runner/poll?runner_id=luis-pc-1",
                 headers={"X-MSA-RTXRT-Runner-Token": RUNNER_TOKEN},
             )
         await client.post(
@@ -800,7 +800,7 @@ async def test_runner_status_jobs_recently_handled_counts_per_runner() -> None:
         res = await client.get("/api/v1/msa-rtxrt/runner/status")
         body = res.json()
         by_id = {r["runner_id"]: r for r in body["runners"]}
-        assert by_id["luis-mac-1"]["jobs_recently_handled"] == 2
+        assert by_id["luis-pc-1"]["jobs_recently_handled"] == 2
         assert by_id["claw-1"]["jobs_recently_handled"] == 1
 
 
@@ -808,7 +808,7 @@ async def test_runner_status_jobs_recently_handled_counts_per_runner() -> None:
 async def test_no_token_leak_with_multiple_runners() -> None:
     """The runner-token value never appears in any multi-runner output."""
     async with _make_client(role="operator") as (client, _maker):
-        for rid in ("claw-1", "luis-mac-1", "zach-laptop-1"):
+        for rid in ("claw-1", "luis-pc-1", "zach-laptop-1"):
             await client.post(
                 "/api/v1/msa-rtxrt/jobs",
                 json={"kind": "smoke", "target_runner_id": rid},

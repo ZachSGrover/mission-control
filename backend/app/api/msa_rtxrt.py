@@ -351,8 +351,7 @@ async def create_job(
         target_id=str(job.id),
         outcome="success",
         safe_summary=(
-            f"kind={body.kind} live_one={live_one} "
-            f"target_runner_id={target_runner or '*'}"
+            f"kind={body.kind} live_one={live_one} " f"target_runner_id={target_runner or '*'}"
         ),
         request=request,
     )

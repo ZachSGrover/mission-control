@@ -676,9 +676,7 @@ async def test_unassigned_job_is_claimable_by_any_runner() -> None:
     """Back-compat: a queued job with ``target_runner_id=None`` is global."""
     async with _make_client(role="operator") as (client, _maker):
         # Enqueue without targeting (the v1 path).
-        created = (
-            await client.post("/api/v1/msa-rtxrt/jobs", json={"kind": "smoke"})
-        ).json()
+        created = (await client.post("/api/v1/msa-rtxrt/jobs", json={"kind": "smoke"})).json()
         assert created["target_runner_id"] is None
         # Any runner_id may claim it — even one that never existed before.
         res = await client.get(
@@ -727,9 +725,9 @@ async def test_poll_filter_picks_oldest_eligible_when_mixed_targets() -> None:
         )
         body = res.json()
         assert body["job"] is not None
-        assert body["job"]["id"] == jb["id"], (
-            f"claw-1 expected job {jb['id']!r} but got {body['job']['id']!r}"
-        )
+        assert (
+            body["job"]["id"] == jb["id"]
+        ), f"claw-1 expected job {jb['id']!r} but got {body['job']['id']!r}"
 
         # Then claw-1 polls again — should pick up jc (the unassigned one).
         # jc is OLDER than the as-yet-unclaimed ja (luis-mac-1), but ja

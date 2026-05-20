@@ -262,9 +262,9 @@ import { findHeartbeatById } from "./MsaRtxrtClient";
 
 describe("jobBodyForKind (multi-runner v2)", () => {
   it("attaches target_runner_id when one is provided", () => {
-    expect(jobBodyForKind("smoke", "luis-mac-1")).toEqual({
+    expect(jobBodyForKind("smoke", "luis-pc-1")).toEqual({
       kind: "smoke",
-      target_runner_id: "luis-mac-1",
+      target_runner_id: "luis-pc-1",
     });
   });
 
@@ -295,7 +295,7 @@ function multiRunnerHeartbeat(): import("./MsaRtxrtClient").BackendRunnerStatus 
         last_status: "idle",
       },
       {
-        runner_id: "luis-mac-1",
+        runner_id: "luis-pc-1",
         last_seen_at: "2026-05-12T11:50:00Z",
         seconds_since_seen: 600,
         status: "offline",
@@ -311,7 +311,7 @@ describe("findHeartbeatById", () => {
   it("returns the matching runner row", () => {
     const hb = multiRunnerHeartbeat();
     expect(findHeartbeatById(hb, "claw-1")?.runner_id).toBe("claw-1");
-    expect(findHeartbeatById(hb, "luis-mac-1")?.runner_id).toBe("luis-mac-1");
+    expect(findHeartbeatById(hb, "luis-pc-1")?.runner_id).toBe("luis-pc-1");
   });
 
   it("returns null on no match", () => {
@@ -339,7 +339,7 @@ describe("deriveRunnerStatus (selectedRunnerId-aware)", () => {
 
   it("returns offline when the selected runner is offline (even if another is online)", () => {
     expect(
-      deriveRunnerStatus([], multiRunnerHeartbeat(), NOW, undefined, "luis-mac-1"),
+      deriveRunnerStatus([], multiRunnerHeartbeat(), NOW, undefined, "luis-pc-1"),
     ).toBe("offline");
   });
 
@@ -384,12 +384,12 @@ describe("rowToJob (multi-runner v2 fields)", () => {
       makeRow({
         kind: "smoke",
         status: "succeeded",
-        runner_id: "luis-mac-1",
-        target_runner_id: "luis-mac-1",
+        runner_id: "luis-pc-1",
+        target_runner_id: "luis-pc-1",
       }),
     );
-    expect(job?.runnerId).toBe("luis-mac-1");
-    expect(job?.targetRunnerId).toBe("luis-mac-1");
+    expect(job?.runnerId).toBe("luis-pc-1");
+    expect(job?.targetRunnerId).toBe("luis-pc-1");
   });
 
   it("leaves runnerId/targetRunnerId undefined when backend returns null", () => {

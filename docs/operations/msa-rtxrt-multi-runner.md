@@ -1,6 +1,6 @@
 # MSA RT/X — multi-runner setup
 
-How to add Luis's Mac, Zach's laptop, a future Mac mini, or any other
+How to add Luis's Windows PC, Zach's laptop, a future Mac mini, or any other
 computer as an MSA RT/X runner. Pair this with
 `docs/operations/msa-rtxrt-handoff.md` (the day-to-day operating manual).
 
@@ -9,7 +9,7 @@ computer as an MSA RT/X runner. Pair this with
 Mission Control web (`hq.digidle.com/bots/msa-rtxrt`) is the control
 panel. The Render-hosted backend stores jobs and a heartbeat per
 runner. Each *runner computer* runs a local Python poll loop with its
-own unique `MSA_RTXRT_RUNNER_ID` (e.g. `claw-1`, `luis-mac-1`,
+own unique `MSA_RTXRT_RUNNER_ID` (e.g. `claw-1`, `luis-pc-1`,
 `zach-laptop-1`, `mac-mini-1`). The selector in the top bar of the
 dashboard targets a specific runner — only that runner can claim the
 job. Every machine has its own AdsPower, its own bot folder, its own
@@ -18,12 +18,12 @@ into the repo or the backend beyond job status + privacy-safe excerpts.
 
 ## Examples of runner_ids
 
-| ID | Where it lives | Owner |
-|---|---|---|
-| `claw-1` | The original Mac Studio / claw computer | Zach |
-| `luis-mac-1` | Luis's day-to-day Mac | Luis |
-| `zach-laptop-1` | Zach's MacBook on the road | Zach |
-| `mac-mini-1` | Future dedicated runner box | Zach |
+| ID | Where it lives | OS | Owner |
+|---|---|---|---|
+| `claw-1` | The original Mac Studio / claw computer | macOS | Zach |
+| `luis-pc-1` | Luis's day-to-day Windows PC | Windows 10/11 | Luis |
+| `zach-laptop-1` | Zach's MacBook on the road | macOS | Zach |
+| `mac-mini-1` | Future dedicated runner box | macOS | Zach |
 
 Pick a short, dash-separated, lower-case ID. The backend stores it
 verbatim and renders it in the UI selector. It is **not** secret — but
@@ -31,72 +31,89 @@ it should also not contain machine fingerprints, hostnames, IPs, or
 operator personal data. The ID is also what shows up in the run-history
 "who handled this job" column.
 
-## Setup steps for a new runner computer
+---
 
-Repeat on each machine. Substitute the actual `MSA_RTXRT_RUNNER_ID`
-your operator owns (e.g. `luis-mac-1`).
+## Setup — Luis's Windows PC (PowerShell)
 
-### 1. Get the code on the machine
+This is the primary path Luis will use. Run every command in **PowerShell**
+(not Command Prompt / cmd.exe) so paths quote cleanly and `&&` semantics
+work as expected. Skip ahead to the macOS section below for Zach's
+non-claw runners.
 
-You can either clone the full Mission Control repo or copy just the
-runner package + the Luis bot folder. The full repo is the simplest:
+### 1. Install prerequisites (one time)
 
-```sh
-git clone https://github.com/ZachSGrover/mission-control.git ~/mission-control
-cd ~/mission-control
+- **Python 3.10+** — install from <https://www.python.org/downloads/windows/>
+  and check **"Add Python to PATH"** in the installer. Verify in
+  PowerShell:
+  ```powershell
+  python --version
+  ```
+- **Git for Windows** — install from <https://git-scm.com/download/win>
+  with default options. Verify:
+  ```powershell
+  git --version
+  ```
+- **AdsPower for Windows** — install from
+  <https://www.adspower.com/download> and let it run locally. The runner
+  itself does NOT need AdsPower for smoke / dry-run; AdsPower is only
+  required when Luis runs live actions.
+
+### 2. Clone the repo
+
+```powershell
+cd $HOME
+git clone https://github.com/ZachSGrover/mission-control.git
+cd mission-control
 git checkout main
 ```
 
-The runner only reads from `tools/local-runners/` and from whatever
-path `MSA_RTXRT_BOT_DIR` points at, so a sparse checkout is fine if
-you'd rather not pull the whole tree.
+### 3. Install Python deps (user site, no admin)
 
-### 2. Install Python deps
+```powershell
+python -m pip install --user requests playwright
+```
 
 The runner itself uses only the Python stdlib. The bot scripts under
-Luis's folder use `requests` + `playwright`. Install into the user
-site so no sudo is needed:
+Luis's bot folder use `requests` + `playwright`. (Playwright's Chromium
+binary download is NOT required — the bots connect to AdsPower's browser
+via CDP.)
 
-```sh
-python3 -m pip install --user requests playwright
+### 4. Place the bot folder locally
+
+Zach syncs Luis's `Automation [RTxRT]` folder to Luis's PC one time
+(e.g. via shared drive or zip transfer). Put it at:
+
+```
+C:\Users\<luis>\msa-rtxrt-bot\Automation [RTxRT]
 ```
 
-(Playwright's Chromium binary download is NOT required — the bots
-connect to AdsPower's browser via CDP.)
+The runner does NOT read the bot's per-account configs (`auftrag.json`,
+`contacts.json`, etc.) — those stay private on Luis's PC and are never
+committed to git.
 
-### 3. Place the bot folder locally
+### 5. Create the local `.msa-rtxrt-runner.env`
 
-The bot scripts live outside of `main` (in the Luis import worktree).
-On a non-Claw machine, copy the folder over once:
+Place it at the repo root. **Never commit it.** The worktree's
+`info/exclude` rules already block `.msa-rtxrt-runner.env`,
+`.msa-rtxrt-runner.log`, `.msa-rtxrt-runner.pid`, `auftrag.json`,
+`contacts.json`, cookies, sessions.
 
-```sh
-mkdir -p ~/msa-rtxrt-bot
-# Sync the folder from the source machine (e.g. claw-1) or from
-# Luis's archive. Never commit it to main — the worktree exclude
-# rules block auftrag.json / contacts.json / cookies / sessions.
+```powershell
+cd $HOME\mission-control
+New-Item -ItemType File -Path .msa-rtxrt-runner.env -Force | Out-Null
+# Restrict permissions to current user only (Windows equivalent of chmod 600).
+icacls .msa-rtxrt-runner.env /inheritance:r /grant:r "${env:USERNAME}:F" | Out-Null
+notepad .msa-rtxrt-runner.env
 ```
 
-The runner does NOT read the bot's per-account configs. Those stay on
-each machine separately.
+Paste this into Notepad (or your editor of choice), filling in the
+token Zach sends separately:
 
-### 4. Create the local `.msa-rtxrt-runner.env`
-
-Place it at the repo root (or wherever you'll run the runner from).
-Set permissions tight:
-
-```sh
-cd ~/mission-control
-touch .msa-rtxrt-runner.env
-chmod 600 .msa-rtxrt-runner.env
 ```
-
-Edit `.msa-rtxrt-runner.env`:
-
-```sh
 MSA_RTXRT_BACKEND_URL=https://mission-control-jbx8.onrender.com
-MSA_RTXRT_RUNNER_TOKEN=<the_token_value_from_render_env>
-MSA_RTXRT_RUNNER_ID=luis-mac-1
-MSA_RTXRT_BOT_DIR=/Users/luis/msa-rtxrt-bot/Automation [RTxRT]
+MSA_RTXRT_RUNNER_TOKEN=<the_token_value_from_zach>
+MSA_RTXRT_RUNNER_ID=luis-pc-1
+MSA_RTXRT_BOT_DIR=C:\Users\<luis>\msa-rtxrt-bot\Automation [RTxRT]
 
 # Optional. Required only when this machine will run live actions
 # (AdsPower-driven). Smoke + dry-run never need it.
@@ -111,24 +128,30 @@ MSA_RTXRT_BOT_DIR=/Users/luis/msa-rtxrt-bot/Automation [RTxRT]
 | `MSA_RTXRT_BOT_DIR` | Local path to Luis's `Automation [RTxRT]` folder on this machine. |
 | `ADSPOWER_API_KEY` | Only used by the bot scripts at live runtime; the runner itself never sends it anywhere. |
 
-> All `.env` files are blocked from `git add` by the worktree's
-> `info/exclude` rules. The token specifically must never appear in the
-> repo, in any database row, in any API response, or in any log line.
+> The token specifically must never appear in the repo, in any database
+> row, in any API response, or in any log line.
 
-### 5. Verify wiring without polling
+### 6. Verify wiring without polling (preflight)
 
-Run preflight:
+PowerShell doesn't have `set -a && . ./file`. Use the helper one-liner
+below — it loads the env file into the current PowerShell session, then
+runs preflight:
 
-```sh
-cd ~/mission-control
-set -a && . ./.msa-rtxrt-runner.env && set +a
-python3 tools/local-runners/msa_rtxrt_runner.py --preflight
+```powershell
+cd $HOME\mission-control
+Get-Content .msa-rtxrt-runner.env |
+  Where-Object { $_ -match '^\s*[^#].*=' } |
+  ForEach-Object {
+    $name, $value = $_ -split '=', 2
+    [Environment]::SetEnvironmentVariable($name.Trim(), $value.Trim(), 'Process')
+  }
+python tools\local-runners\msa_rtxrt_runner.py --preflight
 ```
 
 Exit 0 = ready to take work. Exit 1 = at least one precondition is not
 met; the JSON report tells you which. The report includes:
 
-- `env.runner_id` (must equal your `MSA_RTXRT_RUNNER_ID`)
+- `env.runner_id` (must equal `luis-pc-1`)
 - `env.backend_url_set`, `env.runner_token_set` (booleans only — token
   value is never printed)
 - `env.bot_dir_exists`
@@ -146,30 +169,114 @@ met; the JSON report tells you which. The report includes:
 For smoke + dry-run, only the env + backend + python_imports rows must
 be green. AdsPower + config files only matter for live actions.
 
-### 6. Start the runner
+### 7. Start the runner (background)
+
+PowerShell can launch the poll loop as a background process. Two
+options:
+
+**Option A — quick start in the current PowerShell session** (terminates
+when you close the window):
+
+```powershell
+cd $HOME\mission-control
+$proc = Start-Process -FilePath python `
+  -ArgumentList "-u","tools\local-runners\msa_rtxrt_runner.py","--poll" `
+  -WorkingDirectory $PWD `
+  -RedirectStandardOutput .msa-rtxrt-runner.log `
+  -RedirectStandardError .msa-rtxrt-runner.err `
+  -NoNewWindow -PassThru
+$proc.Id | Out-File .msa-rtxrt-runner.pid -Encoding ASCII -NoNewline
+Write-Host "runner started, PID=$($proc.Id). Log: .msa-rtxrt-runner.log"
+```
+
+**Option B — persistent across reboot, via Task Scheduler**: register
+the same `python ... --poll` command as a Scheduled Task with trigger
+"At log on of any user" and "Run only when user is logged on". Use
+Task Scheduler GUI or `schtasks /create` — see Microsoft docs. This
+keeps Luis's runner alive without manual restarts.
+
+Within ~5 seconds you should see in `.msa-rtxrt-runner.log`:
+
+```
+Polling https://mission-control-jbx8.onrender.com/api/v1/msa-rtxrt/runner/poll every 5.0s as luis-pc-1…
+```
+
+### 8. Confirm in Mission Control
+
+Open `https://hq.digidle.com/bots/msa-rtxrt` signed in. Refresh. The
+runner selector in the top bar now includes `luis-pc-1`, with
+`online · idle` next to it. Pick it, then any **Run smoke test** /
+**Dry-run *** button targets that runner.
+
+### Stop / restart on Windows
+
+```powershell
+# Stop
+$pid = Get-Content .msa-rtxrt-runner.pid -ErrorAction Stop
+Stop-Process -Id $pid -Force
+Remove-Item .msa-rtxrt-runner.pid
+
+# Tail the log
+Get-Content .msa-rtxrt-runner.log -Wait -Tail 20
+```
+
+---
+
+## Setup — macOS / Linux runners (claw-1, zach-laptop-1, mac-mini-1)
+
+For Zach's runners (and any other macOS / Linux machine), use the
+POSIX-shell variant.
+
+### 1. Prerequisites
+
+- Python 3.10+ (`python3 --version`)
+- git (`git --version`)
+- AdsPower for macOS (only required for live actions)
+
+### 2. Clone + deps
+
+```sh
+git clone https://github.com/ZachSGrover/mission-control.git ~/mission-control
+cd ~/mission-control
+python3 -m pip install --user requests playwright
+```
+
+### 3. Local env file
 
 ```sh
 cd ~/mission-control
+touch .msa-rtxrt-runner.env
+chmod 600 .msa-rtxrt-runner.env
+```
+
+Edit `.msa-rtxrt-runner.env`:
+
+```sh
+MSA_RTXRT_BACKEND_URL=https://mission-control-jbx8.onrender.com
+MSA_RTXRT_RUNNER_TOKEN=<the_token_value_from_render_env>
+MSA_RTXRT_RUNNER_ID=zach-laptop-1
+MSA_RTXRT_BOT_DIR=/Users/zach/msa-rtxrt-bot/Automation [RTxRT]
+```
+
+Substitute the actual `MSA_RTXRT_RUNNER_ID` your operator owns:
+`claw-1`, `zach-laptop-1`, `mac-mini-1`, etc.
+
+### 4. Preflight + start
+
+```sh
+cd ~/mission-control
+set -a && . ./.msa-rtxrt-runner.env && set +a
+python3 tools/local-runners/msa_rtxrt_runner.py --preflight
+
 nohup python3 -u tools/local-runners/msa_rtxrt_runner.py --poll \
   > .msa-rtxrt-runner.log 2>&1 &
 echo $! > .msa-rtxrt-runner.pid
 ```
 
 (Or use the `./.start-msa-rtxrt-runner.sh` helper that ships on the
-Claw computer — copy it over and adjust if useful.)
+Claw computer.)
 
-You should see in the log within seconds:
-
-```
-Polling https://mission-control-jbx8.onrender.com/api/v1/msa-rtxrt/runner/poll every 5.0s as luis-mac-1…
-```
-
-### 7. Confirm in Mission Control
-
-Open `https://hq.digidle.com/bots/msa-rtxrt`, refresh. The runner
-selector in the top bar now includes `luis-mac-1` (or whatever ID you
-chose), with `online · idle` next to it. Pick it, then any **Run smoke
-test** / **Dry-run *** button targets that runner.
+---
 
 ## Targeting rules
 
@@ -195,7 +302,7 @@ Every runner machine owns its own copies. None of these are committed:
 
 | File | Owns | Notes |
 |---|---|---|
-| `.msa-rtxrt-runner.env` | Each runner machine | Token + runner ID + bot dir. `chmod 600`. |
+| `.msa-rtxrt-runner.env` | Each runner machine | Token + runner ID + bot dir. Tight permissions (chmod 600 on POSIX, `icacls` on Windows). |
 | `.msa-rtxrt-runner.log` | Each runner machine | The local poll loop's output. |
 | `.msa-rtxrt-runner.pid` | Each runner machine | Tracking only — the helper script reads it. |
 | Luis's `auftrag.json` / `contacts.json` / `blast_auftrag.json` / `repost_auftrag.json` | Each runner machine | Authored locally from the `.example.json` templates. |
@@ -220,9 +327,11 @@ Every runner machine owns its own copies. None of these are committed:
 
 ## Adding the second / third / fourth runner
 
-Step 1-7 above, with a different `MSA_RTXRT_RUNNER_ID`. Nothing else
-changes — same backend URL, same token, same bot scripts. The selector
-in Mission Control auto-populates from the heartbeat list.
+Repeat the relevant section above (Windows for Luis-style operators,
+macOS / Linux for Zach-style operators) with a different
+`MSA_RTXRT_RUNNER_ID`. Nothing else changes — same backend URL, same
+token, same bot scripts. The selector in Mission Control auto-populates
+from the heartbeat list.
 
 ## Removing a runner
 

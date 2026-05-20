@@ -512,7 +512,7 @@ describe("MsaRtxrtDashboard — multi-runner selector", () => {
       jobs_recently_handled: 0,
     },
     {
-      runner_id: "luis-mac-1",
+      runner_id: "luis-pc-1",
       last_seen_at: "2026-05-20T11:50:00Z",
       seconds_since_seen: 600,
       status: "offline" as const,
@@ -561,7 +561,7 @@ describe("MsaRtxrtDashboard — multi-runner selector", () => {
         {...makeProps({
           runnerStatus: "offline",
           runners: TWO_RUNNERS,
-          selectedRunnerId: "luis-mac-1",
+          selectedRunnerId: "luis-pc-1",
         })}
       />,
     );
@@ -616,9 +616,9 @@ describe("MsaRtxrtDashboard — multi-runner selector", () => {
       />,
     );
     fireEvent.change(screen.getByTestId("runner-selector"), {
-      target: { value: "luis-mac-1" },
+      target: { value: "luis-pc-1" },
     });
-    expect(onSelectRunner).toHaveBeenCalledWith("luis-mac-1");
+    expect(onSelectRunner).toHaveBeenCalledWith("luis-pc-1");
   });
 
   it("run history rows show the runner_id (or target_runner_id with arrow)", () => {
@@ -637,7 +637,7 @@ describe("MsaRtxrtDashboard — multi-runner selector", () => {
         kind: "dry_run_dm",
         status: "queued",
         createdAt: "2026-05-20T11:51:00Z",
-        targetRunnerId: "luis-mac-1",
+        targetRunnerId: "luis-pc-1",
       },
     ];
     render(
@@ -651,7 +651,7 @@ describe("MsaRtxrtDashboard — multi-runner selector", () => {
     fireEvent.click(screen.getByTestId("tab-run-history"));
     expect(screen.getByTestId("history-row-runner-j1").textContent).toBe("claw-1");
     // Queued + no claimer yet → render the target with the arrow prefix.
-    expect(screen.getByTestId("history-row-runner-j2").textContent).toBe("→ luis-mac-1");
+    expect(screen.getByTestId("history-row-runner-j2").textContent).toBe("→ luis-pc-1");
   });
 
   it("live-one stays owner-gated AND requires a selected online runner", () => {
@@ -692,6 +692,6 @@ describe("MsaRtxrtDashboard — multi-runner selector", () => {
     );
     fireEvent.click(screen.getByTestId("tab-runner-status"));
     expect(screen.getByTestId("connected-runner-claw-1")).toBeInTheDocument();
-    expect(screen.getByTestId("connected-runner-luis-mac-1")).toBeInTheDocument();
+    expect(screen.getByTestId("connected-runner-luis-pc-1")).toBeInTheDocument();
   });
 });

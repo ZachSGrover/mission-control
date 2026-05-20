@@ -553,7 +553,7 @@ def test_preflight_report_live_flags_all_false_by_default(
 
 def test_runner_config_distinct_runner_ids_per_machine() -> None:
     """Each machine's env can pick its own ``MSA_RTXRT_RUNNER_ID``."""
-    for rid in ("claw-1", "luis-mac-1", "zach-laptop-1", "mac-mini-1"):
+    for rid in ("claw-1", "luis-pc-1", "zach-laptop-1", "mac-mini-1"):
         env = _base_env() | {"MSA_RTXRT_RUNNER_ID": rid}
         cfg = RunnerConfig.from_env(env)
         assert cfg.runner_id == rid
@@ -561,11 +561,11 @@ def test_runner_config_distinct_runner_ids_per_machine() -> None:
 
 def test_poll_for_job_url_carries_runner_id_through() -> None:
     """The poll URL always carries the calling runner's ID for backend filtering."""
-    env = _base_env() | {"MSA_RTXRT_RUNNER_ID": "luis-mac-1"}
+    env = _base_env() | {"MSA_RTXRT_RUNNER_ID": "luis-pc-1"}
     cfg = RunnerConfig.from_env(env)
     http = MagicMock(return_value=(200, {"job": None}))
     poll_for_job(cfg, http=http)
-    assert "runner_id=luis-mac-1" in http.call_args.kwargs["url"]
+    assert "runner_id=luis-pc-1" in http.call_args.kwargs["url"]
 
 
 def test_patch_job_status_url_carries_runner_id_for_each_runner() -> None:

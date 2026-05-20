@@ -12,6 +12,7 @@ import {
   jobBodyForKind,
   rowsToJobs,
   type BackendJobRow,
+  type BackendRunnerHeartbeat,
   type BackendRunnerStatus,
 } from "@/components/bots/MsaRtxrtClient";
 import type {
@@ -38,6 +39,17 @@ const MAX_JOBS = 10;
 function MsaRtxrtPageContent() {
   const [runnerStatus, setRunnerStatus] = useState<RunnerStatus>("unknown");
   const [recentJobs, setRecentJobs] = useState<MsaRtxrtJob[]>([]);
+  // Multi-runner: keep the full heartbeat snapshot so the selector
+  // dropdown can list every known runner, not just "any online".
+  const [runners, setRunners] = useState<BackendRunnerHeartbeat[]>([]);
+  // The operator's currently-selected target runner. ``null`` means no
+  // selection — run buttons disable until the operator picks one. We
+  // sticky-select the first online runner on initial load so the page
+  // works out-of-the-box for the common single-runner case (claw-1).
+  const [selectedRunnerId, setSelectedRunnerId] = useState<string | null>(null);
+  // Track whether we've auto-selected once so we don't override a
+  // deliberate operator choice on subsequent refreshes.
+  const autoSelectedRef = useRef(false);
 
   const { realRole } = useRole();
   const isOwner = realRole === "owner";
@@ -72,18 +84,35 @@ function MsaRtxrtPageContent() {
         const data = (await statusRes.json()) as Partial<BackendRunnerStatus>;
         if (Array.isArray(data.runners) && typeof data.any_online === "boolean") {
           heartbeat = data as BackendRunnerStatus;
+          setRunners(heartbeat.runners);
+          // First-time auto-select: the first online runner (typically
+          // claw-1 in the single-runner deploy). Skip if the operator
+          // already picked one, or if there are no online runners.
+          if (!autoSelectedRef.current && selectedRunnerId === null) {
+            const firstOnline = heartbeat.runners.find(
+              (r) => r.status === "online",
+            );
+            if (firstOnline) {
+              setSelectedRunnerId(firstOnline.runner_id);
+              autoSelectedRef.current = true;
+            }
+          }
         }
       }
 
       // Heartbeat is the preferred signal; falls back to job-derived
       // status if /runner/status was unavailable (graceful degradation).
-      setRunnerStatus(deriveRunnerStatus(rows, heartbeat));
+      // Multi-runner-aware: the pill reflects the selected runner's
+      // online state, not "any runner online".
+      setRunnerStatus(
+        deriveRunnerStatus(rows, heartbeat, undefined, undefined, selectedRunnerId),
+      );
     } catch {
       // Network / auth fail → behave like the runner is offline so run
       // buttons stay gated.
       setRunnerStatus("offline");
     }
-  }, []);
+  }, [selectedRunnerId]);
 
   // Initial load. The refresh callback writes to state; that's the only
   // way to surface backend data on mount, so we keep the rule-eslint
@@ -95,11 +124,11 @@ function MsaRtxrtPageContent() {
   }, [refresh]);
 
   const handleSubmitJob = useCallback(
-    async (kind: JobKind) => {
+    async (kind: JobKind, targetRunnerId: string | null) => {
       const res = await fetchRef.current(`${getApiBaseUrl()}/api/v1/msa-rtxrt/jobs`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(jobBodyForKind(kind)),
+        body: JSON.stringify(jobBodyForKind(kind, targetRunnerId)),
       });
       if (!res.ok) {
         // Surface the backend's privacy-safe detail message if present.
@@ -119,6 +148,9 @@ function MsaRtxrtPageContent() {
       runnerStatus={runnerStatus}
       recentJobs={recentJobs}
       isOwner={isOwner}
+      runners={runners}
+      selectedRunnerId={selectedRunnerId}
+      onSelectRunner={setSelectedRunnerId}
       onSubmitJob={handleSubmitJob}
       onRefresh={refresh}
     />

@@ -22,6 +22,7 @@ function makeRow(overrides: Partial<BackendJobRow> = {}): BackendJobRow {
     stdout_excerpt: null,
     error_excerpt: null,
     runner_id: null,
+    target_runner_id: null,
     dry_run: true,
     live_one: false,
     max_test_actions: 0,
@@ -252,5 +253,155 @@ describe("deriveRunnerStatusFromJobs (legacy fallback)", () => {
       NOW,
     );
     expect(result).toBe("idle");
+  });
+});
+
+// ── Multi-runner targeting helpers ─────────────────────────────────────────
+
+import { findHeartbeatById } from "./MsaRtxrtClient";
+
+describe("jobBodyForKind (multi-runner v2)", () => {
+  it("attaches target_runner_id when one is provided", () => {
+    expect(jobBodyForKind("smoke", "luis-mac-1")).toEqual({
+      kind: "smoke",
+      target_runner_id: "luis-mac-1",
+    });
+  });
+
+  it("omits target_runner_id when null or empty", () => {
+    expect(jobBodyForKind("smoke", null)).toEqual({ kind: "smoke" });
+    expect(jobBodyForKind("smoke", "")).toEqual({ kind: "smoke" });
+    expect(jobBodyForKind("smoke", "   ")).toEqual({ kind: "smoke" });
+  });
+
+  it("preserves live-one safety flags alongside target_runner_id", () => {
+    expect(jobBodyForKind("live_one_dm", "zach-laptop-1")).toEqual({
+      kind: "live_one_dm",
+      confirm_live: "YES",
+      max_test_actions: 1,
+      target_runner_id: "zach-laptop-1",
+    });
+  });
+});
+
+function multiRunnerHeartbeat(): import("./MsaRtxrtClient").BackendRunnerStatus {
+  return {
+    runners: [
+      {
+        runner_id: "claw-1",
+        last_seen_at: NOW.toISOString(),
+        seconds_since_seen: 3,
+        status: "online",
+        last_status: "idle",
+      },
+      {
+        runner_id: "luis-mac-1",
+        last_seen_at: "2026-05-12T11:50:00Z",
+        seconds_since_seen: 600,
+        status: "offline",
+        last_status: "idle",
+      },
+    ],
+    any_online: true,
+    freshness_seconds: 90,
+  };
+}
+
+describe("findHeartbeatById", () => {
+  it("returns the matching runner row", () => {
+    const hb = multiRunnerHeartbeat();
+    expect(findHeartbeatById(hb, "claw-1")?.runner_id).toBe("claw-1");
+    expect(findHeartbeatById(hb, "luis-mac-1")?.runner_id).toBe("luis-mac-1");
+  });
+
+  it("returns null on no match", () => {
+    expect(findHeartbeatById(multiRunnerHeartbeat(), "mac-mini-1")).toBeNull();
+  });
+
+  it("returns null on empty / whitespace / null runner ID", () => {
+    const hb = multiRunnerHeartbeat();
+    expect(findHeartbeatById(hb, "")).toBeNull();
+    expect(findHeartbeatById(hb, "   ")).toBeNull();
+    expect(findHeartbeatById(hb, null)).toBeNull();
+  });
+
+  it("returns null on null heartbeat", () => {
+    expect(findHeartbeatById(null, "claw-1")).toBeNull();
+  });
+});
+
+describe("deriveRunnerStatus (selectedRunnerId-aware)", () => {
+  it("returns idle when the selected runner is online", () => {
+    expect(
+      deriveRunnerStatus([], multiRunnerHeartbeat(), NOW, undefined, "claw-1"),
+    ).toBe("idle");
+  });
+
+  it("returns offline when the selected runner is offline (even if another is online)", () => {
+    expect(
+      deriveRunnerStatus([], multiRunnerHeartbeat(), NOW, undefined, "luis-mac-1"),
+    ).toBe("offline");
+  });
+
+  it("returns offline when the selected runner doesn't exist in the heartbeat", () => {
+    expect(
+      deriveRunnerStatus(
+        [],
+        multiRunnerHeartbeat(),
+        NOW,
+        undefined,
+        "mac-mini-1",
+      ),
+    ).toBe("offline");
+  });
+
+  it("returns busy when any job is running (irrespective of selected runner)", () => {
+    expect(
+      deriveRunnerStatus(
+        [makeRow({ status: "running", started_at: "2026-05-12T11:59:00Z" })],
+        multiRunnerHeartbeat(),
+        NOW,
+        undefined,
+        "claw-1",
+      ),
+    ).toBe("busy");
+  });
+
+  it("falls back to any_online when no runner is selected (back-compat)", () => {
+    expect(deriveRunnerStatus([], multiRunnerHeartbeat(), NOW)).toBe("idle");
+    expect(
+      deriveRunnerStatus([], multiRunnerHeartbeat(), NOW, undefined, ""),
+    ).toBe("idle");
+    expect(
+      deriveRunnerStatus([], multiRunnerHeartbeat(), NOW, undefined, null),
+    ).toBe("idle");
+  });
+});
+
+describe("rowToJob (multi-runner v2 fields)", () => {
+  it("surfaces runner_id and target_runner_id when present", () => {
+    const job = rowToJob(
+      makeRow({
+        kind: "smoke",
+        status: "succeeded",
+        runner_id: "luis-mac-1",
+        target_runner_id: "luis-mac-1",
+      }),
+    );
+    expect(job?.runnerId).toBe("luis-mac-1");
+    expect(job?.targetRunnerId).toBe("luis-mac-1");
+  });
+
+  it("leaves runnerId/targetRunnerId undefined when backend returns null", () => {
+    const job = rowToJob(
+      makeRow({
+        kind: "smoke",
+        status: "queued",
+        runner_id: null,
+        target_runner_id: null,
+      }),
+    );
+    expect(job?.runnerId).toBeUndefined();
+    expect(job?.targetRunnerId).toBeUndefined();
   });
 });

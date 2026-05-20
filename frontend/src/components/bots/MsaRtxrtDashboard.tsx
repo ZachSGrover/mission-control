@@ -67,7 +67,15 @@ import type {
 export interface MsaRtxrtDashboardProps {
   runnerStatus: RunnerStatus;
   recentJobs: MsaRtxrtJob[];
-  isOwner: boolean;
+  /**
+   * Whether the viewer can run / arm / confirm a controlled live-one
+   * job. Operator+ (owner or operator). Prior to 2026-05-20 this was
+   * named ``isOwner`` and equaled ``realRole === "owner"`` — that was
+   * too restrictive for the day-to-day bot operator (Luis), who runs
+   * the bot from Mission Control. Builders / viewers still cannot
+   * run live-one (the backend enforces this via ``OPERATOR_DEP``).
+   */
+  canRunLiveOne: boolean;
   /** Heartbeat snapshot — drives the runner selector. May be empty list. */
   runners?: BackendRunnerHeartbeat[];
   /** Currently selected runner id, or ``null`` if the operator hasn't picked one. */
@@ -892,7 +900,7 @@ function RunHistoryTab({ jobs }: { jobs: MsaRtxrtJob[] }) {
 
 // ── Tab body: Setup ─────────────────────────────────────────────────────────
 
-function SetupTab({ isOwner }: { isOwner: boolean }) {
+function SetupTab({ canRunLiveOne }: { canRunLiveOne: boolean }) {
   return (
     <div data-testid="tab-pane-setup">
       <HintBox icon={Settings}>
@@ -1089,10 +1097,10 @@ function SetupTab({ isOwner }: { isOwner: boolean }) {
               session cookies.
             </span>
           </li>
-          {isOwner && (
+          {canRunLiveOne && (
             <li
               className="flex items-start gap-2"
-              data-testid="setup-owner-only-notice"
+              data-testid="setup-live-one-notice"
             >
               <ShieldAlert
                 className="mt-0.5 h-3.5 w-3.5 shrink-0"
@@ -1101,7 +1109,8 @@ function SetupTab({ isOwner }: { isOwner: boolean }) {
               <span>
                 <b style={{ color: THEME.err }}>Live-one</b> requires you to
                 set the three local env vars before the runner will execute.
-                Even the owner cannot bypass the runner-side gate.
+                Even an operator with full UI access cannot bypass the
+                runner-side gate.
               </span>
             </li>
           )}
@@ -1311,7 +1320,7 @@ function SetupTab({ isOwner }: { isOwner: boolean }) {
               className="text-[10px] font-semibold uppercase tracking-wider"
               style={{ color: THEME.textQuiet }}
             >
-              Luis (operator role)
+              Luis (operator/admin role) — fully operates the bot
             </p>
             <ul
               className="mt-2 list-disc pl-5 space-y-1 text-[12px] leading-relaxed"
@@ -1319,12 +1328,21 @@ function SetupTab({ isOwner }: { isOwner: boolean }) {
               data-testid="luis-can-do"
             >
               <li>Open Mission Control from phone or computer</li>
+              <li>Select which runner to target (luis-pc-1, etc.)</li>
               <li>View runner status</li>
               <li>Run smoke test</li>
               <li>Run dry-run actions</li>
+              <li>
+                <b>Arm and run a controlled live-one</b> (with the three
+                safety flags + runner-side env)
+              </li>
               <li>See run history</li>
-              <li>Edit local configs on the runner machine</li>
-              <li>Tell Zach when AdsPower / X is ready</li>
+              <li>Edit local configs on his runner machine</li>
+              <li>
+                Iterate on bot code on feature branches (
+                <code>coo/*</code>, <code>feat/*</code>, <code>fix/*</code>
+                ) and open PRs
+              </li>
             </ul>
           </div>
           <div>
@@ -1332,25 +1350,31 @@ function SetupTab({ isOwner }: { isOwner: boolean }) {
               className="text-[10px] font-semibold uppercase tracking-wider"
               style={{ color: THEME.textQuiet }}
             >
-              Zach / owner only
+              Zach / owner only — production + security
             </p>
             <ul
               className="mt-2 list-disc pl-5 space-y-1 text-[12px] leading-relaxed"
               style={{ color: THEME.textSoft }}
               data-testid="owner-only"
             >
-              <li>Arm and confirm live-one</li>
-              <li>Set the three live-mode env vars on the Claw shell</li>
-              <li>Restart the runner with live-mode env in scope</li>
+              <li>Push directly to <code>main</code> / merge PRs</li>
               <li>Change Render / Vercel / Clerk / DNS / billing</li>
+              <li>Change Cloudflare / auth / security policy</li>
               <li>Rotate the runner token</li>
-              <li>Approve merging changes to <code>main</code></li>
+              <li>Assign Mission Control roles to other users</li>
+              <li>
+                Add a new <code>live_one_*</code> kind or relax the
+                safety gate (mass-live remains blocked at four layers)
+              </li>
             </ul>
           </div>
           <HintBox icon={ShieldCheck}>
             Mass-live actions do not exist anywhere in the system and are
             blocked at four independent layers (UI, backend validator,
-            runner gate, bot&apos;s own safety_guard).
+            runner gate, bot&apos;s own safety_guard). Luis can run
+            controlled live-one with operator role; the bot still
+            refuses unless the three local env vars are set on the
+            calling runner machine.
           </HintBox>
         </div>
       </NumberedCard>
@@ -1406,10 +1430,15 @@ function SetupRow({
   );
 }
 
-// ── Live-one card (owner only, two-step Arm → Confirm) ─────────────────────
+// ── Live-one card (operator+, two-step Arm → Confirm) ─────────────────────
+//
+// As of 2026-05-20 this is no longer owner-only. Operator+ can arm /
+// confirm / run a live-one provided the three safety flags are set and a
+// runner is selected. Builders / viewers still cannot — the backend
+// enforces this via ``OPERATOR_DEP`` on POST /jobs.
 
 function LiveOneCard({
-  isOwner,
+  canRunLiveOne,
   runnerOffline,
   noRunnerSelected,
   selectedRunnerOffline,
@@ -1417,7 +1446,7 @@ function LiveOneCard({
   busyKind,
   onRun,
 }: {
-  isOwner: boolean;
+  canRunLiveOne: boolean;
   runnerOffline: boolean;
   noRunnerSelected: boolean;
   selectedRunnerOffline: boolean;
@@ -1448,24 +1477,25 @@ function LiveOneCard({
             className="text-xs font-bold uppercase tracking-widest"
             style={{ color: "#b91c1c" }}
           >
-            Live-one test (owner only)
+            Live-one test (Operator/Admin)
           </h3>
           <p
             className="mt-1 text-xs leading-relaxed"
             style={{ color: THEME.textMuted }}
           >
             Runs a single live action with{" "}
-            <code>MAX_TEST_ACTIONS=1</code> on the runner. Requires owner
-            role, two-step confirmation, and the three local env vars.
+            <code>MAX_TEST_ACTIONS=1</code> on the selected runner.
+            Requires Operator (or higher) role, two-step confirmation,
+            and the three local env vars set on the runner machine.
           </p>
 
-          {!isOwner ? (
+          {!canRunLiveOne ? (
             <p
               className="mt-3 text-xs italic"
               style={{ color: THEME.textQuiet }}
-              data-testid="live-one-locked-not-owner"
+              data-testid="live-one-locked-insufficient-role"
             >
-              Owner access required.
+              Operator/Admin access required.
             </p>
           ) : !armed ? (
             <button
@@ -1565,7 +1595,7 @@ function LiveOneCard({
 export function MsaRtxrtDashboard({
   runnerStatus,
   recentJobs,
-  isOwner,
+  canRunLiveOne,
   runners = [],
   selectedRunnerId = null,
   onSelectRunner,
@@ -1824,12 +1854,15 @@ export function MsaRtxrtDashboard({
               <RunHistoryTab jobs={recentJobs} />
             )}
 
-            {activeTab === "setup" && <SetupTab isOwner={isOwner} />}
+            {activeTab === "setup" && (
+              <SetupTab canRunLiveOne={canRunLiveOne} />
+            )}
 
-            {/* Live-one section lives on every tab — operator should be able
-                to escalate from anywhere. Owner-gated + two-step. */}
+            {/* Live-one section lives on every tab — operator should be
+                able to escalate from anywhere. Operator+ gated + two-step
+                Arm → Confirm. */}
             <LiveOneCard
-              isOwner={isOwner}
+              canRunLiveOne={canRunLiveOne}
               runnerOffline={runnerOffline}
               noRunnerSelected={noRunnerSelected}
               selectedRunnerOffline={selectedRunnerOffline}

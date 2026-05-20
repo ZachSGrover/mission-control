@@ -71,8 +71,12 @@ export interface MsaRtxrtControlPanelProps {
   runnerStatus: RunnerStatus;
   /** Last 10 jobs the runner reported. */
   recentJobs: MsaRtxrtJob[];
-  /** True iff the current viewer is `owner`. Gates live-one controls. */
-  isOwner: boolean;
+  /**
+   * True iff the current viewer can run live-one (Operator+). Prior to
+   * 2026-05-20 this prop was named ``isOwner`` and meant owner-only;
+   * now it's operator+ to match the role-expansion change.
+   */
+  canRunLiveOne: boolean;
   /**
    * Called when the operator hits a dry-run or live-one button. Returns the
    * server-side promise so the button can render a spinner. Until the
@@ -246,7 +250,7 @@ function RecentJobsBlock({ jobs }: { jobs: MsaRtxrtJob[] }) {
 export function MsaRtxrtControlPanel({
   runnerStatus,
   recentJobs,
-  isOwner,
+  canRunLiveOne,
   onSubmitJob,
   onRefresh,
 }: MsaRtxrtControlPanelProps) {
@@ -450,24 +454,25 @@ export function MsaRtxrtControlPanel({
               className="text-xs font-semibold uppercase tracking-widest"
               style={{ color: "rgb(185, 28, 28)" }}
             >
-              Live-one test (owner only)
+              Live-one test (Operator/Admin)
             </h3>
             <p
               className="mt-1 text-xs leading-relaxed"
               style={{ color: "var(--text-muted)" }}
             >
               Runs a single live action (MAX_TEST_ACTIONS=1) against the
-              chosen surface. Requires owner role, explicit two-step
-              confirmation, and the runner&apos;s live-mode environment.
+              chosen surface. Requires Operator (or higher) role,
+              explicit two-step confirmation, and the runner&apos;s
+              live-mode environment.
             </p>
 
-            {!isOwner ? (
+            {!canRunLiveOne ? (
               <p
                 className="mt-3 text-xs italic"
                 style={{ color: "var(--text-quiet)" }}
-                data-testid="live-one-locked-not-owner"
+                data-testid="live-one-locked-insufficient-role"
               >
-                Owner access required to use live-one.
+                Operator/Admin access required to use live-one.
               </p>
             ) : !liveOneArmed ? (
               <button

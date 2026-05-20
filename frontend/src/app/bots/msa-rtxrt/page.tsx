@@ -52,7 +52,13 @@ function MsaRtxrtPageContent() {
   const autoSelectedRef = useRef(false);
 
   const { realRole } = useRole();
-  const isOwner = realRole === "owner";
+  // Live-one was owner-only before 2026-05-20. As of the
+  // operator-role expansion it's available to operator+ — the day-to-day
+  // bot operator (Luis) is operator-tier and needs to run controlled
+  // live-one as part of normal bot operations. Backend re-checks
+  // operator+ on POST /jobs via ``OPERATOR_DEP``, so a non-operator
+  // who somehow bypasses the UI still gets 403.
+  const canRunLiveOne = realRole === "owner" || realRole === "operator";
 
   const { fetchWithAuth } = useAuthFetch();
   // Stable ref so the callbacks below don't re-create on every render.
@@ -147,7 +153,7 @@ function MsaRtxrtPageContent() {
     <MsaRtxrtDashboard
       runnerStatus={runnerStatus}
       recentJobs={recentJobs}
-      isOwner={isOwner}
+      canRunLiveOne={canRunLiveOne}
       runners={runners}
       selectedRunnerId={selectedRunnerId}
       onSelectRunner={setSelectedRunnerId}

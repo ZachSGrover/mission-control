@@ -427,7 +427,11 @@ async def runner_poll(
         if requesting_runner is None
         else or_(
             MsaRtxrtJob.target_runner_id.is_(None),  # type: ignore[union-attr]
-            MsaRtxrtJob.target_runner_id == requesting_runner,
+            # `==` on a nullable SQLModel column descriptor returns a
+            # ColumnElement[bool], but mypy infers `bool` here because the
+            # field type is `str | None`. Same ignore pattern as the `.is_`
+            # calls above.
+            MsaRtxrtJob.target_runner_id == requesting_runner,  # type: ignore[arg-type]
         )
     )
     stmt = (

@@ -1067,9 +1067,12 @@ function AdsPowerGroupPicker({
 // ── Campaign tab — Luis-exact port ─────────────────────────────────────────
 
 function CampaignTabExact({
-  disabled,
+  // Campaign has no wired controls yet — props are kept on the contract so
+  // the dispatch site stays uniform with the other Luis tabs. They will
+  // be wired once dry_run_campaign / live_one_campaign land.
+  disabled: _disabled,
   busyKind,
-  onRun,
+  onRun: _onRun,
 }: {
   disabled: boolean;
   busyKind: JobKind | null;
@@ -1178,11 +1181,15 @@ function CampaignTabExact({
           or <code>live_one_campaign</code> kind. Run individual dry-runs
           from the All Chats and Promo Repost tabs in the meantime.
         </p>
-        <p className="mt-2 text-[11px]" style={{ color: THEME.textQuiet }}>
-          <em>(Hooks: <code>onRun</code>={onRun ? "ready" : "unset"};{" "}
-          <code>busyKind</code>={busyKind ?? "null"};{" "}
-          <code>disabled</code>={disabled ? "true" : "false"}.)</em>
-        </p>
+        {busyKind === "live_one_repost" && (
+          // Read-only consumer of the props so TS strict-flags don't
+          // complain about unused params on this tab while we wait on
+          // the Local Bridge / campaign kind.
+          <p className="mt-2 text-[11px]" style={{ color: THEME.textQuiet }}>
+            (One of the individual dry-runs is currently busy; queued
+            campaign runs would wait.)
+          </p>
+        )}
       </NumberedCard>
 
       <LiveStatusPanel testIdPrefix="campaign" n={7} />

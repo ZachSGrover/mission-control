@@ -100,31 +100,58 @@ export const LUIS_BOT_REFERENCE_COMMIT = "5f77dfeb";
 export const LUIS_BOT_SOURCE_BRANCH = "coo/import-luis-msa";
 
 // ── Tab catalog ─────────────────────────────────────────────────────────────
+//
+// Each tab carries a small ``status`` chip so the operator can tell at a
+// glance which parts of the UI are wired end-to-end vs still local-only or
+// planned. Wiring honesty is more important than visual completeness — we
+// must NEVER render a clickable button that pretends to do something it
+// doesn't actually do safely.
+
+export type TabStatus =
+  | "wired"            // Mission Control → runner → bot fully wired, safe to click
+  | "local-only"       // Only the localhost dashboard can do this today
+  | "planned"          // Placeholder card; native rebuild scheduled
+  | "runner-adapter";  // Needs a new runner endpoint before UI can wire
 
 type TabId =
   | "all-chats"
   | "recipient-database"
   | "new-database"
   | "promo-repost"
+  | "campaign"
   | "runner-status"
   | "run-history"
+  | "logs"
   | "setup";
 
 interface TabDef {
   id: TabId;
   label: string;
   Icon: React.ElementType;
+  status: TabStatus;
 }
 
-const TABS: TabDef[] = [
-  { id: "all-chats", label: "All Chats", Icon: MessageSquare },
-  { id: "recipient-database", label: "Recipient Database", Icon: Inbox },
-  { id: "new-database", label: "New Database", Icon: Layers },
-  { id: "promo-repost", label: "Promo Repost", Icon: Repeat },
-  { id: "runner-status", label: "Runner Status", Icon: Signal },
-  { id: "run-history", label: "Run History", Icon: CircleDashed },
-  { id: "setup", label: "Setup", Icon: Settings },
+export const TABS: TabDef[] = [
+  { id: "all-chats", label: "All Chats", Icon: MessageSquare, status: "wired" },
+  { id: "recipient-database", label: "Recipient Database", Icon: Inbox, status: "wired" },
+  { id: "new-database", label: "New Database", Icon: Layers, status: "wired" },
+  { id: "promo-repost", label: "Promo Repost", Icon: Repeat, status: "wired" },
+  { id: "campaign", label: "Campaign", Icon: PlayCircle, status: "local-only" },
+  { id: "runner-status", label: "Runner Status", Icon: Signal, status: "wired" },
+  { id: "run-history", label: "Run History", Icon: CircleDashed, status: "wired" },
+  { id: "logs", label: "Logs", Icon: TerminalSquare, status: "planned" },
+  { id: "setup", label: "Setup", Icon: Settings, status: "wired" },
 ];
+
+// Status badge labels and theme colour roles. ``ok`` for wired, ``warn`` for
+// local-only / runner-adapter, ``textQuiet`` for planned. The colours are
+// resolved from the THEME object below at render time.
+export const TAB_STATUS_LABEL: Record<TabStatus, string> = {
+  "wired": "Wired",
+  "local-only": "Local only",
+  "runner-adapter": "Runner adapter needed",
+  "planned": "Planned",
+};
 
 // ── Theme tokens ────────────────────────────────────────────────────────────
 //
@@ -389,6 +416,129 @@ function RunnerSelector({
 }
 
 // ── Status pill ─────────────────────────────────────────────────────────────
+
+// ── Status badges (parity v1) ──────────────────────────────────────────────
+//
+// Tiny chips that explain what's wired vs planned at the tab + dashboard
+// level. They're descriptive only — they never gate behaviour. The actual
+// "is this safe to click" answer comes from the runner-side gate.
+
+function TabStatusBadge({ status }: { status: TabStatus }) {
+  const palette: Record<
+    TabStatus,
+    { bg: string; border: string; color: string }
+  > = {
+    "wired": {
+      bg: "rgba(134, 239, 172, 0.10)",
+      border: "rgba(20, 83, 45, 0.45)",
+      color: THEME.ok,
+    },
+    "local-only": {
+      bg: "rgba(251, 191, 36, 0.10)",
+      border: "rgba(120, 53, 15, 0.45)",
+      color: THEME.warn,
+    },
+    "runner-adapter": {
+      bg: "rgba(251, 191, 36, 0.10)",
+      border: "rgba(120, 53, 15, 0.45)",
+      color: THEME.warn,
+    },
+    "planned": {
+      bg: THEME.cardSoftBg,
+      border: THEME.cardBorder,
+      color: THEME.textQuiet,
+    },
+  };
+  const p = palette[status];
+  return (
+    <span
+      data-testid={`tab-status-badge-${status}`}
+      className="ml-1.5 rounded-full px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide"
+      style={{
+        background: p.bg,
+        border: `1px solid ${p.border}`,
+        color: p.color,
+      }}
+    >
+      {TAB_STATUS_LABEL[status]}
+    </span>
+  );
+}
+
+interface DashboardStatusItem {
+  id: string;
+  label: string;
+  // Three lightweight states — green / amber / red. Don't conflate with
+  // TabStatus; this is the operator-facing dashboard health row.
+  tone: "ok" | "warn" | "err";
+  /** Short human-readable detail. Never includes secrets / account names. */
+  detail: string;
+}
+
+function DashboardStatusHeader({ items }: { items: DashboardStatusItem[] }) {
+  const toneStyle: Record<
+    DashboardStatusItem["tone"],
+    { bg: string; border: string; color: string; iconColor: string }
+  > = {
+    ok: {
+      bg: "rgba(134, 239, 172, 0.08)",
+      border: "rgba(20, 83, 45, 0.35)",
+      color: THEME.text,
+      iconColor: THEME.ok,
+    },
+    warn: {
+      bg: "rgba(251, 191, 36, 0.08)",
+      border: "rgba(120, 53, 15, 0.35)",
+      color: THEME.text,
+      iconColor: THEME.warn,
+    },
+    err: {
+      bg: "rgba(239, 68, 68, 0.08)",
+      border: "rgba(127, 29, 29, 0.35)",
+      color: THEME.text,
+      iconColor: THEME.err,
+    },
+  };
+  return (
+    <div
+      className="mb-4 flex flex-wrap gap-2"
+      role="region"
+      aria-label="MSA RT/X dashboard status"
+      data-testid="dashboard-status-header"
+    >
+      {items.map((item) => {
+        const t = toneStyle[item.tone];
+        const Icon =
+          item.tone === "ok"
+            ? CheckCircle2
+            : item.tone === "warn"
+              ? ShieldAlert
+              : AlertTriangle;
+        return (
+          <div
+            key={item.id}
+            data-testid={`dashboard-status-${item.id}`}
+            className="flex items-center gap-1.5 rounded-md px-2.5 py-1 text-[11px]"
+            style={{
+              background: t.bg,
+              border: `1px solid ${t.border}`,
+              color: t.color,
+            }}
+            title={item.detail}
+          >
+            <Icon
+              className="h-3.5 w-3.5 shrink-0"
+              style={{ color: t.iconColor }}
+            />
+            <span className="font-semibold">{item.label}</span>
+            <span style={{ color: THEME.textQuiet }}>·</span>
+            <span style={{ color: THEME.textMuted }}>{item.detail}</span>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
 
 function RunnerStatusPill({ status }: { status: RunnerStatus }) {
   const map: Record<
@@ -786,6 +936,97 @@ function RunnerStatusTab({
             />
           ))}
         </div>
+      </NumberedCard>
+    </div>
+  );
+}
+
+// ── Tab body: Campaign (planned / local-only) ──────────────────────────────
+//
+// Luis's localhost dashboard has a Campaign tab that orchestrates DM then
+// Repost in sequence via campaign.py. We don't yet have a runner job-kind
+// for the campaign orchestrator, so this tab is intentionally a placeholder
+// that explains the gap and points at the local dashboard. Honest > fake.
+
+function CampaignTab() {
+  return (
+    <div data-testid="tab-pane-campaign">
+      <HintBox icon={PlayCircle}>
+        Luis&apos;s local <code>Campaign</code> tab orchestrates a DM sweep
+        followed by a Promo Repost in sequence (campaign.py). Mission
+        Control does not yet expose the orchestrator as its own job kind.
+      </HintBox>
+
+      <NumberedCard n={1} title="Status: local only">
+        <p
+          className="text-xs leading-relaxed"
+          style={{ color: THEME.textMuted }}
+          data-testid="campaign-status-text"
+        >
+          Today the orchestrator runs from the local dashboard{" "}
+          (<code>{LOCAL_DASHBOARD_URL}</code> → Campaign tab) on the runner
+          PC. Mission Control wires the underlying single-bot kinds
+          (<code>dry_run_dm</code> and <code>dry_run_repost</code>) but not
+          the sequenced campaign itself.
+        </p>
+      </NumberedCard>
+
+      <NumberedCard n={2} title="Planned native rebuild">
+        <ul
+          className="space-y-1.5 text-xs leading-relaxed"
+          style={{ color: THEME.textMuted }}
+          data-testid="campaign-planned-list"
+        >
+          <li>Add a <code>dry_run_campaign</code> kind to the runner.</li>
+          <li>Add a <code>live_one_campaign</code> kind with the same 1×1 cap pattern as <code>live_one_repost</code>.</li>
+          <li>Surface a sequencing UI here (DM list → wait → Repost list).</li>
+          <li>Wire the existing two-step Arm → Confirm flow for the live variant.</li>
+        </ul>
+      </NumberedCard>
+    </div>
+  );
+}
+
+// ── Tab body: Logs (planned) ──────────────────────────────────────────────
+//
+// Logs (per-bot historical actions) live on the runner host as JSON files
+// that may contain real handles + DM bodies. We can't surface them
+// verbatim without first building a privacy-safe wrapper on the runner
+// side. This tab acknowledges the gap and points at the local dashboard.
+
+function LogsTab() {
+  return (
+    <div data-testid="tab-pane-logs">
+      <HintBox icon={TerminalSquare}>
+        Per-bot historical logs (DM send-log, repost-log, builder-log) live
+        on the runner host as JSON files. They contain real handles and
+        message bodies, so we do not surface them in Mission Control
+        until a privacy-safe wrapper is built on the runner side.
+      </HintBox>
+
+      <NumberedCard n={1} title="Status: planned">
+        <p
+          className="text-xs leading-relaxed"
+          style={{ color: THEME.textMuted }}
+          data-testid="logs-status-text"
+        >
+          For now, open the local dashboard on the runner host to view
+          per-bot logs in their existing form. Mission Control still
+          surfaces a Run History tab (one entry per job, server-truncated
+          summaries — no recipient data).
+        </p>
+      </NumberedCard>
+
+      <NumberedCard n={2} title="Why this is not just wired up">
+        <ul
+          className="space-y-1.5 text-xs leading-relaxed"
+          style={{ color: THEME.textMuted }}
+          data-testid="logs-rationale-list"
+        >
+          <li>The raw log files include recipient handles and DM bodies.</li>
+          <li>The bridge would need to redact these on the runner side before sending bytes to Mission Control.</li>
+          <li>Until that wrapper exists, Run History (already wired) is the privacy-safe path.</li>
+        </ul>
       </NumberedCard>
     </div>
   );
@@ -1305,7 +1546,101 @@ function SetupTab({ canRunLiveOne }: { canRunLiveOne: boolean }) {
         </div>
       </NumberedCard>
 
-      <NumberedCard n={8} title="AdsPower checklist (Claw computer)">
+      <NumberedCard n={8} title="What is wired now">
+        <p
+          className="mb-3 text-[12px] leading-relaxed"
+          style={{ color: THEME.textMuted }}
+        >
+          Honest snapshot of what Mission Control can actually do today.
+          Anything not listed as <b style={{ color: THEME.ok }}>wired</b>{" "}
+          either runs from the local dashboard only, or is planned. We do
+          not surface clickable buttons for unwired actions.
+        </p>
+        <ul
+          className="space-y-1.5 text-[12px]"
+          style={{ color: THEME.text }}
+          data-testid="wired-now-matrix"
+        >
+          {(
+            [
+              { id: "smoke", label: "smoke", status: "wired" as TabStatus },
+              { id: "dry_run_dm", label: "dry_run_dm", status: "wired" as TabStatus },
+              { id: "dry_run_repost", label: "dry_run_repost", status: "wired" as TabStatus },
+              { id: "dry_run_blast", label: "dry_run_blast", status: "wired" as TabStatus },
+              { id: "dry_run_builder", label: "dry_run_builder", status: "wired" as TabStatus },
+              { id: "live_one_repost", label: "live_one_repost (1×1 capped, gated)", status: "wired" as TabStatus },
+              { id: "dry_run_scan", label: "dry_run_scan", status: "local-only" as TabStatus },
+              { id: "live_one_dm", label: "live_one_dm (gated; in-bot cap landed)", status: "wired" as TabStatus },
+              { id: "live_one_blast", label: "live_one_blast (gated; in-bot cap landed)", status: "wired" as TabStatus },
+              { id: "live_one_builder", label: "live_one_builder (gated; env-only cap)", status: "wired" as TabStatus },
+              { id: "campaign", label: "Campaign (DM then repost orchestrator)", status: "local-only" as TabStatus },
+              { id: "logs", label: "Per-bot historical logs", status: "planned" as TabStatus },
+            ] as const
+          ).map((row) => (
+            <li
+              key={row.id}
+              data-testid={`wired-now-row-${row.id}`}
+              className="flex items-center gap-2"
+            >
+              <code style={{ color: THEME.textSoft }}>{row.label}</code>
+              <span className="ml-auto">
+                <TabStatusBadge status={row.status} />
+              </span>
+            </li>
+          ))}
+        </ul>
+      </NumberedCard>
+
+      <NumberedCard n={9} title="Dashboard parity roadmap">
+        <p
+          className="mb-3 text-[12px] leading-relaxed"
+          style={{ color: THEME.textMuted }}
+        >
+          Items below are the next native Mission Control rebuilds — each
+          replaces a deep link to the local dashboard with a real
+          Mission-Control-native view. They land as separate small PRs.
+        </p>
+        <ul
+          className="space-y-1.5 text-[12px]"
+          style={{ color: THEME.text }}
+          data-testid="parity-roadmap-list"
+        >
+          {[
+            { id: "all-chats", label: "Native All Chats workflow (account picker + message composer)" },
+            { id: "recipient-database", label: "Native Recipient Database (source + senders + privacy-safe pool view)" },
+            { id: "promo-repost", label: "Native Promo Repost (AdsPower group picker + tweet URLs)" },
+            { id: "new-database", label: "Native New Database / Builder (followers vs chats toggle)" },
+            { id: "campaign", label: "Native Campaign orchestrator (DM → wait → Repost sequence)" },
+            { id: "adspower", label: "AdsPower profile picker / status / cache-clean" },
+            { id: "schedule", label: "Daily Auto Run schedule editor" },
+            { id: "secure-bridge", label: "Local dashboard secure bridge for phone / remote access" },
+          ].map((row) => (
+            <li
+              key={row.id}
+              data-testid={`parity-roadmap-row-${row.id}`}
+              className="flex items-start gap-2"
+            >
+              <CircleDashed
+                className="mt-0.5 h-3.5 w-3.5 shrink-0"
+                style={{ color: THEME.textQuiet }}
+              />
+              <span>{row.label}</span>
+            </li>
+          ))}
+        </ul>
+        <p
+          className="mt-3 text-[11px] leading-relaxed"
+          style={{ color: THEME.textQuiet }}
+          data-testid="parity-roadmap-note"
+        >
+          Each rebuild needs a backend runner adapter or job-kind before
+          its UI can be wired. Until that ships, the corresponding tab
+          stays labeled <b>Local only</b> or <b>Planned</b> in the tab
+          nav above.
+        </p>
+      </NumberedCard>
+
+      <NumberedCard n={10} title="AdsPower checklist (Claw computer)">
         <ChecklistRow label="AdsPower app running locally" />
         <ChecklistRow label={(<><code>http://local.adspower.net:50325</code> reachable</>) as React.ReactNode} />
         <ChecklistRow label={(<><code>ADSPOWER_API_KEY</code> set in the Claw shell (never committed)</>) as React.ReactNode} />
@@ -1323,7 +1658,7 @@ function SetupTab({ canRunLiveOne }: { canRunLiveOne: boolean }) {
         </p>
       </NumberedCard>
 
-      <NumberedCard n={9} title="Config files (Claw computer, never committed)">
+      <NumberedCard n={11} title="Config files (Claw computer, never committed)">
         <p
           className="text-[12px] leading-relaxed"
           style={{ color: THEME.textSoft }}
@@ -1345,7 +1680,7 @@ function SetupTab({ canRunLiveOne }: { canRunLiveOne: boolean }) {
         </HintBox>
       </NumberedCard>
 
-      <NumberedCard n={10} title="Runner control commands (Claw computer)">
+      <NumberedCard n={12} title="Runner control commands (Claw computer)">
         <p
           className="text-[12px] leading-relaxed"
           style={{ color: THEME.textSoft }}
@@ -1443,7 +1778,7 @@ function SetupTab({ canRunLiveOne }: { canRunLiveOne: boolean }) {
         </div>
       </NumberedCard>
 
-      <NumberedCard n={11} title="What Luis can do vs what only Zach can do">
+      <NumberedCard n={13} title="What Luis can do vs what only Zach can do">
         <div className="space-y-3">
           <div>
             <p
@@ -1866,6 +2201,37 @@ export function MsaRtxrtDashboard({
 
         <main className="flex-1 overflow-y-auto px-6 py-6">
           <div className="mx-auto max-w-3xl">
+            {/* Top-level dashboard status row — quick honest summary of
+                what is wired, gated, and blocked. */}
+            <DashboardStatusHeader
+              items={[
+                {
+                  id: "local-bridge",
+                  label: "Local dashboard bridge",
+                  tone: "ok",
+                  detail: "Open Local Dashboard card available in Setup",
+                },
+                {
+                  id: "dry-runs",
+                  label: "Dry-runs",
+                  tone: "ok",
+                  detail: "verified end-to-end on luis-pc-1",
+                },
+                {
+                  id: "live-one",
+                  label: "Live-one",
+                  tone: "warn",
+                  detail: "gated · three env flags + Arm/Confirm",
+                },
+                {
+                  id: "mass-live",
+                  label: "Mass-live",
+                  tone: "err",
+                  detail: "blocked at runner — no dispatch kinds",
+                },
+              ]}
+            />
+
             {/* Tab nav */}
             <nav
               className="mb-5 flex flex-wrap gap-1 rounded-lg p-1"
@@ -1899,6 +2265,7 @@ export function MsaRtxrtDashboard({
                   >
                     <tab.Icon className="h-3.5 w-3.5" />
                     {tab.label}
+                    <TabStatusBadge status={tab.status} />
                   </button>
                 );
               })}
@@ -1968,6 +2335,8 @@ export function MsaRtxrtDashboard({
               />
             )}
 
+            {activeTab === "campaign" && <CampaignTab />}
+
             {activeTab === "runner-status" && (
               <RunnerStatusTab
                 runnerStatus={runnerStatus}
@@ -1983,6 +2352,8 @@ export function MsaRtxrtDashboard({
             {activeTab === "run-history" && (
               <RunHistoryTab jobs={recentJobs} />
             )}
+
+            {activeTab === "logs" && <LogsTab />}
 
             {activeTab === "setup" && (
               <SetupTab canRunLiveOne={canRunLiveOne} />

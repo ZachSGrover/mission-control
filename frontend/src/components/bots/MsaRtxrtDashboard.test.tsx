@@ -55,8 +55,10 @@ const ALL_TABS = [
   "recipient-database",
   "new-database",
   "promo-repost",
+  "campaign",
   "runner-status",
   "run-history",
+  "logs",
   "setup",
 ] as const;
 
@@ -105,7 +107,7 @@ describe("MsaRtxrtDashboard — layout", () => {
 // ── Tabs ────────────────────────────────────────────────────────────────────
 
 describe("MsaRtxrtDashboard — tabs", () => {
-  it("renders all seven tab buttons by testid", () => {
+  it("renders all nine tab buttons by testid (parity v1: + Campaign + Logs)", () => {
     render(<MsaRtxrtDashboard {...makeProps()} />);
     for (const tabId of ALL_TABS) {
       expect(screen.getByTestId(`tab-${tabId}`)).toBeInTheDocument();
@@ -776,5 +778,174 @@ describe("MsaRtxrtDashboard — multi-runner selector", () => {
     fireEvent.click(screen.getByTestId("tab-runner-status"));
     expect(screen.getByTestId("connected-runner-claw-1")).toBeInTheDocument();
     expect(screen.getByTestId("connected-runner-luis-pc-1")).toBeInTheDocument();
+  });
+});
+
+// ── Parity v1: status header, Campaign + Logs tabs, wired/roadmap ──────────
+//
+// These cover the parity-sprint additions:
+//   * Top-of-dashboard status header with 4 chips
+//   * Campaign + Logs placeholder tabs (clearly labelled, no fake actions)
+//   * "What is wired now" matrix on Setup
+//   * Dashboard parity roadmap on Setup
+//   * Existing dry-run controls still render
+//   * No mass-live kinds exposed in the static catalogs
+
+describe("MsaRtxrtDashboard — parity v1 status header", () => {
+  it("renders the dashboard status header with all four chips", () => {
+    render(<MsaRtxrtDashboard {...makeProps({ runnerStatus: "idle" })} />);
+    const header = screen.getByTestId("dashboard-status-header");
+    expect(header).toBeInTheDocument();
+    expect(screen.getByTestId("dashboard-status-local-bridge").textContent).toMatch(
+      /Local dashboard bridge/i,
+    );
+    expect(screen.getByTestId("dashboard-status-dry-runs").textContent).toMatch(
+      /Dry-runs/i,
+    );
+    expect(screen.getByTestId("dashboard-status-dry-runs").textContent).toMatch(
+      /verified/i,
+    );
+    expect(screen.getByTestId("dashboard-status-live-one").textContent).toMatch(
+      /Live-one.*gated/i,
+    );
+    expect(screen.getByTestId("dashboard-status-mass-live").textContent).toMatch(
+      /Mass-live.*blocked/i,
+    );
+  });
+});
+
+describe("MsaRtxrtDashboard — parity v1 Campaign tab", () => {
+  it("renders the Campaign placeholder pane with the Local-only status", () => {
+    render(<MsaRtxrtDashboard {...makeProps({ runnerStatus: "idle" })} />);
+    fireEvent.click(screen.getByTestId("tab-campaign"));
+    const pane = screen.getByTestId("tab-pane-campaign");
+    expect(pane).toBeInTheDocument();
+    expect(screen.getByTestId("campaign-status-text").textContent).toMatch(
+      /local dashboard.*Campaign tab/i,
+    );
+    expect(screen.getByTestId("campaign-planned-list").textContent).toMatch(
+      /dry_run_campaign/i,
+    );
+    expect(screen.getByTestId("campaign-planned-list").textContent).toMatch(
+      /live_one_campaign/i,
+    );
+    // Does NOT render a clickable run button for an unwired kind.
+    expect(screen.queryByTestId("run-dry_run_campaign")).toBeNull();
+    expect(screen.queryByTestId("run-live_one_campaign")).toBeNull();
+  });
+});
+
+describe("MsaRtxrtDashboard — parity v1 Logs tab", () => {
+  it("renders the Logs placeholder pane and the privacy rationale", () => {
+    render(<MsaRtxrtDashboard {...makeProps({ runnerStatus: "idle" })} />);
+    fireEvent.click(screen.getByTestId("tab-logs"));
+    expect(screen.getByTestId("tab-pane-logs")).toBeInTheDocument();
+    expect(screen.getByTestId("logs-status-text").textContent).toMatch(
+      /local dashboard/i,
+    );
+    const rationale = screen.getByTestId("logs-rationale-list");
+    expect(rationale.textContent).toMatch(/recipient handles/i);
+    expect(rationale.textContent).toMatch(/Run History/i);
+  });
+});
+
+describe("MsaRtxrtDashboard — parity v1 Setup additions", () => {
+  function openSetup() {
+    render(<MsaRtxrtDashboard {...makeProps({ runnerStatus: "idle" })} />);
+    fireEvent.click(screen.getByTestId("tab-setup"));
+  }
+
+  it("renders the 'What is wired now' matrix with all expected rows", () => {
+    openSetup();
+    const matrix = screen.getByTestId("wired-now-matrix");
+    expect(matrix).toBeInTheDocument();
+    // Wired kinds.
+    expect(screen.getByTestId("wired-now-row-smoke").textContent).toMatch(/smoke/);
+    expect(screen.getByTestId("wired-now-row-dry_run_dm").textContent).toMatch(/dry_run_dm/);
+    expect(screen.getByTestId("wired-now-row-dry_run_repost").textContent).toMatch(/dry_run_repost/);
+    expect(screen.getByTestId("wired-now-row-dry_run_blast").textContent).toMatch(/dry_run_blast/);
+    expect(screen.getByTestId("wired-now-row-dry_run_builder").textContent).toMatch(/dry_run_builder/);
+    expect(screen.getByTestId("wired-now-row-live_one_repost").textContent).toMatch(/1×1 capped/);
+    // Local-only.
+    expect(screen.getByTestId("wired-now-row-dry_run_scan")).toBeInTheDocument();
+    expect(screen.getByTestId("wired-now-row-campaign")).toBeInTheDocument();
+    // Planned.
+    expect(screen.getByTestId("wired-now-row-logs")).toBeInTheDocument();
+  });
+
+  it("renders the dashboard parity roadmap with the next 8 rebuild items", () => {
+    openSetup();
+    const roadmap = screen.getByTestId("parity-roadmap-list");
+    expect(roadmap).toBeInTheDocument();
+    [
+      "all-chats",
+      "recipient-database",
+      "promo-repost",
+      "new-database",
+      "campaign",
+      "adspower",
+      "schedule",
+      "secure-bridge",
+    ].forEach((id) => {
+      expect(screen.getByTestId(`parity-roadmap-row-${id}`)).toBeInTheDocument();
+    });
+    expect(screen.getByTestId("parity-roadmap-note").textContent).toMatch(
+      /runner adapter|job-kind/i,
+    );
+  });
+});
+
+describe("MsaRtxrtDashboard — parity v1 honesty", () => {
+  it("never exposes mass-live / bulk kinds in any clickable element", () => {
+    render(
+      <MsaRtxrtDashboard {...makeProps({ runnerStatus: "idle", canRunLiveOne: true })} />,
+    );
+    for (const tabId of ALL_TABS) {
+      fireEvent.click(screen.getByTestId(`tab-${tabId}`));
+      // Loop over all buttons + anchors. None of their data-kind attrs may
+      // contain a mass-live token, and none of their visible text may
+      // promise a mass-live action.
+      const root = screen.getByTestId("msa-rtxrt-dashboard");
+      const interactive = [
+        ...root.querySelectorAll("button"),
+        ...root.querySelectorAll("a"),
+      ];
+      for (const el of interactive) {
+        const kind = (el as HTMLElement).getAttribute("data-kind") || "";
+        expect(kind).not.toMatch(/live_all_|live_mass_|live_batch_|live_many_/);
+        const label = (el.textContent || "").toLowerCase();
+        expect(label).not.toMatch(/mass\s*live\s*run/);
+      }
+    }
+  });
+
+  it("still exposes the dry-run controls (regression guard for parity-v1 reshuffle)", () => {
+    render(
+      <MsaRtxrtDashboard {...makeProps({ runnerStatus: "idle" })} />,
+    );
+    // From the Runner Status tab, smoke is still there.
+    fireEvent.click(screen.getByTestId("tab-runner-status"));
+    expect(screen.getByTestId("run-smoke")).toBeInTheDocument();
+    // From each tab that owns a dry-run kind, the primary button still
+    // exists with the same data-kind so wiring tests upstream don't break.
+    fireEvent.click(screen.getByTestId("tab-all-chats"));
+    expect(screen.getByTestId("run-dry_run_dm")).toBeInTheDocument();
+    fireEvent.click(screen.getByTestId("tab-recipient-database"));
+    expect(screen.getByTestId("run-dry_run_blast")).toBeInTheDocument();
+    fireEvent.click(screen.getByTestId("tab-new-database"));
+    expect(screen.getByTestId("run-dry_run_builder")).toBeInTheDocument();
+    fireEvent.click(screen.getByTestId("tab-promo-repost"));
+    expect(screen.getByTestId("run-dry_run_repost")).toBeInTheDocument();
+  });
+
+  it("Live-one gated copy still renders in the live-one card", () => {
+    render(
+      <MsaRtxrtDashboard {...makeProps({ runnerStatus: "idle", canRunLiveOne: true })} />,
+    );
+    // The live-one card title still mentions Operator/Admin and references
+    // the three local env vars on the runner machine.
+    const root = screen.getByTestId("msa-rtxrt-dashboard");
+    expect(root.textContent || "").toMatch(/Live-one test/);
+    expect(root.textContent || "").toMatch(/three local env vars/);
   });
 });

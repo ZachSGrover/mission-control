@@ -1,0 +1,12 @@
+{
+  "_comment": "Named groups of AdsPower profile IDs. The Promo Repost tab in the dashboard uses these as a quick-pick. Real file contains Luis's actual profile keys — replaced here with placeholders.",
+  "X_Group_Example": [
+    "adspower-profile-id-1",
+    "adspower-profile-id-2",
+    "adspower-profile-id-3"
+  ],
+  "Backup_Group_Example": [
+    "adspower-profile-id-4",
+    "adspower-profile-id-5"
+  ]
+}

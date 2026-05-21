@@ -114,14 +114,13 @@ export type TabStatus =
   | "runner-adapter";  // Needs a new runner endpoint before UI can wire
 
 type TabId =
-  | "all-chats"
-  | "recipient-database"
-  | "new-database"
-  | "promo-repost"
   | "campaign"
+  | "all-chats"
+  | "new-database"
+  | "recipient-database"
+  | "promo-repost"
   | "runner-status"
   | "run-history"
-  | "logs"
   | "setup";
 
 interface TabDef {
@@ -131,15 +130,25 @@ interface TabDef {
   status: TabStatus;
 }
 
+// Tab order matches Luis's xdashboard.html exactly for the first five:
+// Campaign · All Chats · New Database · Recipient Database · Promo Repost
+// (the 3 remaining tabs are Digital-OS-specific operator surfaces).
+//
+// Status is "local-only" for each Luis tab in this exact-interface-port-v1
+// — Mission Control mirrors the UI but the actual workflow controls
+// (account selection, profile pickers, message textareas, rate-limit
+// inputs, etc.) are disabled with the inline label
+// "Local bridge not connected yet" until the Local Bridge PR ships.
+// The single dry-run button on each bot tab remains wired through the
+// runner so smoke / dry-run end-to-end testing still works.
 export const TABS: TabDef[] = [
-  { id: "all-chats", label: "All Chats", Icon: MessageSquare, status: "wired" },
-  { id: "recipient-database", label: "Recipient Database", Icon: Inbox, status: "wired" },
-  { id: "new-database", label: "New Database", Icon: Layers, status: "wired" },
-  { id: "promo-repost", label: "Promo Repost", Icon: Repeat, status: "wired" },
   { id: "campaign", label: "Campaign", Icon: PlayCircle, status: "local-only" },
+  { id: "all-chats", label: "All Chats", Icon: MessageSquare, status: "local-only" },
+  { id: "new-database", label: "New Database", Icon: Layers, status: "local-only" },
+  { id: "recipient-database", label: "Recipient Database", Icon: Inbox, status: "local-only" },
+  { id: "promo-repost", label: "Promo Repost", Icon: Repeat, status: "local-only" },
   { id: "runner-status", label: "Runner Status", Icon: Signal, status: "wired" },
   { id: "run-history", label: "Run History", Icon: CircleDashed, status: "wired" },
-  { id: "logs", label: "Logs", Icon: TerminalSquare, status: "planned" },
   { id: "setup", label: "Setup", Icon: Settings, status: "wired" },
 ];
 
@@ -686,101 +695,8 @@ function HintBox({
   );
 }
 
-// ── Tab body: bot-action panes (All Chats / Recipient / New / Promo) ───────
-
-interface BotActionTabProps {
-  intro: string;
-  hint: string;
-  primaryKind: JobKind;
-  primaryLabel: string;
-  primaryIcon: React.ElementType;
-  runnerOffline: boolean;
-  /** True iff the operator has not picked a runner from the selector. */
-  noRunnerSelected: boolean;
-  /** True iff the selected runner's heartbeat says offline. */
-  selectedRunnerOffline: boolean;
-  busyKind: JobKind | null;
-  onRun: (kind: JobKind) => void;
-  testIdPrefix: string;
-}
-
-function BotActionTab({
-  intro,
-  hint,
-  primaryKind,
-  primaryLabel,
-  primaryIcon,
-  runnerOffline,
-  noRunnerSelected,
-  selectedRunnerOffline,
-  busyKind,
-  onRun,
-  testIdPrefix,
-}: BotActionTabProps) {
-  const disabled = runnerOffline || noRunnerSelected || selectedRunnerOffline;
-  const disabledReason = noRunnerSelected
-    ? "Pick a runner from the selector above before enqueuing a job."
-    : selectedRunnerOffline
-      ? "The selected runner is offline — start its local runner before enqueuing a job."
-      : null;
-  return (
-    <div data-testid={`tab-pane-${testIdPrefix}`}>
-      <HintBox icon={Inbox}>{hint}</HintBox>
-
-      <NumberedCard n={1} title="What this does">
-        <p
-          className="text-sm leading-relaxed"
-          style={{ color: THEME.text }}
-        >
-          {intro}
-        </p>
-        <p
-          className="mt-3 text-xs leading-relaxed"
-          style={{ color: THEME.textQuiet }}
-        >
-          Real account data, recipient lists, and follower handles stay on the
-          Claw computer. Mission Control only enqueues the run and shows the
-          summary — the local dashboard at{" "}
-          <code style={{ color: THEME.textSoft }}>
-            {LOCAL_DASHBOARD_URL}
-          </code>{" "}
-          is where you pick accounts and review per-recipient progress.
-        </p>
-      </NumberedCard>
-
-      <NumberedCard n={2} title="Dry-run from Mission Control">
-        <p
-          className="mb-3 text-xs"
-          style={{ color: THEME.textQuiet }}
-        >
-          Runs the matching bot script with{" "}
-          <code style={{ color: THEME.textSoft }}>DRY_RUN=true</code>. No DMs
-          sent, no posts, no scrapes — output goes to local logs and a
-          privacy-safe summary lands in the run history.
-        </p>
-        <RunButton
-          kind={primaryKind}
-          label={primaryLabel}
-          description={`Enqueue ${primaryKind} for the selected runner.`}
-          disabled={disabled}
-          busy={busyKind === primaryKind}
-          onClick={() => onRun(primaryKind)}
-          testId={`run-${primaryKind}`}
-          icon={primaryIcon}
-        />
-        {disabledReason && (
-          <p
-            className="mt-2 text-[11px] leading-relaxed"
-            style={{ color: THEME.warn }}
-            data-testid={`tab-pane-${testIdPrefix}-disabled-reason`}
-          >
-            {disabledReason}
-          </p>
-        )}
-      </NumberedCard>
-    </div>
-  );
-}
+// (BotActionTab + BotActionTabProps removed in exact-interface-port-v1 —
+// each Luis tab now has its own Luis-exact component below.)
 
 // ── Tab body: Runner Status ────────────────────────────────────────────────
 
@@ -941,93 +857,792 @@ function RunnerStatusTab({
   );
 }
 
-// ── Tab body: Campaign (planned / local-only) ──────────────────────────────
+// ── Luis-exact tab components (exact-interface-port-v1) ────────────────────
 //
-// Luis's localhost dashboard has a Campaign tab that orchestrates DM then
-// Repost in sequence via campaign.py. We don't yet have a runner job-kind
-// for the campaign orchestrator, so this tab is intentionally a placeholder
-// that explains the gap and points at the local dashboard. Honest > fake.
+// These hand-port Luis's xdashboard.html tabs verbatim — same numbered
+// sections, same field names, same layout order, same placeholders. Every
+// form control that isn't yet wired through the Mission Control bridge is
+// rendered as a real disabled control with the inline label
+// "Local bridge not connected yet" — NOT replaced with a placeholder card.
+//
+// This is the operator-honest middle state: the dashboard looks and feels
+// like Luis's localhost UI even when most actions require the local
+// bridge. The few controls that ARE wired today (smoke + the four
+// dry_run_* buttons) sit in the same place Luis's "Run starten" buttons
+// would sit, but they trigger Mission Control's dry-run pipeline rather
+// than the localhost POST.
 
-function CampaignTab() {
+/** The exact inline label requested in the spec for any disabled control
+ *  that depends on the (not-yet-built) Local Bridge between Mission
+ *  Control and Luis's PC. Kept as a single source-of-truth string so
+ *  refactors can't drift the wording. */
+export const LOCAL_BRIDGE_NOTE = "Local bridge not connected yet";
+
+function LocalBridgeNote({ id }: { id: string }) {
   return (
-    <div data-testid="tab-pane-campaign">
-      <HintBox icon={PlayCircle}>
-        Luis&apos;s local <code>Campaign</code> tab orchestrates a DM sweep
-        followed by a Promo Repost in sequence (campaign.py). Mission
-        Control does not yet expose the orchestrator as its own job kind.
-      </HintBox>
+    <p
+      className="mt-1 text-[10px] font-semibold italic"
+      style={{ color: THEME.textQuiet }}
+      data-testid={`local-bridge-note-${id}`}
+    >
+      {LOCAL_BRIDGE_NOTE}
+    </p>
+  );
+}
 
-      <NumberedCard n={1} title="Status: local only">
+/** Per-tab Live-Status section. Mirrors Luis's "Live-Status" card at the
+ *  bottom of every bot tab. Until the local bridge is connected, we
+ *  cannot stream live status from the runner — operators can use the
+ *  Run History tab for the privacy-safe post-job summary. */
+function LiveStatusPanel({ testIdPrefix, n }: { testIdPrefix: string; n: number }) {
+  return (
+    <NumberedCard n={n} title="Live-Status">
+      <div
+        className="rounded-lg p-3"
+        style={{
+          background: THEME.cardSoftBg,
+          border: `1px solid ${THEME.cardBorder}`,
+        }}
+        data-testid={`${testIdPrefix}-live-status`}
+      >
+        <div className="flex items-center gap-2 text-xs" style={{ color: THEME.textMuted }}>
+          <div
+            className="h-2 w-2 rounded-full"
+            style={{ background: THEME.textQuiet }}
+            data-testid={`${testIdPrefix}-live-status-dot`}
+          />
+          <span data-testid={`${testIdPrefix}-live-status-step`}>Bereit.</span>
+        </div>
+        <div
+          className="mt-2 text-[11px] leading-relaxed"
+          style={{ color: THEME.textQuiet }}
+          data-testid={`${testIdPrefix}-live-status-feed`}
+        >
+          Noch keine Logs…
+        </div>
+        <LocalBridgeNote id={`${testIdPrefix}-live-status`} />
         <p
-          className="text-xs leading-relaxed"
-          style={{ color: THEME.textMuted }}
-          data-testid="campaign-status-text"
+          className="mt-1 text-[10px]"
+          style={{ color: THEME.textQuiet }}
         >
-          Today the orchestrator runs from the local dashboard{" "}
-          (<code>{LOCAL_DASHBOARD_URL}</code> → Campaign tab) on the runner
-          PC. Mission Control wires the underlying single-bot kinds
-          (<code>dry_run_dm</code> and <code>dry_run_repost</code>) but not
-          the sequenced campaign itself.
+          Use the <b>Run History</b> tab for the most recent post-job
+          summary (privacy-safe, no recipient data).
         </p>
-      </NumberedCard>
+      </div>
+    </NumberedCard>
+  );
+}
 
-      <NumberedCard n={2} title="Planned native rebuild">
-        <ul
-          className="space-y-1.5 text-xs leading-relaxed"
-          style={{ color: THEME.textMuted }}
-          data-testid="campaign-planned-list"
-        >
-          <li>Add a <code>dry_run_campaign</code> kind to the runner.</li>
-          <li>Add a <code>live_one_campaign</code> kind with the same 1×1 cap pattern as <code>live_one_repost</code>.</li>
-          <li>Surface a sequencing UI here (DM list → wait → Repost list).</li>
-          <li>Wire the existing two-step Arm → Confirm flow for the live variant.</li>
-        </ul>
-      </NumberedCard>
+/** A row of disabled rate-limit number inputs. Mirrors Luis's "⚡ Rate-Limit"
+ *  grid (Batch-Größe / Pause (Min) / Tageslimit). */
+function RateLimitGrid({
+  testIdPrefix,
+  defaults,
+}: {
+  testIdPrefix: string;
+  defaults: { batchSize: number; batchPauseMin: number; dailyCap: number };
+}) {
+  return (
+    <div
+      className="mt-3 rounded-lg p-3"
+      style={{ background: THEME.cardSoftBg, border: `1px solid ${THEME.cardBorder}` }}
+      data-testid={`${testIdPrefix}-rate-limit-grid`}
+    >
+      <div
+        className="mb-2 text-[12px] font-bold"
+        style={{ color: THEME.textSoft }}
+      >
+        ⚡ Rate-Limit
+      </div>
+      <div className="grid grid-cols-3 gap-2">
+        <label className="block text-[11px]" style={{ color: THEME.textSoft }}>
+          Batch-Größe
+          <input
+            type="number"
+            min={1}
+            max={500}
+            defaultValue={defaults.batchSize}
+            disabled
+            data-testid={`${testIdPrefix}-batch-size`}
+            className="mt-1 w-full rounded-md px-2 py-1 text-xs disabled:opacity-50"
+            style={{ background: THEME.cardBg, border: `1px solid ${THEME.cardBorder}`, color: THEME.text }}
+          />
+        </label>
+        <label className="block text-[11px]" style={{ color: THEME.textSoft }}>
+          Pause (Min)
+          <input
+            type="number"
+            min={0}
+            max={240}
+            defaultValue={defaults.batchPauseMin}
+            disabled
+            data-testid={`${testIdPrefix}-batch-pause`}
+            className="mt-1 w-full rounded-md px-2 py-1 text-xs disabled:opacity-50"
+            style={{ background: THEME.cardBg, border: `1px solid ${THEME.cardBorder}`, color: THEME.text }}
+          />
+        </label>
+        <label className="block text-[11px]" style={{ color: THEME.textSoft }}>
+          Tageslimit
+          <input
+            type="number"
+            min={1}
+            max={5000}
+            defaultValue={defaults.dailyCap}
+            disabled
+            data-testid={`${testIdPrefix}-daily-cap`}
+            className="mt-1 w-full rounded-md px-2 py-1 text-xs disabled:opacity-50"
+            style={{ background: THEME.cardBg, border: `1px solid ${THEME.cardBorder}`, color: THEME.text }}
+          />
+        </label>
+      </div>
+      <LocalBridgeNote id={`${testIdPrefix}-rate-limit`} />
     </div>
   );
 }
 
-// ── Tab body: Logs (planned) ──────────────────────────────────────────────
-//
-// Logs (per-bot historical actions) live on the runner host as JSON files
-// that may contain real handles + DM bodies. We can't surface them
-// verbatim without first building a privacy-safe wrapper on the runner
-// side. This tab acknowledges the gap and points at the local dashboard.
-
-function LogsTab() {
+/** Disabled AdsPower-group select + filter + profile-list block. Mirrors
+ *  Luis's "AdsPower-Gruppe" picker used in every bot tab. */
+function AdsPowerGroupPicker({
+  testIdPrefix,
+  includeFilter,
+  includeClearBtn,
+  groupSelLabel = "AdsPower-Gruppe:",
+}: {
+  testIdPrefix: string;
+  includeFilter?: boolean;
+  includeClearBtn?: boolean;
+  groupSelLabel?: string;
+}) {
   return (
-    <div data-testid="tab-pane-logs">
-      <HintBox icon={TerminalSquare}>
-        Per-bot historical logs (DM send-log, repost-log, builder-log) live
-        on the runner host as JSON files. They contain real handles and
-        message bodies, so we do not surface them in Mission Control
-        until a privacy-safe wrapper is built on the runner side.
+    <>
+      <div className="mb-2 flex flex-wrap items-center gap-2">
+        <label
+          className="whitespace-nowrap text-[12px] font-semibold"
+          style={{ color: THEME.textSoft }}
+        >
+          {groupSelLabel}
+        </label>
+        <select
+          disabled
+          data-testid={`${testIdPrefix}-group-select`}
+          className="min-w-[180px] flex-1 rounded-md px-2 py-1 text-xs disabled:opacity-50"
+          style={{ background: THEME.cardBg, border: `1px solid ${THEME.cardBorder}`, color: THEME.text }}
+        >
+          <option>– lade Gruppen aus AdsPower …</option>
+        </select>
+        {includeClearBtn && (
+          <button
+            type="button"
+            disabled
+            data-testid={`${testIdPrefix}-clear-btn`}
+            className="rounded-md px-3 py-1 text-[11px] disabled:opacity-50"
+            style={{ background: THEME.cardBg, border: `1px solid ${THEME.cardBorder}`, color: THEME.textMuted }}
+          >
+            Auswahl leeren
+          </button>
+        )}
+      </div>
+      {includeFilter && (
+        <input
+          type="text"
+          placeholder="Profile filtern…"
+          disabled
+          data-testid={`${testIdPrefix}-filter`}
+          className="w-full rounded-md px-2 py-1 text-xs disabled:opacity-50"
+          style={{ background: THEME.cardBg, border: `1px solid ${THEME.cardBorder}`, color: THEME.text }}
+        />
+      )}
+      <div
+        className="mt-2 rounded-md p-3 text-[12px]"
+        style={{ background: THEME.cardSoftBg, border: `1px solid ${THEME.cardBorder}`, color: THEME.textQuiet }}
+        data-testid={`${testIdPrefix}-profile-list`}
+      >
+        Lade Profile…
+      </div>
+      <LocalBridgeNote id={`${testIdPrefix}-profile-picker`} />
+    </>
+  );
+}
+
+// ── Campaign tab — Luis-exact port ─────────────────────────────────────────
+
+function CampaignTabExact({
+  // Campaign has no wired controls yet — props are kept on the contract so
+  // the dispatch site stays uniform with the other Luis tabs. They will
+  // be wired once dry_run_campaign / live_one_campaign land.
+  disabled: _disabled,
+  busyKind,
+  onRun: _onRun,
+}: {
+  disabled: boolean;
+  busyKind: JobKind | null;
+  onRun: (kind: JobKind) => void;
+}) {
+  return (
+    <div data-testid="tab-pane-campaign">
+      <HintBox icon={PlayCircle}>
+        Eine Aktion → mehrere Aktionen. Wähle was passieren soll (Repost / DM
+        oder beides), die Tweet-Links, die Accounts (Repost + DM getrennt
+        wählbar), und Empfänger + Message-Template. Bot testet erst alle
+        Accounts (Preflight), dann läuft erst Repost, dann DM-Blast.
       </HintBox>
 
-      <NumberedCard n={1} title="Status: planned">
-        <p
-          className="text-xs leading-relaxed"
-          style={{ color: THEME.textMuted }}
-          data-testid="logs-status-text"
-        >
-          For now, open the local dashboard on the runner host to view
-          per-bot logs in their existing form. Mission Control still
-          surfaces a Run History tab (one entry per job, server-truncated
-          summaries — no recipient data).
-        </p>
+      <NumberedCard n={1} title="Aktionen">
+        <div className="flex flex-wrap gap-4">
+          <label className="flex items-center gap-2 text-sm" data-testid="campaign-action-repost-label">
+            <input
+              type="checkbox"
+              disabled
+              data-testid="campaign-action-repost"
+            />
+            <span>🔁 Reposten</span>
+          </label>
+          <label className="flex items-center gap-2 text-sm" data-testid="campaign-action-blast-label">
+            <input
+              type="checkbox"
+              disabled
+              data-testid="campaign-action-blast"
+            />
+            <span>📨 DMs senden</span>
+          </label>
+        </div>
+        <LocalBridgeNote id="campaign-actions" />
       </NumberedCard>
 
-      <NumberedCard n={2} title="Why this is not just wired up">
-        <ul
-          className="space-y-1.5 text-xs leading-relaxed"
-          style={{ color: THEME.textMuted }}
-          data-testid="logs-rationale-list"
-        >
-          <li>The raw log files include recipient handles and DM bodies.</li>
-          <li>The bridge would need to redact these on the runner side before sending bytes to Mission Control.</li>
-          <li>Until that wrapper exists, Run History (already wired) is the privacy-safe path.</li>
-        </ul>
+      <NumberedCard n={2} title="Tweet-Links">
+        <textarea
+          disabled
+          placeholder={"Ein X-Link pro Zeile\nhttps://x.com/.../status/123456\nhttps://x.com/.../status/789012"}
+          rows={4}
+          data-testid="campaign-tweet-links"
+          className="w-full rounded-md px-2 py-1 text-xs disabled:opacity-50"
+          style={{ background: THEME.cardBg, border: `1px solid ${THEME.cardBorder}`, color: THEME.text, minHeight: "88px" }}
+        />
+        <p className="mt-1 text-[11px]" style={{ color: THEME.textQuiet }}>
+          Bei DMs: <code>{"{link}"}</code> im Message-Template wird durch jeden Link ersetzt
+          (eine DM pro Link an jeden Empfänger).
+        </p>
+        <LocalBridgeNote id="campaign-tweet-links" />
       </NumberedCard>
+
+      <NumberedCard n={3} title="Repost-Accounts">
+        <AdsPowerGroupPicker testIdPrefix="campaign-repost-accounts" includeClearBtn />
+      </NumberedCard>
+
+      <NumberedCard n={4} title="DM-Sender-Accounts">
+        <AdsPowerGroupPicker testIdPrefix="campaign-blast-accounts" includeClearBtn />
+      </NumberedCard>
+
+      <NumberedCard n={5} title="DM-Empfänger + Message-Template">
+        <label className="mb-1 block text-[12px] font-semibold" style={{ color: THEME.textSoft }}>
+          Empfänger-Quelle
+        </label>
+        <select
+          disabled
+          data-testid="campaign-source"
+          className="w-full rounded-md px-2 py-1 text-xs disabled:opacity-50"
+          style={{ background: THEME.cardBg, border: `1px solid ${THEME.cardBorder}`, color: THEME.text }}
+        >
+          <option>– lade …</option>
+        </select>
+        <label className="mt-3 mb-1 block text-[12px] font-semibold" style={{ color: THEME.textSoft }}>
+          Message-Template
+        </label>
+        <textarea
+          disabled
+          defaultValue={"Hey, RT x RT ❓\n{link}"}
+          rows={3}
+          data-testid="campaign-message-template"
+          className="w-full rounded-md px-2 py-1 text-xs disabled:opacity-50"
+          style={{ background: THEME.cardBg, border: `1px solid ${THEME.cardBorder}`, color: THEME.text, minHeight: "88px" }}
+        />
+        <p className="mt-1 text-[11px]" style={{ color: THEME.textQuiet }}>
+          <code>{"{link}"}</code> wird pro DM mit jeweils einem Tweet-Link ersetzt.
+        </p>
+        <RateLimitGrid
+          testIdPrefix="campaign"
+          defaults={{ batchSize: 40, batchPauseMin: 30, dailyCap: 800 }}
+        />
+      </NumberedCard>
+
+      <NumberedCard n={6} title="Start">
+        <button
+          type="button"
+          disabled
+          data-testid="campaign-start-btn"
+          className="w-full rounded-md px-3 py-3 text-sm font-semibold disabled:opacity-50"
+          style={{ background: `linear-gradient(135deg,${THEME.accentFrom},${THEME.accentTo})`, color: "#fff" }}
+        >
+          ▶ Campaign starten
+        </button>
+        <LocalBridgeNote id="campaign-start" />
+        <p className="mt-2 text-[11px]" style={{ color: THEME.textQuiet }}>
+          Mission Control does not yet expose a <code>dry_run_campaign</code>{" "}
+          or <code>live_one_campaign</code> kind. Run individual dry-runs
+          from the All Chats and Promo Repost tabs in the meantime.
+        </p>
+        {busyKind === "live_one_repost" && (
+          // Read-only consumer of the props so TS strict-flags don't
+          // complain about unused params on this tab while we wait on
+          // the Local Bridge / campaign kind.
+          <p className="mt-2 text-[11px]" style={{ color: THEME.textQuiet }}>
+            (One of the individual dry-runs is currently busy; queued
+            campaign runs would wait.)
+          </p>
+        )}
+      </NumberedCard>
+
+      <LiveStatusPanel testIdPrefix="campaign" n={7} />
+    </div>
+  );
+}
+
+// ── All Chats tab — Luis-exact port (dm_bot.py) ────────────────────────────
+
+function AllChatsTabExact({
+  disabled,
+  busyKind,
+  onRun,
+  disabledReason,
+}: {
+  disabled: boolean;
+  busyKind: JobKind | null;
+  onRun: (kind: JobKind) => void;
+  disabledReason: string | null;
+}) {
+  return (
+    <div data-testid="tab-pane-all-chats">
+      <HintBox icon={MessageSquare}>
+        Sendet eine DM an alle Chats in der Inbox des ausgewählten Accounts.
+        24h-Filter aktiv. Profil muss in AdsPower eingeloggt sein.
+      </HintBox>
+
+      <div
+        className="mb-4 flex flex-wrap items-center gap-3 rounded-md px-3 py-2"
+        style={{ background: THEME.cardSoftBg, border: `1px solid ${THEME.cardBorder}` }}
+        data-testid="all-chats-sched-bar"
+      >
+        <label className="flex items-center gap-2 text-xs" style={{ color: THEME.text }}>
+          <input
+            type="checkbox"
+            disabled
+            data-testid="all-chats-sched-toggle"
+          />
+          Täglicher Auto-Run
+        </label>
+        <input
+          type="time"
+          defaultValue="01:00"
+          disabled
+          data-testid="all-chats-sched-time"
+          className="rounded-md px-2 py-1 text-xs disabled:opacity-50"
+          style={{ background: THEME.cardBg, border: `1px solid ${THEME.cardBorder}`, color: THEME.text }}
+        />
+        <button
+          type="button"
+          disabled
+          data-testid="all-chats-sched-save"
+          className="ml-auto rounded-md px-3 py-1 text-xs disabled:opacity-50"
+          style={{ background: THEME.cardBg, border: `1px solid ${THEME.cardBorder}`, color: THEME.textMuted }}
+        >
+          Speichern
+        </button>
+        <LocalBridgeNote id="all-chats-schedule" />
+      </div>
+
+      <NumberedCard n={1} title="Account wählen">
+        <AdsPowerGroupPicker testIdPrefix="all-chats" includeFilter />
+      </NumberedCard>
+
+      <NumberedCard n={2} title="Nachricht">
+        <textarea
+          disabled
+          placeholder="Hey, ..."
+          rows={3}
+          data-testid="all-chats-message"
+          className="w-full rounded-md px-2 py-1 text-xs disabled:opacity-50"
+          style={{ background: THEME.cardBg, border: `1px solid ${THEME.cardBorder}`, color: THEME.text }}
+        />
+        <div className="mt-2 flex flex-wrap items-center gap-3">
+          <label className="text-xs font-semibold" style={{ color: THEME.textSoft }}>
+            Anzahl DMs:
+          </label>
+          <input
+            type="number"
+            min={1}
+            max={500}
+            defaultValue={50}
+            disabled
+            data-testid="all-chats-max-chats"
+            className="w-24 rounded-md px-2 py-1 text-xs disabled:opacity-50"
+            style={{ background: THEME.cardBg, border: `1px solid ${THEME.cardBorder}`, color: THEME.text }}
+          />
+          <div className="ml-auto flex items-center gap-2">
+            <button
+              type="button"
+              disabled
+              data-testid="all-chats-run-starten"
+              className="rounded-md px-3 py-1.5 text-xs font-semibold disabled:opacity-50"
+              style={{ background: `linear-gradient(135deg,${THEME.accentFrom},${THEME.accentTo})`, color: "#fff" }}
+            >
+              🚀 Run starten
+            </button>
+            <RunButton
+              kind="dry_run_dm"
+              label="Dry-run DM"
+              description="Mission Control dry-run of dm_bot.py."
+              disabled={disabled}
+              busy={busyKind === "dry_run_dm"}
+              onClick={() => onRun("dry_run_dm")}
+              testId="run-dry_run_dm"
+              icon={MessageSquare}
+            />
+          </div>
+        </div>
+        <LocalBridgeNote id="all-chats-message" />
+        {disabledReason && (
+          <p className="mt-2 text-[11px]" style={{ color: THEME.warn }}>
+            {disabledReason}
+          </p>
+        )}
+      </NumberedCard>
+
+      <LiveStatusPanel testIdPrefix="all-chats" n={3} />
+    </div>
+  );
+}
+
+// ── New Database tab — Luis-exact port (builder_bot.py) ────────────────────
+
+function NewDatabaseTabExact({
+  disabled,
+  busyKind,
+  onRun,
+  disabledReason,
+}: {
+  disabled: boolean;
+  busyKind: JobKind | null;
+  onRun: (kind: JobKind) => void;
+  disabledReason: string | null;
+}) {
+  return (
+    <div data-testid="tab-pane-new-database">
+      <HintBox icon={Hammer}>
+        Baut eine neue Empfängerliste für den ausgewählten Account — sendet
+        KEINE DMs. &bdquo;Inbox-Chats&ldquo; landet in <code>contacts.json</code>{" "}
+        und ist sofort im Recipient-Database-Modus nutzbar.{" "}
+        &bdquo;Followers&ldquo; landet in <code>follower_lists.json</code>.
+      </HintBox>
+
+      <NumberedCard n={1} title="Modus">
+        <div className="grid grid-cols-1 gap-2 sm:grid-cols-2" data-testid="new-database-mode-grid">
+          <label
+            className="cursor-not-allowed rounded-lg p-3 opacity-60"
+            style={{ background: THEME.cardSoftBg, border: `1px solid ${THEME.cardBorder}` }}
+            data-testid="new-database-mode-chats-label"
+          >
+            <input
+              type="radio"
+              name="builderMode"
+              value="chats"
+              defaultChecked
+              disabled
+              data-testid="new-database-mode-chats"
+            />
+            <div className="ml-2 inline-block">
+              <div className="text-sm font-semibold" style={{ color: THEME.text }}>📨 Inbox-Chats</div>
+              <div className="text-[11px]" style={{ color: THEME.textMuted }}>
+                Scrollt die DM-Inbox des Accounts und merged alle gefundenen
+                Chat-URLs in <code>contacts.json</code>.
+              </div>
+            </div>
+          </label>
+          <label
+            className="cursor-not-allowed rounded-lg p-3 opacity-60"
+            style={{ background: THEME.cardSoftBg, border: `1px solid ${THEME.cardBorder}` }}
+            data-testid="new-database-mode-followers-label"
+          >
+            <input
+              type="radio"
+              name="builderMode"
+              value="followers"
+              disabled
+              data-testid="new-database-mode-followers"
+            />
+            <div className="ml-2 inline-block">
+              <div className="text-sm font-semibold" style={{ color: THEME.text }}>👥 Followers</div>
+              <div className="text-[11px]" style={{ color: THEME.textMuted }}>
+                Scrapt verified-Followers + Followers des Accounts.
+              </div>
+            </div>
+          </label>
+        </div>
+        <LocalBridgeNote id="new-database-mode" />
+      </NumberedCard>
+
+      <NumberedCard n={2} title="Account">
+        <AdsPowerGroupPicker testIdPrefix="new-database" includeFilter />
+      </NumberedCard>
+
+      <NumberedCard n={3} title="Build">
+        <div className="flex flex-wrap items-center gap-2">
+          <button
+            type="button"
+            disabled
+            data-testid="new-database-build-btn"
+            className="rounded-md px-3 py-1.5 text-xs font-semibold disabled:opacity-50"
+            style={{ background: `linear-gradient(135deg,${THEME.accentFrom},${THEME.accentTo})`, color: "#fff" }}
+          >
+            🛠️ Datenbank bauen
+          </button>
+          <RunButton
+            kind="dry_run_builder"
+            label="Dry-run builder"
+            description="Mission Control dry-run of builder_bot.py."
+            disabled={disabled}
+            busy={busyKind === "dry_run_builder"}
+            onClick={() => onRun("dry_run_builder")}
+            testId="run-dry_run_builder"
+            icon={Hammer}
+          />
+        </div>
+        <LocalBridgeNote id="new-database-build" />
+        {disabledReason && (
+          <p className="mt-2 text-[11px]" style={{ color: THEME.warn }}>
+            {disabledReason}
+          </p>
+        )}
+      </NumberedCard>
+
+      <LiveStatusPanel testIdPrefix="new-database" n={4} />
+    </div>
+  );
+}
+
+// ── Recipient Database tab — Luis-exact port (blast_bot.py) ────────────────
+
+function RecipientDatabaseTabExact({
+  disabled,
+  busyKind,
+  onRun,
+  disabledReason,
+}: {
+  disabled: boolean;
+  busyKind: JobKind | null;
+  onRun: (kind: JobKind) => void;
+  disabledReason: string | null;
+}) {
+  return (
+    <div data-testid="tab-pane-recipient-database">
+      <HintBox icon={Inbox}>
+        Cross-Account: nimmt eine bestehende Empfängerliste (aus{" "}
+        <code>contacts.json</code>) und sendet von einem oder mehreren
+        Sender-Accounts an alle Empfänger.
+      </HintBox>
+
+      <NumberedCard n={1} title="Empfänger-Quelle">
+        <select
+          disabled
+          data-testid="recipient-database-source"
+          className="w-full rounded-md px-2 py-1 text-xs disabled:opacity-50"
+          style={{ background: THEME.cardBg, border: `1px solid ${THEME.cardBorder}`, color: THEME.text }}
+        >
+          <option>– lade …</option>
+        </select>
+        <div
+          className="mt-1 text-[11px]"
+          style={{ color: THEME.textQuiet }}
+          data-testid="recipient-database-source-info"
+        >
+          Wähle eine Quelle.
+        </div>
+        <div className="mt-2 flex flex-wrap gap-2" data-testid="recipient-database-list-actions">
+          <button
+            type="button"
+            disabled
+            data-testid="recipient-database-list-delete"
+            className="rounded-md px-3 py-1 text-[11px] disabled:opacity-50"
+            style={{ background: THEME.cardBg, border: `1px solid ${THEME.cardBorder}`, color: THEME.textMuted }}
+          >
+            🗑️ Liste löschen
+          </button>
+          <button
+            type="button"
+            disabled
+            data-testid="recipient-database-list-merge"
+            className="rounded-md px-3 py-1 text-[11px] disabled:opacity-50"
+            style={{ background: THEME.cardBg, border: `1px solid ${THEME.cardBorder}`, color: THEME.textMuted }}
+          >
+            ⮕ Mergen mit …
+          </button>
+        </div>
+        <LocalBridgeNote id="recipient-database-source" />
+      </NumberedCard>
+
+      <NumberedCard n={2} title="Sender-Accounts">
+        <AdsPowerGroupPicker testIdPrefix="recipient-database" includeClearBtn />
+      </NumberedCard>
+
+      <NumberedCard n={3} title="Nachricht">
+        <textarea
+          disabled
+          placeholder="Hey, ..."
+          rows={3}
+          data-testid="recipient-database-message"
+          className="w-full rounded-md px-2 py-1 text-xs disabled:opacity-50"
+          style={{ background: THEME.cardBg, border: `1px solid ${THEME.cardBorder}`, color: THEME.text }}
+        />
+        <RateLimitGrid
+          testIdPrefix="recipient-database"
+          defaults={{ batchSize: 40, batchPauseMin: 30, dailyCap: 800 }}
+        />
+        <div className="mt-3 flex flex-wrap items-center gap-2">
+          <button
+            type="button"
+            disabled
+            data-testid="recipient-database-blast-starten"
+            className="rounded-md px-3 py-1.5 text-xs font-semibold disabled:opacity-50"
+            style={{ background: `linear-gradient(135deg,${THEME.accentFrom},${THEME.accentTo})`, color: "#fff" }}
+          >
+            🚀 Blast starten
+          </button>
+          <button
+            type="button"
+            disabled
+            data-testid="recipient-database-profile-reload"
+            className="rounded-md px-3 py-1.5 text-xs disabled:opacity-50"
+            style={{ background: THEME.cardBg, border: `1px solid ${THEME.cardBorder}`, color: THEME.textMuted }}
+          >
+            ↻ Profile neu laden
+          </button>
+          <RunButton
+            kind="dry_run_blast"
+            label="Dry-run blast"
+            description="Mission Control dry-run of blast_bot.py."
+            disabled={disabled}
+            busy={busyKind === "dry_run_blast"}
+            onClick={() => onRun("dry_run_blast")}
+            testId="run-dry_run_blast"
+            icon={Inbox}
+          />
+        </div>
+        <LocalBridgeNote id="recipient-database-message" />
+        {disabledReason && (
+          <p className="mt-2 text-[11px]" style={{ color: THEME.warn }}>
+            {disabledReason}
+          </p>
+        )}
+      </NumberedCard>
+
+      <LiveStatusPanel testIdPrefix="recipient-database" n={4} />
+    </div>
+  );
+}
+
+// ── Promo Repost tab — Luis-exact port (repost_bot.py) ─────────────────────
+
+function PromoRepostTabExact({
+  disabled,
+  busyKind,
+  onRun,
+  disabledReason,
+}: {
+  disabled: boolean;
+  busyKind: JobKind | null;
+  onRun: (kind: JobKind) => void;
+  disabledReason: string | null;
+}) {
+  return (
+    <div data-testid="tab-pane-promo-repost">
+      <HintBox icon={Repeat}>
+        Gib X-Post-URLs ein → der Bot reposted sie auf allen Accounts der
+        gewählten Promo-Gruppe. Schon-reposted-Posts werden übersprungen.
+      </HintBox>
+
+      <NumberedCard n={1} title="AdsPower-Gruppe">
+        <select
+          disabled
+          data-testid="promo-repost-group-select"
+          className="w-full rounded-md px-2 py-1 text-xs disabled:opacity-50"
+          style={{ background: THEME.cardBg, border: `1px solid ${THEME.cardBorder}`, color: THEME.text }}
+        >
+          <option>– lade Gruppen aus AdsPower …</option>
+        </select>
+        <div
+          className="mt-1 text-[11px]"
+          style={{ color: THEME.textQuiet }}
+          data-testid="promo-repost-group-info"
+        >
+          Wähle eine Gruppe — alle Accounts werden direkt aus AdsPower geholt.
+        </div>
+        <LocalBridgeNote id="promo-repost-group" />
+      </NumberedCard>
+
+      <NumberedCard n={2} title="X-Post-Links">
+        <textarea
+          disabled
+          placeholder={"https://x.com/.../status/123456\nhttps://x.com/.../status/789012"}
+          rows={3}
+          data-testid="promo-repost-links"
+          className="w-full rounded-md px-2 py-1 text-xs disabled:opacity-50"
+          style={{ background: THEME.cardBg, border: `1px solid ${THEME.cardBorder}`, color: THEME.text }}
+        />
+        <button
+          type="button"
+          disabled
+          data-testid="promo-repost-add-link"
+          className="mt-2 rounded-md px-3 py-1 text-[11px] disabled:opacity-50"
+          style={{ background: THEME.cardBg, border: `1px solid ${THEME.cardBorder}`, color: THEME.textMuted }}
+        >
+          + Link hinzufügen
+        </button>
+        <LocalBridgeNote id="promo-repost-links" />
+      </NumberedCard>
+
+      <NumberedCard n={3} title="Start">
+        <div className="flex flex-wrap items-center gap-2">
+          <button
+            type="button"
+            disabled
+            data-testid="promo-repost-preflight"
+            className="rounded-md px-3 py-1.5 text-xs disabled:opacity-50"
+            style={{ background: THEME.cardBg, border: `1px solid ${THEME.cardBorder}`, color: THEME.textMuted }}
+          >
+            🔍 Pre-Flight prüfen
+          </button>
+          <button
+            type="button"
+            disabled
+            data-testid="promo-repost-reposten"
+            className="rounded-md px-3 py-1.5 text-xs font-semibold disabled:opacity-50"
+            style={{ background: `linear-gradient(135deg,${THEME.accentFrom},${THEME.accentTo})`, color: "#fff" }}
+          >
+            🔁 Reposten
+          </button>
+          <RunButton
+            kind="dry_run_repost"
+            label="Dry-run repost"
+            description="Mission Control dry-run of repost_bot.py."
+            disabled={disabled}
+            busy={busyKind === "dry_run_repost"}
+            onClick={() => onRun("dry_run_repost")}
+            testId="run-dry_run_repost"
+            icon={Repeat}
+          />
+        </div>
+        <p className="mt-2 text-[11px] leading-relaxed" style={{ color: THEME.textQuiet }}>
+          <b>Pre-Flight</b> öffnet jeden Account kurz und prüft ob er
+          einsatzbereit ist. Empfohlen vor jedem großen Run.
+        </p>
+        <LocalBridgeNote id="promo-repost-start" />
+        {disabledReason && (
+          <p className="mt-2 text-[11px]" style={{ color: THEME.warn }}>
+            {disabledReason}
+          </p>
+        )}
+      </NumberedCard>
+
+      <LiveStatusPanel testIdPrefix="promo-repost" n={4} />
     </div>
   );
 }
@@ -2067,7 +2682,9 @@ export function MsaRtxrtDashboard({
   onSubmitJob,
   onRefresh,
 }: MsaRtxrtDashboardProps) {
-  const [activeTab, setActiveTab] = useState<TabId>("all-chats");
+  // Default tab matches Luis's xdashboard.html — Campaign is the
+  // landing tab there (data-tab="campaign" carries `.active`).
+  const [activeTab, setActiveTab] = useState<TabId>("campaign");
   const [selectedLane, setSelectedLane] = useState<string | null>(null);
   const [busyKind, setBusyKind] = useState<JobKind | null>(null);
   const [refreshing, setRefreshing] = useState(false);
@@ -2271,71 +2888,73 @@ export function MsaRtxrtDashboard({
               })}
             </nav>
 
-            {activeTab === "all-chats" && (
-              <BotActionTab
-                testIdPrefix="all-chats"
-                hint="RTxRT mode — sends a DM to every chat in the inbox of the selected account. AdsPower must be running and the X profile logged in. 24h filter applies."
-                intro="Replicates Luis's All Chats tab. Mission Control enqueues a dry-run DM sweep; the selected runner walks the inbox of whichever account is active on its side."
-                primaryKind="dry_run_dm"
-                primaryLabel="Dry-run DM sweep"
-                primaryIcon={MessageSquare}
-                runnerOffline={runnerOffline}
-                noRunnerSelected={noRunnerSelected}
-                selectedRunnerOffline={selectedRunnerOffline}
+            {activeTab === "campaign" && (
+              <CampaignTabExact
+                disabled={buttonsDisabled}
                 busyKind={busyKind}
                 onRun={handleRun}
               />
             )}
 
-            {activeTab === "recipient-database" && (
-              <BotActionTab
-                testIdPrefix="recipient-database"
-                hint="Cross-account blast — pulls an existing recipient list (contacts.json on the Claw computer) and DMs it from one or more sender accounts. Rate-limited."
-                intro="Replicates Luis's Recipient Database tab. The actual recipient list and sender selection happens in the local dashboard; this control panel only kicks off the dry-run from Mission Control."
-                primaryKind="dry_run_blast"
-                primaryLabel="Dry-run blast"
-                primaryIcon={Inbox}
-                runnerOffline={runnerOffline}
-                noRunnerSelected={noRunnerSelected}
-                selectedRunnerOffline={selectedRunnerOffline}
+            {activeTab === "all-chats" && (
+              <AllChatsTabExact
+                disabled={buttonsDisabled}
                 busyKind={busyKind}
                 onRun={handleRun}
+                disabledReason={
+                  noRunnerSelected
+                    ? "Pick a runner from the selector above before enqueuing a job."
+                    : selectedRunnerOffline
+                      ? "The selected runner is offline — start its local runner before enqueuing a job."
+                      : null
+                }
               />
             )}
 
             {activeTab === "new-database" && (
-              <BotActionTab
-                testIdPrefix="new-database"
-                hint="Builds a new recipient list for the selected account — scrolls inbox or scrapes followers into contacts.json / follower_lists.json. Sends nothing."
-                intro="Replicates Luis's New Database tab (builder_bot.py). The dry-run here builds against synthetic data so the runner wiring + folder structure are correct."
-                primaryKind="dry_run_builder"
-                primaryLabel="Dry-run builder"
-                primaryIcon={Hammer}
-                runnerOffline={runnerOffline}
-                noRunnerSelected={noRunnerSelected}
-                selectedRunnerOffline={selectedRunnerOffline}
+              <NewDatabaseTabExact
+                disabled={buttonsDisabled}
                 busyKind={busyKind}
                 onRun={handleRun}
+                disabledReason={
+                  noRunnerSelected
+                    ? "Pick a runner from the selector above before enqueuing a job."
+                    : selectedRunnerOffline
+                      ? "The selected runner is offline — start its local runner before enqueuing a job."
+                      : null
+                }
+              />
+            )}
+
+            {activeTab === "recipient-database" && (
+              <RecipientDatabaseTabExact
+                disabled={buttonsDisabled}
+                busyKind={busyKind}
+                onRun={handleRun}
+                disabledReason={
+                  noRunnerSelected
+                    ? "Pick a runner from the selector above before enqueuing a job."
+                    : selectedRunnerOffline
+                      ? "The selected runner is offline — start its local runner before enqueuing a job."
+                      : null
+                }
               />
             )}
 
             {activeTab === "promo-repost" && (
-              <BotActionTab
-                testIdPrefix="promo-repost"
-                hint="Cross-account repost — promotes a post via cooperating accounts. Schedule + groups live on the Claw computer."
-                intro="Replicates Luis's Promo Repost tab (repost_bot.py). Mission Control fires the dry-run; no real reposts happen."
-                primaryKind="dry_run_repost"
-                primaryLabel="Dry-run repost"
-                primaryIcon={Repeat}
-                runnerOffline={runnerOffline}
-                noRunnerSelected={noRunnerSelected}
-                selectedRunnerOffline={selectedRunnerOffline}
+              <PromoRepostTabExact
+                disabled={buttonsDisabled}
                 busyKind={busyKind}
                 onRun={handleRun}
+                disabledReason={
+                  noRunnerSelected
+                    ? "Pick a runner from the selector above before enqueuing a job."
+                    : selectedRunnerOffline
+                      ? "The selected runner is offline — start its local runner before enqueuing a job."
+                      : null
+                }
               />
             )}
-
-            {activeTab === "campaign" && <CampaignTab />}
 
             {activeTab === "runner-status" && (
               <RunnerStatusTab
@@ -2352,8 +2971,6 @@ export function MsaRtxrtDashboard({
             {activeTab === "run-history" && (
               <RunHistoryTab jobs={recentJobs} />
             )}
-
-            {activeTab === "logs" && <LogsTab />}
 
             {activeTab === "setup" && (
               <SetupTab canRunLiveOne={canRunLiveOne} />

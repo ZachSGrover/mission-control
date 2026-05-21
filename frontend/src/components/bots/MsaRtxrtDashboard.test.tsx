@@ -50,15 +50,20 @@ function makeProps(
   };
 }
 
+// Tab order matches Luis's xdashboard.html for the first five, then the
+// three Digital-OS-specific operator surfaces (Runner Status / Run History
+// / Setup). The previous "Logs" placeholder tab is dropped — Luis's
+// dashboard doesn't have one; per-bot live status lives inside each tab's
+// "Live-Status" section, and the privacy-safe post-job summary lives in
+// Run History.
 const ALL_TABS = [
-  "all-chats",
-  "recipient-database",
-  "new-database",
-  "promo-repost",
   "campaign",
+  "all-chats",
+  "new-database",
+  "recipient-database",
+  "promo-repost",
   "runner-status",
   "run-history",
-  "logs",
   "setup",
 ] as const;
 
@@ -107,17 +112,19 @@ describe("MsaRtxrtDashboard — layout", () => {
 // ── Tabs ────────────────────────────────────────────────────────────────────
 
 describe("MsaRtxrtDashboard — tabs", () => {
-  it("renders all nine tab buttons by testid (parity v1: + Campaign + Logs)", () => {
+  it("renders all eight tab buttons by testid (exact-port-v1: dropped Logs)", () => {
     render(<MsaRtxrtDashboard {...makeProps()} />);
     for (const tabId of ALL_TABS) {
       expect(screen.getByTestId(`tab-${tabId}`)).toBeInTheDocument();
     }
+    // Logs tab from parity-v1 is intentionally gone — not in Luis's dashboard.
+    expect(screen.queryByTestId("tab-logs")).toBeNull();
   });
 
-  it("shows the All Chats tab by default", () => {
+  it("shows the Campaign tab by default (matches Luis's xdashboard.html active tab)", () => {
     render(<MsaRtxrtDashboard {...makeProps()} />);
-    expect(screen.getByTestId("tab-pane-all-chats")).toBeInTheDocument();
-    expect(screen.queryByTestId("tab-pane-recipient-database")).toBeNull();
+    expect(screen.getByTestId("tab-pane-campaign")).toBeInTheDocument();
+    expect(screen.queryByTestId("tab-pane-all-chats")).toBeNull();
   });
 
   it("switches panes when clicking each tab", () => {
@@ -814,40 +821,11 @@ describe("MsaRtxrtDashboard — parity v1 status header", () => {
   });
 });
 
-describe("MsaRtxrtDashboard — parity v1 Campaign tab", () => {
-  it("renders the Campaign placeholder pane with the Local-only status", () => {
-    render(<MsaRtxrtDashboard {...makeProps({ runnerStatus: "idle" })} />);
-    fireEvent.click(screen.getByTestId("tab-campaign"));
-    const pane = screen.getByTestId("tab-pane-campaign");
-    expect(pane).toBeInTheDocument();
-    expect(screen.getByTestId("campaign-status-text").textContent).toMatch(
-      /local dashboard.*Campaign tab/i,
-    );
-    expect(screen.getByTestId("campaign-planned-list").textContent).toMatch(
-      /dry_run_campaign/i,
-    );
-    expect(screen.getByTestId("campaign-planned-list").textContent).toMatch(
-      /live_one_campaign/i,
-    );
-    // Does NOT render a clickable run button for an unwired kind.
-    expect(screen.queryByTestId("run-dry_run_campaign")).toBeNull();
-    expect(screen.queryByTestId("run-live_one_campaign")).toBeNull();
-  });
-});
-
-describe("MsaRtxrtDashboard — parity v1 Logs tab", () => {
-  it("renders the Logs placeholder pane and the privacy rationale", () => {
-    render(<MsaRtxrtDashboard {...makeProps({ runnerStatus: "idle" })} />);
-    fireEvent.click(screen.getByTestId("tab-logs"));
-    expect(screen.getByTestId("tab-pane-logs")).toBeInTheDocument();
-    expect(screen.getByTestId("logs-status-text").textContent).toMatch(
-      /local dashboard/i,
-    );
-    const rationale = screen.getByTestId("logs-rationale-list");
-    expect(rationale.textContent).toMatch(/recipient handles/i);
-    expect(rationale.textContent).toMatch(/Run History/i);
-  });
-});
+// (Note: the parity-v1 Logs placeholder tab + the parity-v1 Campaign
+// placeholder were removed in the exact-interface-port-v1 sprint. They
+// were replaced with full Luis-exact tabs that render real disabled
+// controls — see the "exact-port-v1" describe blocks at the bottom of
+// this file.)
 
 describe("MsaRtxrtDashboard — parity v1 Setup additions", () => {
   function openSetup() {
@@ -947,5 +925,242 @@ describe("MsaRtxrtDashboard — parity v1 honesty", () => {
     const root = screen.getByTestId("msa-rtxrt-dashboard");
     expect(root.textContent || "").toMatch(/Live-one test/);
     expect(root.textContent || "").toMatch(/three local env vars/);
+  });
+});
+
+// ── Exact interface port v1 ─────────────────────────────────────────────────
+//
+// These tests assert that the Digital OS RT/X dashboard now hand-mirrors
+// Luis's xdashboard.html: same five Luis tabs in the same order, same
+// numbered sections, same field names, and every control that isn't yet
+// wired through the Local Bridge is rendered as a real DISABLED control
+// with the inline label "Local bridge not connected yet".
+//
+// "No fake working buttons" is enforced by: every Luis-control button is
+// disabled OR is one of the 4 already-wired Mission-Control dry-run kinds.
+
+import { LOCAL_BRIDGE_NOTE } from "./MsaRtxrtDashboard";
+
+describe("MsaRtxrtDashboard — exact-port-v1 tab order matches Luis", () => {
+  it("renders Campaign / All Chats / New Database / Recipient Database / Promo Repost first, in that order", () => {
+    render(<MsaRtxrtDashboard {...makeProps()} />);
+    const nav = screen.getByTestId("dashboard-tabs");
+    const tabs = within(nav).getAllByRole("tab");
+    const labels = tabs.map((t) => (t.textContent || "").trim());
+    // Strip the trailing status badge text so we compare only the human label.
+    const stripped = labels.map((l) => l.replace(/(Wired|Local only|Planned|Runner adapter needed)$/i, "").trim());
+    expect(stripped[0]).toMatch(/^Campaign/);
+    expect(stripped[1]).toMatch(/^All Chats/);
+    expect(stripped[2]).toMatch(/^New Database/);
+    expect(stripped[3]).toMatch(/^Recipient Database/);
+    expect(stripped[4]).toMatch(/^Promo Repost/);
+  });
+});
+
+describe("MsaRtxrtDashboard — exact-port-v1 Campaign tab", () => {
+  function openCampaign() {
+    render(<MsaRtxrtDashboard {...makeProps({ runnerStatus: "idle" })} />);
+    // Campaign is the default tab, but click anyway to be explicit.
+    fireEvent.click(screen.getByTestId("tab-campaign"));
+  }
+
+  it("renders Aktionen with the two checkboxes — both disabled", () => {
+    openCampaign();
+    const repost = screen.getByTestId("campaign-action-repost") as HTMLInputElement;
+    const blast = screen.getByTestId("campaign-action-blast") as HTMLInputElement;
+    expect(repost.disabled).toBe(true);
+    expect(blast.disabled).toBe(true);
+    expect(screen.getByText("🔁 Reposten")).toBeInTheDocument();
+    expect(screen.getByText("📨 DMs senden")).toBeInTheDocument();
+  });
+
+  it("renders Tweet-Links textarea, disabled, with the Luis placeholder", () => {
+    openCampaign();
+    const ta = screen.getByTestId("campaign-tweet-links") as HTMLTextAreaElement;
+    expect(ta.disabled).toBe(true);
+    expect(ta.placeholder).toMatch(/Ein X-Link pro Zeile/);
+    expect(ta.placeholder).toMatch(/x\.com\/.+\/status\//);
+  });
+
+  it("renders Repost-Accounts + DM-Sender-Accounts group pickers — disabled", () => {
+    openCampaign();
+    expect(
+      (screen.getByTestId("campaign-repost-accounts-group-select") as HTMLSelectElement).disabled,
+    ).toBe(true);
+    expect(
+      (screen.getByTestId("campaign-blast-accounts-group-select") as HTMLSelectElement).disabled,
+    ).toBe(true);
+    expect(screen.getByTestId("campaign-repost-accounts-profile-list")).toBeInTheDocument();
+    expect(screen.getByTestId("campaign-blast-accounts-profile-list")).toBeInTheDocument();
+  });
+
+  it("renders DM-Empfänger + Message-Template with disabled source + textarea + rate-limit grid", () => {
+    openCampaign();
+    expect((screen.getByTestId("campaign-source") as HTMLSelectElement).disabled).toBe(true);
+    const ta = screen.getByTestId("campaign-message-template") as HTMLTextAreaElement;
+    expect(ta.disabled).toBe(true);
+    expect(ta.value).toMatch(/Hey, RT x RT/);
+    expect(ta.value).toMatch(/\{link\}/);
+    // Rate limit grid.
+    expect((screen.getByTestId("campaign-batch-size") as HTMLInputElement).disabled).toBe(true);
+    expect((screen.getByTestId("campaign-batch-pause") as HTMLInputElement).disabled).toBe(true);
+    expect((screen.getByTestId("campaign-daily-cap") as HTMLInputElement).disabled).toBe(true);
+  });
+
+  it("renders the Campaign starten button — disabled", () => {
+    openCampaign();
+    const btn = screen.getByTestId("campaign-start-btn") as HTMLButtonElement;
+    expect(btn.disabled).toBe(true);
+    expect(btn.textContent).toMatch(/Campaign starten/);
+  });
+
+  it("renders a Live-Status section labelled 'Local bridge not connected yet'", () => {
+    openCampaign();
+    const live = screen.getByTestId("campaign-live-status");
+    expect(live).toBeInTheDocument();
+    expect(within(live).getByTestId("local-bridge-note-campaign-live-status").textContent)
+      .toBe(LOCAL_BRIDGE_NOTE);
+  });
+});
+
+describe("MsaRtxrtDashboard — exact-port-v1 All Chats tab", () => {
+  function openAllChats() {
+    render(<MsaRtxrtDashboard {...makeProps({ runnerStatus: "idle" })} />);
+    fireEvent.click(screen.getByTestId("tab-all-chats"));
+  }
+
+  it("renders the Daily Auto-Run schedule bar (checkbox + time + save) — all disabled", () => {
+    openAllChats();
+    expect((screen.getByTestId("all-chats-sched-toggle") as HTMLInputElement).disabled).toBe(true);
+    expect((screen.getByTestId("all-chats-sched-time") as HTMLInputElement).disabled).toBe(true);
+    expect((screen.getByTestId("all-chats-sched-save") as HTMLButtonElement).disabled).toBe(true);
+  });
+
+  it("renders Account wählen group select + filter + profile list (disabled)", () => {
+    openAllChats();
+    expect((screen.getByTestId("all-chats-group-select") as HTMLSelectElement).disabled).toBe(true);
+    expect((screen.getByTestId("all-chats-filter") as HTMLInputElement).disabled).toBe(true);
+    expect(screen.getByTestId("all-chats-profile-list")).toBeInTheDocument();
+  });
+
+  it("renders Nachricht textarea + Anzahl DMs + Run starten (disabled) + the wired Mission Control dry-run button", () => {
+    openAllChats();
+    expect((screen.getByTestId("all-chats-message") as HTMLTextAreaElement).disabled).toBe(true);
+    expect((screen.getByTestId("all-chats-max-chats") as HTMLInputElement).disabled).toBe(true);
+    expect((screen.getByTestId("all-chats-run-starten") as HTMLButtonElement).disabled).toBe(true);
+    // The Mission Control dry-run button is enabled in idle state.
+    const dry = screen.getByTestId("run-dry_run_dm") as HTMLButtonElement;
+    expect(dry.disabled).toBe(false);
+  });
+});
+
+describe("MsaRtxrtDashboard — exact-port-v1 New Database tab", () => {
+  function openNewDb() {
+    render(<MsaRtxrtDashboard {...makeProps({ runnerStatus: "idle" })} />);
+    fireEvent.click(screen.getByTestId("tab-new-database"));
+  }
+
+  it("renders both Modus radios (Inbox-Chats and Followers), both disabled", () => {
+    openNewDb();
+    const chats = screen.getByTestId("new-database-mode-chats") as HTMLInputElement;
+    const followers = screen.getByTestId("new-database-mode-followers") as HTMLInputElement;
+    expect(chats.disabled).toBe(true);
+    expect(followers.disabled).toBe(true);
+    expect(chats.defaultChecked).toBe(true);
+  });
+
+  it("renders Datenbank bauen button (disabled) and the wired Mission Control dry-run", () => {
+    openNewDb();
+    expect((screen.getByTestId("new-database-build-btn") as HTMLButtonElement).disabled).toBe(true);
+    const dry = screen.getByTestId("run-dry_run_builder") as HTMLButtonElement;
+    expect(dry.disabled).toBe(false);
+  });
+});
+
+describe("MsaRtxrtDashboard — exact-port-v1 Recipient Database tab", () => {
+  function openRecip() {
+    render(<MsaRtxrtDashboard {...makeProps({ runnerStatus: "idle" })} />);
+    fireEvent.click(screen.getByTestId("tab-recipient-database"));
+  }
+
+  it("renders Empfänger-Quelle source select + Liste löschen + Mergen mit — disabled", () => {
+    openRecip();
+    expect((screen.getByTestId("recipient-database-source") as HTMLSelectElement).disabled).toBe(true);
+    expect((screen.getByTestId("recipient-database-list-delete") as HTMLButtonElement).disabled).toBe(true);
+    expect((screen.getByTestId("recipient-database-list-merge") as HTMLButtonElement).disabled).toBe(true);
+  });
+
+  it("renders Sender-Accounts picker (disabled), Nachricht textarea (disabled), and rate-limit grid (disabled)", () => {
+    openRecip();
+    expect((screen.getByTestId("recipient-database-group-select") as HTMLSelectElement).disabled).toBe(true);
+    expect((screen.getByTestId("recipient-database-message") as HTMLTextAreaElement).disabled).toBe(true);
+    expect((screen.getByTestId("recipient-database-batch-size") as HTMLInputElement).disabled).toBe(true);
+    expect((screen.getByTestId("recipient-database-batch-pause") as HTMLInputElement).disabled).toBe(true);
+    expect((screen.getByTestId("recipient-database-daily-cap") as HTMLInputElement).disabled).toBe(true);
+  });
+
+  it("renders Blast starten (disabled) and Profile neu laden (disabled), and the wired dry-run", () => {
+    openRecip();
+    expect((screen.getByTestId("recipient-database-blast-starten") as HTMLButtonElement).disabled).toBe(true);
+    expect((screen.getByTestId("recipient-database-profile-reload") as HTMLButtonElement).disabled).toBe(true);
+    const dry = screen.getByTestId("run-dry_run_blast") as HTMLButtonElement;
+    expect(dry.disabled).toBe(false);
+  });
+});
+
+describe("MsaRtxrtDashboard — exact-port-v1 Promo Repost tab", () => {
+  function openPromo() {
+    render(<MsaRtxrtDashboard {...makeProps({ runnerStatus: "idle" })} />);
+    fireEvent.click(screen.getByTestId("tab-promo-repost"));
+  }
+
+  it("renders AdsPower-Gruppe select + group info + add-link button (all disabled)", () => {
+    openPromo();
+    expect((screen.getByTestId("promo-repost-group-select") as HTMLSelectElement).disabled).toBe(true);
+    expect(screen.getByTestId("promo-repost-group-info").textContent).toMatch(/Gruppe/i);
+    expect((screen.getByTestId("promo-repost-add-link") as HTMLButtonElement).disabled).toBe(true);
+  });
+
+  it("renders Pre-Flight prüfen + Reposten (both disabled) + the wired dry-run", () => {
+    openPromo();
+    expect((screen.getByTestId("promo-repost-preflight") as HTMLButtonElement).disabled).toBe(true);
+    expect((screen.getByTestId("promo-repost-reposten") as HTMLButtonElement).disabled).toBe(true);
+    const dry = screen.getByTestId("run-dry_run_repost") as HTMLButtonElement;
+    expect(dry.disabled).toBe(false);
+  });
+});
+
+describe("MsaRtxrtDashboard — exact-port-v1 local-bridge label hygiene", () => {
+  it("every Luis tab includes at least one 'Local bridge not connected yet' note", () => {
+    render(<MsaRtxrtDashboard {...makeProps({ runnerStatus: "idle" })} />);
+    const luisTabs = ["campaign", "all-chats", "new-database", "recipient-database", "promo-repost"] as const;
+    for (const t of luisTabs) {
+      fireEvent.click(screen.getByTestId(`tab-${t}`));
+      const notes = screen.getAllByText(LOCAL_BRIDGE_NOTE);
+      expect(notes.length).toBeGreaterThan(0);
+    }
+  });
+
+  it("no Luis-side control is enabled and clickable (anti-fake-button regression)", () => {
+    render(<MsaRtxrtDashboard {...makeProps({ runnerStatus: "idle" })} />);
+    // For each Luis tab, walk every non-Mission-Control control and assert
+    // it is disabled. Mission Control's own dry-run buttons (`data-kind`
+    // prefixed with `dry_run_`) are allowed to be enabled.
+    const luisTabs = ["campaign", "all-chats", "new-database", "recipient-database", "promo-repost"] as const;
+    for (const t of luisTabs) {
+      fireEvent.click(screen.getByTestId(`tab-${t}`));
+      const pane = screen.getByTestId(`tab-pane-${t}`);
+      const buttons = pane.querySelectorAll("button");
+      for (const b of buttons) {
+        const kind = b.getAttribute("data-kind") || "";
+        if (kind.startsWith("dry_run_")) continue;
+        // Anything else inside a Luis tab pane must be disabled.
+        expect(b.hasAttribute("disabled")).toBe(true);
+      }
+      const inputs = pane.querySelectorAll("input, textarea, select");
+      for (const el of inputs) {
+        expect((el as HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement).disabled).toBe(true);
+      }
+    }
   });
 });

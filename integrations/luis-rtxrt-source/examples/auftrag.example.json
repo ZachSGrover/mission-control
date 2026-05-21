@@ -1,0 +1,19 @@
+{
+  "_comment": "DM bot auftrag — read by dm_bot.py. All values below are placeholders; real file lives on the runner PC and contains real AdsPower user IDs and message bodies.",
+  "timestamp": "2026-05-21T09:30:00.000Z",
+  "max_chats": 45,
+  "accounts": [
+    {
+      "user_id": "adspower-profile-id-1",
+      "name": "PLACEHOLDER_ACCOUNT_NAME",
+      "username": "",
+      "message": "PLACEHOLDER_MESSAGE_BODY"
+    },
+    {
+      "user_id": "adspower-profile-id-2",
+      "name": "PLACEHOLDER_ACCOUNT_NAME",
+      "username": "",
+      "message": "PLACEHOLDER_MESSAGE_BODY"
+    }
+  ]
+}

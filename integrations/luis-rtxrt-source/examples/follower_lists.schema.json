@@ -1,0 +1,30 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "follower_lists.json (schema only — real file lives on the runner PC and contains scraped X follower handles)",
+  "type": "object",
+  "additionalProperties": {
+    "type": "array",
+    "description": "Keyed by AdsPower user_id. Each value is the list of followers scraped via builder_bot.py mode='followers'.",
+    "items": {
+      "type": "object",
+      "required": ["handle"],
+      "properties": {
+        "handle":  { "type": "string", "description": "X handle without @" },
+        "name":    { "type": "string", "description": "Display name as scraped" },
+        "scraped_at": { "type": "string", "format": "date-time" }
+      },
+      "additionalProperties": true
+    }
+  },
+  "examples": [
+    {
+      "adspower-profile-id-1": [
+        {
+          "handle": "PLACEHOLDER_HANDLE",
+          "name": "PLACEHOLDER_NAME",
+          "scraped_at": "2026-05-10T02:05:00.000Z"
+        }
+      ]
+    }
+  ]
+}

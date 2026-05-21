@@ -1,0 +1,14 @@
+{
+  "_comment": "Repost bot auftrag — read by repost_bot.py. Real file contains real AdsPower profile IDs and real tweet URLs.",
+  "group_name": "PLACEHOLDER_GROUP_NAME",
+  "accounts": [
+    {
+      "user_id": "adspower-profile-id-1",
+      "name": "PLACEHOLDER_ACCOUNT_NAME"
+    }
+  ],
+  "links": [
+    "https://x.com/PLACEHOLDER_USER/status/PLACEHOLDER_TWEET_ID"
+  ],
+  "preflight": false
+}

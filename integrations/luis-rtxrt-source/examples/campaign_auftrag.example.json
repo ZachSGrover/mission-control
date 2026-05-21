@@ -1,0 +1,18 @@
+{
+  "_comment": "Campaign orchestrator auftrag — read by campaign.py. Combines a DM sweep with a repost run.",
+  "actions": ["dm", "repost"],
+  "links": [
+    "https://x.com/PLACEHOLDER_USER/status/PLACEHOLDER_TWEET_ID"
+  ],
+  "repost_accounts": [
+    {"user_id": "adspower-profile-id-1", "name": "PLACEHOLDER_REPOST_ACCOUNT"}
+  ],
+  "blast_accounts": [
+    {"user_id": "adspower-profile-id-2", "name": "PLACEHOLDER_SENDER_ACCOUNT"}
+  ],
+  "source_type": "followers",
+  "source_user_id": "adspower-profile-id-source",
+  "message": "PLACEHOLDER_MESSAGE_BODY",
+  "batch_size": 10,
+  "daily_cap": 50
+}

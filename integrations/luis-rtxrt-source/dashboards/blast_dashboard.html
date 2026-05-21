@@ -1,0 +1,608 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>X DM Blast — Cross-Account</title>
+<style>
+  *{box-sizing:border-box;margin:0;padding:0}
+  html,body{height:100%}
+  body{font-family:'Segoe UI',system-ui,sans-serif;background:#0f0f1a;color:#e2e8f0}
+
+  /* ─── Top bar ─── */
+  .top-bar{
+    position:sticky;top:0;z-index:20;
+    background:linear-gradient(135deg,#1a0a2e 0%,#2d1b4e 100%);
+    border-bottom:1px solid #3d2a6e;
+    padding:12px 24px;
+    display:flex;align-items:center;gap:12px;
+    height:60px;
+  }
+  .top-bar .logo{height:36px;width:auto;object-fit:contain;filter:drop-shadow(0 0 8px #db277788)}
+  .top-bar h1{font-size:1.1rem;font-weight:700;color:#e2d9f3}
+  .top-bar .badge{background:#db2777;color:#fff;font-size:.7rem;padding:2px 8px;border-radius:999px;font-weight:600}
+  .top-bar .nav-link{margin-left:auto;color:#a78bfa;font-size:.8rem;text-decoration:none;padding:6px 12px;border:1px solid #3d2a6e;border-radius:6px}
+  .top-bar .nav-link:hover{background:#1e1535}
+
+  /* ─── Layout: sidebar + main ─── */
+  .layout{display:flex;align-items:flex-start;min-height:calc(100vh - 60px)}
+
+  .sidebar{
+    width:300px;flex-shrink:0;
+    background:#0c0918;border-right:1px solid #2d1b4e;
+    position:sticky;top:60px;
+    max-height:calc(100vh - 60px);
+    overflow-y:auto;
+    padding:16px 14px;
+  }
+  .sidebar-header{
+    display:flex;align-items:center;justify-content:space-between;
+    padding:6px 4px 14px;border-bottom:1px solid #2d1b4e;margin-bottom:12px;
+  }
+  .sidebar-title{font-size:.78rem;font-weight:700;color:#a78bfa;text-transform:uppercase;letter-spacing:.6px}
+  .sb-grand-total{
+    font-size:.85rem;font-weight:700;color:#86efac;
+    background:#0a1f12;border:1px solid #14532d;padding:3px 10px;border-radius:999px;
+    font-variant-numeric:tabular-nums;
+  }
+
+  .sb-list{display:flex;flex-direction:column;gap:6px}
+
+  .sb-item{
+    background:#11091f;border:1px solid #2d1b4e;border-radius:8px;
+    overflow:hidden;transition:border-color .15s;
+  }
+  .sb-item:hover{border-color:#3d2a6e}
+  .sb-item.expanded{border-color:#7c3aed;background:#160d2c}
+
+  .sb-row{
+    display:flex;align-items:center;justify-content:space-between;gap:8px;
+    padding:10px 12px;cursor:pointer;user-select:none;
+  }
+  .sb-row:hover{background:#1a1030}
+  .sb-row .sb-info{min-width:0;flex:1}
+  .sb-name{
+    font-weight:600;color:#e2e8f0;font-size:.85rem;
+    white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+  }
+  .sb-uid{
+    font-size:.68rem;color:#7c6aa6;font-family:'Consolas','Monaco',monospace;
+    margin-top:2px;
+    white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+  }
+  .sb-total{
+    font-size:.85rem;font-weight:700;color:#86efac;
+    background:#0a1f12;border:1px solid #14532d;padding:4px 10px;border-radius:999px;
+    font-variant-numeric:tabular-nums;flex-shrink:0;
+  }
+  .sb-total.zero{color:#6b5a9e;background:#0f0a1e;border-color:#2d1b4e}
+  .sb-ghost{font-size:.65rem;color:#6b5a9e;font-weight:400;font-style:italic}
+
+  .sb-chev{
+    width:14px;height:14px;flex-shrink:0;color:#6b5a9e;
+    transition:transform .2s;
+  }
+  .sb-item.expanded .sb-chev{transform:rotate(180deg);color:#a78bfa}
+
+  .sb-monthly{
+    border-top:1px solid #2d1b4e;background:#0a061a;
+    padding:10px 12px;
+    display:flex;flex-direction:column;gap:4px;
+  }
+  .sb-month{
+    display:flex;justify-content:space-between;
+    font-size:.78rem;color:#c4b5fd;font-variant-numeric:tabular-nums;
+    padding:3px 0;
+  }
+  .sb-month b{color:#fff;font-weight:600}
+  .sb-month-empty{font-size:.75rem;color:#6b5a9e;text-align:center;padding:4px}
+  .sb-monthly-split{
+    display:flex;justify-content:space-between;gap:10px;
+    margin-top:8px;padding-top:8px;border-top:1px dashed #2d1b4e;
+    font-size:.7rem;color:#7c6aa6;
+  }
+  .sb-monthly-split b{color:#a78bfa;font-weight:700}
+
+  .sidebar .loading{padding:30px 0;text-align:center;color:#6b5a9e;font-size:.85rem}
+  .sidebar .loading .spinner{
+    width:24px;height:24px;border:3px solid #2d1b4e;border-top-color:#7c3aed;
+    border-radius:50%;animation:spin .7s linear infinite;margin:0 auto 8px;
+  }
+  @keyframes spin{to{transform:rotate(360deg)}}
+
+  /* ─── Main column ─── */
+  .main{flex:1;min-width:0;padding:24px 28px 60px}
+  .container{max-width:760px;margin:0 auto}
+
+  .card{background:#1a1030;border:1px solid #2d1b4e;border-radius:12px;padding:22px;margin-bottom:18px}
+  .card h2{font-size:.95rem;font-weight:700;color:#c4b5fd;margin-bottom:16px;display:flex;align-items:center;gap:8px}
+  .card h2 .num{display:inline-flex;align-items:center;justify-content:center;width:22px;height:22px;border-radius:50%;background:#7c3aed;color:#fff;font-size:.75rem}
+
+  select{
+    width:100%;background:#0a0815;border:1px solid #3d2a6e;border-radius:8px;
+    color:#e2e8f0;font-family:inherit;font-size:.9rem;padding:10px 12px;outline:none;
+    color-scheme:dark;cursor:pointer;
+  }
+  select:focus{border-color:#7c3aed}
+  .source-info{margin-top:10px;font-size:.8rem;color:#a78bfa;background:#0f0a1e;border:1px solid #2d1b4e;border-radius:6px;padding:8px 12px}
+  .source-info b{color:#22c55e}
+  .source-info .skip{color:#fbbf24}
+
+  .profile-list{display:flex;flex-direction:column;gap:10px;max-height:420px;overflow-y:auto;padding-right:4px}
+  .profile-item{
+    display:flex;align-items:center;gap:14px;
+    background:#0f0a1e;border:1px solid #2d1b4e;border-radius:8px;
+    padding:12px 16px;cursor:pointer;transition:all .2s;
+  }
+  .profile-item:hover{border-color:#7c3aed}
+  .profile-item.selected{border-color:#db2777;background:#1e1040;box-shadow:0 0 0 1px #db277744}
+  .profile-item input[type=checkbox]{width:18px;height:18px;accent-color:#db2777;cursor:pointer;flex-shrink:0}
+  .profile-avatar{
+    width:38px;height:38px;border-radius:50%;
+    background:linear-gradient(135deg,#7c3aed,#db2777);
+    display:flex;align-items:center;justify-content:center;
+    font-weight:700;font-size:.9rem;color:#fff;flex-shrink:0;
+  }
+  .profile-info{flex:1;min-width:0}
+  .profile-name{font-weight:600;color:#e2e8f0;font-size:.9rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .profile-meta{font-size:.75rem;color:#7c6aa6;margin-top:2px}
+  .sent-badge{
+    margin-left:auto;font-size:.72rem;font-weight:700;color:#86efac;
+    background:#0a1f12;border:1px solid #14532d;padding:4px 10px;border-radius:999px;
+    display:inline-flex;align-items:center;gap:5px;flex-shrink:0;
+  }
+  .sent-badge.zero{color:#6b5a9e;background:#0f0a1e;border-color:#2d1b4e}
+
+  textarea{
+    width:100%;background:#0a0815;border:1px solid #3d2a6e;border-radius:8px;
+    color:#e2e8f0;font-family:inherit;font-size:.875rem;padding:10px 12px;
+    resize:vertical;min-height:110px;transition:border-color .2s;outline:none;
+  }
+  textarea:focus{border-color:#7c3aed}
+  textarea::placeholder{color:#4a3a6e}
+
+  .hint-box{
+    background:#1a0a2e;border:1px solid #3d2a6e;border-radius:8px;
+    padding:10px 14px;font-size:.78rem;color:#9ca3af;margin-bottom:14px;
+    display:flex;align-items:flex-start;gap:8px;
+  }
+  .hint-box .icon{font-size:1rem;flex-shrink:0;margin-top:1px}
+
+  .btn{display:inline-flex;align-items:center;gap:8px;padding:11px 24px;border-radius:8px;border:none;font-size:.9rem;font-weight:600;cursor:pointer;transition:all .2s}
+  .btn-primary{background:linear-gradient(135deg,#7c3aed,#db2777);color:#fff}
+  .btn-primary:hover{filter:brightness(1.1)}
+  .btn-primary:disabled{background:#3d2a6e;color:#6b5a9e;cursor:not-allowed;filter:none}
+  .btn-secondary{background:#1e1535;color:#a78bfa;border:1px solid #3d2a6e}
+  .btn-secondary:hover{background:#2d1b4e}
+  .btn-row{display:flex;gap:10px;align-items:center;margin-top:6px;flex-wrap:wrap}
+
+  .status-card{background:#0a0815;border:1px solid #2d1b4e;border-radius:10px;padding:14px 16px;margin-top:8px}
+  .status-row{display:flex;align-items:center;gap:10px;margin-bottom:8px}
+  .status-dot{width:10px;height:10px;border-radius:50%;background:#3d2a6e;flex-shrink:0}
+  .status-dot.idle{background:#6b5a9e}
+  .status-dot.running{background:#fbbf24;box-shadow:0 0 8px #fbbf2488;animation:pulse 1.4s infinite}
+  .status-dot.done{background:#22c55e}
+  .status-dot.error{background:#ef4444}
+  @keyframes pulse{0%,100%{opacity:1}50%{opacity:.4}}
+  .status-step{font-size:.85rem;color:#e2e8f0;font-weight:500}
+
+  .log-feed{
+    max-height:280px;overflow-y:auto;
+    background:#070512;border:1px solid #2d1b4e;border-radius:8px;
+    padding:10px 14px;font-family:'Consolas','Monaco',monospace;font-size:.78rem;line-height:1.55
+  }
+  .log-feed .line{color:#a78bfa}
+  .log-feed .line.ok{color:#86efac}
+  .log-feed .line.err{color:#fca5a5}
+  .log-feed .line.crit{color:#f87171;font-weight:600}
+
+  .error-box{background:#1a0010;border:1px solid #7f1d1d;border-radius:8px;padding:14px;color:#fca5a5;font-size:.85rem}
+  .sel-counter{font-size:.8rem;color:#db2777;font-weight:600;background:#1e0e2a;border:1px solid #db277744;padding:6px 12px;border-radius:6px;display:inline-block}
+
+  /* responsive */
+  @media (max-width:900px){
+    .layout{flex-direction:column}
+    .sidebar{width:100%;position:relative;top:auto;max-height:none;border-right:none;border-bottom:1px solid #2d1b4e}
+    .main{padding:20px 16px}
+  }
+</style>
+</head>
+<body>
+
+<div class="top-bar">
+  <img src="/logo.jpg" class="logo" alt="logo" onerror="this.style.display='none'">
+  <h1>X DM Blast</h1>
+  <span class="badge">Cross-Account</span>
+  <a href="/xdashboard" class="nav-link">→ Standard-Dashboard</a>
+</div>
+
+<div class="layout">
+
+  <!-- ─── Sidebar: accounts + monthly stats ─── -->
+  <aside class="sidebar">
+    <div class="sidebar-header">
+      <span class="sidebar-title">Accounts</span>
+      <span class="sb-grand-total" id="sbGrandTotal">0</span>
+    </div>
+    <div id="sbList" class="sb-list">
+      <div class="loading"><div class="spinner"></div>Lade Statistik…</div>
+    </div>
+  </aside>
+
+  <!-- ─── Main: existing flow ─── -->
+  <main class="main">
+    <div class="container">
+
+      <div class="hint-box">
+        <span class="icon">⚠️</span>
+        <div>
+          <b>Wichtig:</b> Vor dem Start in AdsPower alle ausgewählten Sender-Profile öffnen,
+          bei X einloggen und ggf. den DM-PIN entsperren. Der Bot bricht das jeweilige Profil sauber ab,
+          wenn Login fehlt oder PIN aktiv ist.
+        </div>
+      </div>
+
+      <!-- Step 1: Source -->
+      <div class="card">
+        <h2><span class="num">1</span> Empfänger-Quelle</h2>
+        <select id="sourceSel">
+          <option value="">– lade …</option>
+        </select>
+        <div class="source-info" id="sourceInfo">Wähle eine Quelle aus contacts.json.</div>
+      </div>
+
+      <!-- Step 2: Sender accounts -->
+      <div class="card">
+        <h2><span class="num">2</span> Sender-Accounts <span id="senderCount" class="sel-counter" style="margin-left:auto;display:none">0 ausgewählt</span></h2>
+        <div id="profileList" class="profile-list">
+          <div style="text-align:center;padding:40px;color:#6b5a9e;font-size:.9rem">Lade AdsPower-Profile…</div>
+        </div>
+      </div>
+
+      <!-- Step 3: Message -->
+      <div class="card">
+        <h2><span class="num">3</span> Nachricht</h2>
+        <textarea id="msg" placeholder="Hey, ..."></textarea>
+        <div class="btn-row">
+          <button class="btn btn-primary" id="startBtn" disabled>🚀 Blast starten</button>
+          <button class="btn btn-secondary" id="reloadProfilesBtn">↻ Profile neu laden</button>
+        </div>
+      </div>
+
+      <!-- Step 4: Live status -->
+      <div class="card">
+        <h2><span class="num">4</span> Live-Status</h2>
+        <div class="status-card">
+          <div class="status-row">
+            <div class="status-dot idle" id="statusDot"></div>
+            <div class="status-step" id="statusStep">Bereit.</div>
+          </div>
+          <div class="log-feed" id="logFeed">Noch keine Logs…</div>
+        </div>
+      </div>
+
+    </div>
+  </main>
+</div>
+
+<script>
+const $ = q => document.querySelector(q);
+function escapeHtml(s){return String(s).replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
+
+let sources    = {};   // {user_id: {messageable_count, total}}
+let profiles   = [];   // AdsPower profiles
+let selected   = new Set();   // selected sender user_ids
+let stats      = {};   // {user_id: {monthly:{YYYY-MM:n}, total, blast, standard}}
+const expanded = new Set();   // sidebar account UIDs that are expanded
+
+// ─── Load source contacts.json keys ─────────────────
+async function loadSources(){
+  try{
+    const c = await fetch('/contacts').then(r=>r.json());
+    const sel = $('#sourceSel');
+    sel.innerHTML = '';
+    sources = {};
+    const keys = Object.keys(c);
+    if(!keys.length){
+      sel.innerHTML = '<option value="">(keine Quellen in contacts.json)</option>';
+      return;
+    }
+    for(const k of keys){
+      const arr = c[k] || [];
+      const messageable = arr.filter(e => e.url && e.url.includes('/i/chat/')).length;
+      sources[k] = {total: arr.length, messageable};
+      const opt = document.createElement('option');
+      opt.value = k;
+      opt.textContent = `${k}  —  ${messageable} messageable / ${arr.length} total`;
+      sel.appendChild(opt);
+    }
+    const def = keys.reduce((a,b)=> sources[a].messageable >= sources[b].messageable ? a : b);
+    sel.value = def;
+    updateSourceInfo();
+  }catch(e){
+    $('#sourceSel').innerHTML = '<option value="">Fehler beim Laden</option>';
+    $('#sourceInfo').innerHTML = `<span style="color:#fca5a5">${e}</span>`;
+  }
+}
+function updateSourceInfo(){
+  const k = $('#sourceSel').value;
+  const s = sources[k];
+  if(!s){ $('#sourceInfo').textContent = '–'; return; }
+  const skipped = s.total - s.messageable;
+  $('#sourceInfo').innerHTML =
+    `<b>${s.messageable}</b> Empfänger werden angeschrieben` +
+    (skipped > 0 ? ` <span class="skip">(${skipped} ohne URL → übersprungen)</span>` : '');
+  refreshStartBtn();
+}
+$('#sourceSel').addEventListener('change', updateSourceInfo);
+
+// ─── Load AdsPower profiles ─────────────────────────
+async function loadProfiles(){
+  $('#profileList').innerHTML = '<div style="text-align:center;padding:40px;color:#6b5a9e;font-size:.9rem">Lade AdsPower-Profile…</div>';
+  try{
+    const r = await fetch('/ads-profiles').then(r=>r.json());
+    if(r.code !== 0){
+      $('#profileList').innerHTML = `<div class="error-box">AdsPower-Fehler: ${r.msg||r.code||'unbekannt'}<br><small>Läuft AdsPower auf 127.0.0.1:50325?</small></div>`;
+      return;
+    }
+    profiles = r.data?.list || [];
+    if(!profiles.length){
+      $('#profileList').innerHTML = '<div class="error-box">Keine AdsPower-Profile gefunden.</div>';
+      return;
+    }
+    renderProfiles();
+    renderSidebar();
+  }catch(e){
+    $('#profileList').innerHTML = `<div class="error-box">Fetch-Fehler: ${e}</div>`;
+  }
+}
+function renderProfiles(){
+  const wrap = $('#profileList');
+  wrap.innerHTML = '';
+  for(const p of profiles){
+    const uid  = p.user_id || p.id || '';
+    const name = p.name || p.display_name || uid;
+    const initials = (name || '?').slice(0,2).toUpperCase();
+    const isSel = selected.has(uid);
+    const total = (stats[uid] && stats[uid].total) || 0;
+    const badgeCls = total === 0 ? 'sent-badge zero' : 'sent-badge';
+    const div = document.createElement('div');
+    div.className = 'profile-item' + (isSel ? ' selected' : '');
+    div.innerHTML = `
+      <input type="checkbox" ${isSel?'checked':''}>
+      <div class="profile-avatar">${initials}</div>
+      <div class="profile-info">
+        <div class="profile-name">${escapeHtml(name)}</div>
+        <div class="profile-meta">${escapeHtml(uid)}</div>
+      </div>
+      <span class="${badgeCls}" title="Lifetime gesendete DMs">✉ ${total}</span>
+    `;
+    div.addEventListener('click', e => {
+      if(e.target.tagName !== 'INPUT'){
+        const cb = div.querySelector('input');
+        cb.checked = !cb.checked;
+      }
+      if(div.querySelector('input').checked){ selected.add(uid); div.classList.add('selected'); }
+      else { selected.delete(uid); div.classList.remove('selected'); }
+      updateSenderCount();
+      refreshStartBtn();
+    });
+    wrap.appendChild(div);
+  }
+  updateSenderCount();
+}
+function updateSenderCount(){
+  const c = selected.size;
+  const el = $('#senderCount');
+  el.style.display = c ? 'inline-block' : 'none';
+  el.textContent = `${c} ausgewählt`;
+}
+$('#reloadProfilesBtn').addEventListener('click', loadProfiles);
+
+// ─── Start button ────────────────────────────────────
+function refreshStartBtn(){
+  const ok = selected.size > 0
+          && $('#sourceSel').value
+          && $('#msg').value.trim().length > 0;
+  $('#startBtn').disabled = !ok;
+}
+$('#msg').addEventListener('input', refreshStartBtn);
+
+$('#startBtn').addEventListener('click', async () => {
+  const source = $('#sourceSel').value;
+  const message = $('#msg').value;
+  const accounts = profiles
+    .filter(p => selected.has(p.user_id || p.id))
+    .map(p => ({user_id: p.user_id || p.id, name: p.name || p.display_name || ''}));
+
+  if(!confirm(`Blast wirklich starten?\n\nQuelle: ${source} (${sources[source].messageable} Empfänger)\nSender: ${accounts.length} Account(s)\nNachricht: ${message.slice(0,80)}…`))
+    return;
+
+  $('#startBtn').disabled = true;
+  $('#statusStep').textContent = 'Starte …';
+
+  const auftrag = {
+    timestamp: new Date().toISOString(),
+    source_user_id: source,
+    message: message,
+    accounts: accounts
+  };
+  await fetch('/blast-auftrag', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(auftrag)});
+
+  await fetch('/blast-status', {method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({state:'running', step:'Start …', current_account:'', log:[]})});
+
+  const r = await fetch('/blast-start', {method:'POST'}).then(r=>r.json());
+  if(r.status !== 'started'){
+    alert('Bot-Start fehlgeschlagen: ' + (r.msg||r.status));
+    $('#startBtn').disabled = false;
+    return;
+  }
+});
+
+// ─── Stats: lifetime DMs sent per AdsPower account ───
+//   blast (cross-account)  → blast_log.json   (status === 'ok')
+//   standard (RTxRT)       → contacts.json    (every entry = 1 successful send)
+function monthKey(iso){
+  if(!iso || typeof iso !== 'string') return 'unknown';
+  return iso.substring(0,7); // YYYY-MM
+}
+function buildStats(blastLog, contactsByUser){
+  const out = {};
+  const ensure = uid => { if(!out[uid]) out[uid] = {monthly:{}, total:0, blast:0, standard:0}; return out[uid]; };
+  for(const [uid, entries] of Object.entries(blastLog || {})){
+    for(const e of entries||[]){
+      if(e.status !== 'ok') continue;
+      const o = ensure(uid);
+      const m = monthKey(e.ts);
+      o.monthly[m] = (o.monthly[m]||0) + 1;
+      o.blast++;
+      o.total++;
+    }
+  }
+  for(const [uid, entries] of Object.entries(contactsByUser || {})){
+    for(const e of entries||[]){
+      const o = ensure(uid);
+      const m = monthKey(e.last_sent);
+      o.monthly[m] = (o.monthly[m]||0) + 1;
+      o.standard++;
+      o.total++;
+    }
+  }
+  return out;
+}
+async function loadStats(){
+  try{
+    const [blastLog, contacts] = await Promise.all([
+      fetch('/blast-log').then(r=>r.json()).catch(()=>({})),
+      fetch('/contacts').then(r=>r.json()).catch(()=>({}))
+    ]);
+    stats = buildStats(blastLog, contacts);
+    renderSidebar();
+    if(profiles.length) renderProfiles();
+  }catch(e){
+    $('#sbList').innerHTML = `<div class="error-box">Stats-Fehler: ${e}</div>`;
+  }
+}
+
+// ─── Sidebar render ─────────────────────────────────
+function renderSidebar(){
+  const list = $('#sbList');
+  const rows = [];
+  const seen = new Set();
+  for(const p of profiles){
+    const uid = p.user_id || p.id || '';
+    if(!uid) continue;
+    seen.add(uid);
+    rows.push({
+      uid, name: p.name || p.display_name || uid,
+      ...(stats[uid] || {monthly:{}, total:0, blast:0, standard:0}),
+      historical: false
+    });
+  }
+  for(const uid in stats){
+    if(seen.has(uid)) continue;
+    rows.push({uid, name: uid, ...stats[uid], historical: true});
+  }
+  rows.sort((a,b) => (b.total||0) - (a.total||0));
+
+  if(!rows.length){
+    list.innerHTML = '<div class="loading">Noch keine Daten.</div>';
+    $('#sbGrandTotal').textContent = '0';
+    return;
+  }
+
+  let grand = 0;
+  let html = '';
+  for(const r of rows){
+    grand += r.total||0;
+    const isExp = expanded.has(r.uid);
+    const months = Object.entries(r.monthly||{}).filter(([k])=>k!=='unknown').sort((a,b)=> b[0].localeCompare(a[0]));
+    const unknownCount = (r.monthly||{}).unknown || 0;
+    const totalCls = (r.total||0) === 0 ? 'sb-total zero' : 'sb-total';
+    html += `
+      <div class="sb-item ${isExp?'expanded':''}" data-uid="${escapeHtml(r.uid)}">
+        <div class="sb-row">
+          <div class="sb-info">
+            <div class="sb-name">${escapeHtml(r.name)}${r.historical?' <span class="sb-ghost">(historisch)</span>':''}</div>
+            <div class="sb-uid">${escapeHtml(r.uid)}</div>
+          </div>
+          <span class="${totalCls}">${r.total||0}</span>
+          <svg class="sb-chev" viewBox="0 0 20 20" fill="currentColor"><path d="M5 7l5 5 5-5z"/></svg>
+        </div>
+        ${isExp ? `
+          <div class="sb-monthly">
+            ${months.length
+              ? months.map(([m,c]) => `<div class="sb-month"><span>${m}</span><b>${c}</b></div>`).join('')
+              : (unknownCount===0 ? '<div class="sb-month-empty">Keine Monatsdaten.</div>' : '')}
+            ${unknownCount > 0 ? `<div class="sb-month"><span>ohne Datum</span><b>${unknownCount}</b></div>` : ''}
+            <div class="sb-monthly-split">
+              <div>RTxRT: <b>${r.standard||0}</b></div>
+              <div>Blast: <b>${r.blast||0}</b></div>
+            </div>
+          </div>
+        ` : ''}
+      </div>`;
+  }
+  list.innerHTML = html;
+  $('#sbGrandTotal').textContent = grand;
+
+  list.querySelectorAll('.sb-item').forEach(el => {
+    const row = el.querySelector('.sb-row');
+    row.addEventListener('click', () => {
+      const uid = el.getAttribute('data-uid');
+      if(expanded.has(uid)) expanded.delete(uid);
+      else expanded.add(uid);
+      renderSidebar();
+    });
+  });
+}
+
+// ─── Status polling ─────────────────────────────────
+let lastState = '';
+let pollTick  = 0;
+async function pollStatus(){
+  try{
+    const s = await fetch('/blast-status').then(r=>r.json());
+    const dot  = $('#statusDot');
+    dot.className = 'status-dot ' + (s.state || 'idle');
+    $('#statusStep').textContent = s.step || '—';
+
+    const feed = $('#logFeed');
+    if(!s.log || !s.log.length){
+      feed.innerHTML = '<span style="color:#6b5a9e">Noch keine Logs…</span>';
+    }else{
+      feed.innerHTML = s.log.map(line => {
+        let cls = 'line';
+        if(line.includes('✓')) cls += ' ok';
+        else if(line.startsWith('FEHLER')||line.includes('✗')) cls += ' err';
+        if(line.startsWith('KRITISCH')) cls += ' crit';
+        return `<div class="${cls}">${escapeHtml(line)}</div>`;
+      }).join('');
+      feed.scrollTop = feed.scrollHeight;
+    }
+
+    if(s.state === 'done' || s.state === 'idle' || s.state === 'skipped'){
+      refreshStartBtn();
+    }
+
+    pollTick++;
+    const stateChanged = s.state !== lastState;
+    const justFinished = (lastState === 'running') && (s.state === 'done');
+    const tickRefresh  = (s.state === 'running' && pollTick % 5 === 0);
+    if(stateChanged || justFinished || tickRefresh){
+      loadStats();
+    }
+    lastState = s.state || '';
+  }catch(e){ /* ignore transient */ }
+}
+
+// ─── Init ────────────────────────────────────────────
+loadSources();
+loadProfiles();
+loadStats();
+setInterval(pollStatus, 2000);
+pollStatus();
+</script>
+</body>
+</html>

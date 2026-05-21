@@ -1,0 +1,32 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "contacts.json (schema only — real file lives on the runner PC and contains real X handles and chat URLs)",
+  "type": "object",
+  "additionalProperties": {
+    "type": "array",
+    "description": "Keyed by AdsPower user_id. Each value is the list of contacts ever DMed from that account.",
+    "items": {
+      "type": "object",
+      "required": ["url", "last_sent"],
+      "properties": {
+        "url":       { "type": "string", "format": "uri", "description": "Chat URL, typically https://x.com/messages/<id-or-handle>" },
+        "name":      { "type": "string", "description": "Display name as scraped from the chat header" },
+        "handle":    { "type": "string", "description": "X handle without @" },
+        "last_sent": { "type": "string", "format": "date-time", "description": "ISO timestamp of the most recent DM sent" }
+      },
+      "additionalProperties": true
+    }
+  },
+  "examples": [
+    {
+      "adspower-profile-id-1": [
+        {
+          "url": "https://x.com/messages/PLACEHOLDER",
+          "name": "PLACEHOLDER_NAME",
+          "handle": "PLACEHOLDER_HANDLE",
+          "last_sent": "2026-05-21T12:00:00.000Z"
+        }
+      ]
+    }
+  ]
+}

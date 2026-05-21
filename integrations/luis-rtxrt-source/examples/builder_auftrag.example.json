@@ -1,0 +1,6 @@
+{
+  "_comment": "Builder bot auftrag — read by builder_bot.py. Runs on a single AdsPower profile. Mode is either 'followers' (scrape verified_followers page) or 'chats' (scroll /messages list).",
+  "mode": "followers",
+  "user_id": "adspower-profile-id-1",
+  "name": "PLACEHOLDER_ACCOUNT_NAME"
+}

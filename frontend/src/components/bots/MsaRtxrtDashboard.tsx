@@ -1117,15 +1117,17 @@ function SetupTab({ canRunLiveOne }: { canRunLiveOne: boolean }) {
         </ul>
       </NumberedCard>
 
-      <NumberedCard n={6} title="Working local dashboard">
+      <NumberedCard n={6} title="Luis Local Dashboard">
         <p
           className="mb-3 text-xs leading-relaxed"
           style={{ color: THEME.textMuted }}
+          data-testid="local-dashboard-intro"
         >
-          The full Luis-built dashboard with per-account chats, recipient
-          lists, and follower scrapers runs locally on the Claw computer.
-          Mission Control never reaches into it — open the URL below from
-          the Claw host&apos;s browser.
+          The full RT/X workflow Luis built — per-account chats, recipient
+          database, follower scrapers, promo repost, campaign orchestrator
+          — runs as <code>server.py</code> on the runner computer and
+          serves at the URL below. Mission Control never reaches into it;
+          this card is a deep link, not a proxy.
         </p>
         <div
           className="flex flex-wrap items-center gap-2 rounded-lg p-3"
@@ -1155,7 +1157,7 @@ function SetupTab({ canRunLiveOne }: { canRunLiveOne: boolean }) {
               }}
             >
               <ExternalLink className="h-3.5 w-3.5" />
-              Open Working Dashboard
+              Open Local Dashboard
             </a>
             <CopyButton
               text={LOCAL_DASHBOARD_URL}
@@ -1164,15 +1166,143 @@ function SetupTab({ canRunLiveOne }: { canRunLiveOne: boolean }) {
             />
           </div>
         </div>
+        <ul
+          className="mt-3 space-y-1.5 text-[11px] leading-relaxed"
+          style={{ color: THEME.textQuiet }}
+          data-testid="local-dashboard-semantics"
+        >
+          <li>
+            <b style={{ color: THEME.textSoft }}>On luis-pc-1:</b> opens
+            Luis&apos;s actual working RT/X dashboard (the one this Mission
+            Control surface is mirroring).
+          </li>
+          <li>
+            <b style={{ color: THEME.textSoft }}>On Zach&apos;s machine:</b>{" "}
+            <code>localhost</code> resolves to <em>Zach&apos;s</em> own
+            computer, not Luis&apos;s — so the link will only work if a
+            local copy of <code>server.py</code> is also running there.
+          </li>
+          <li>
+            <b style={{ color: THEME.textSoft }}>On a phone or remote
+            laptop:</b> <code>localhost</code> won&apos;t reach
+            Luis&apos;s PC at all. A secure tunnel / proxy / bridge would
+            be needed; we are not building one yet, by design.
+          </li>
+        </ul>
         <p
           className="mt-2 text-[11px] leading-relaxed"
           style={{ color: THEME.textQuiet }}
           data-testid="local-dashboard-note"
         >
-          This URL only resolves on the Claw computer. Clicking it from any
-          other machine — including from <code>hq.digidle.com</code> on
-          another laptop — will not work. That is by design.
+          The long-term goal is native parity inside Digidle OS so this
+          deep link becomes optional. Until then, the local dashboard
+          remains the source of truth for accounts, chats, and recipient
+          lists.
         </p>
+
+        <div
+          className="mt-4 rounded-lg p-3"
+          style={{
+            background: THEME.cardSoftBg,
+            border: `1px solid ${THEME.cardBorder}`,
+          }}
+          data-testid="local-dashboard-current-status"
+        >
+          <div
+            className="mb-2 text-[11px] font-semibold uppercase tracking-wide"
+            style={{ color: THEME.textSoft }}
+          >
+            Current status
+          </div>
+          <ul className="space-y-1 text-[12px]" style={{ color: THEME.text }}>
+            <li className="flex items-start gap-2" data-testid="status-runner-connected">
+              <CheckCircle2 className="mt-0.5 h-3.5 w-3.5 shrink-0" style={{ color: THEME.ok }} />
+              <span><code>luis-pc-1</code> connected</span>
+            </li>
+            <li className="flex items-start gap-2" data-testid="status-smoke-verified">
+              <CheckCircle2 className="mt-0.5 h-3.5 w-3.5 shrink-0" style={{ color: THEME.ok }} />
+              <span>Smoke verified</span>
+            </li>
+            <li className="flex items-start gap-2" data-testid="status-dry-runs-verified">
+              <CheckCircle2 className="mt-0.5 h-3.5 w-3.5 shrink-0" style={{ color: THEME.ok }} />
+              <span>Dry-runs verified (<code>dm</code>, <code>repost</code>, <code>blast</code>, <code>builder</code>)</span>
+            </li>
+            <li className="flex items-start gap-2" data-testid="status-live-one-gated">
+              <ShieldCheck className="mt-0.5 h-3.5 w-3.5 shrink-0" style={{ color: THEME.warn }} />
+              <span>Live-one gated (three required env flags + runner-side gate)</span>
+            </li>
+            <li className="flex items-start gap-2" data-testid="status-mass-live-blocked">
+              <ShieldAlert className="mt-0.5 h-3.5 w-3.5 shrink-0" style={{ color: THEME.err }} />
+              <span>Mass-live blocked (no <code>live_all_*</code> / <code>live_mass_*</code> kinds in dispatch)</span>
+            </li>
+            <li className="flex items-start gap-2" data-testid="status-bridge-added">
+              <CheckCircle2 className="mt-0.5 h-3.5 w-3.5 shrink-0" style={{ color: THEME.ok }} />
+              <span>Local dashboard bridge added</span>
+            </li>
+          </ul>
+        </div>
+      </NumberedCard>
+
+      <NumberedCard n={7} title="Ownership & editing model">
+        <div
+          className="mb-3 space-y-2 text-[12px] leading-relaxed"
+          style={{ color: THEME.textMuted }}
+          data-testid="ownership-note"
+        >
+          <p>
+            <b style={{ color: THEME.textSoft }}>Zach / Digidle OS / Modern
+            Sales Agency</b> owns the system. Mission Control on GitHub is
+            the company source of truth for Digidle OS code.
+          </p>
+          <p>
+            <b style={{ color: THEME.textSoft }}>Luis</b> is the
+            builder/operator for the RT/X lane: he writes and operates the
+            bots that the runner machines execute.
+          </p>
+          <p>
+            <b style={{ color: THEME.textSoft }}>Runner machines</b> are
+            execution environments. <code>luis-pc-1</code> is the current
+            runner. Future planned runners include <code>claw-1</code>,{" "}
+            <code>zach-laptop-1</code>, <code>mac-mini-1</code>, and{" "}
+            <code>mac-mini-2</code>.
+          </p>
+        </div>
+
+        <div
+          className="rounded-lg p-3"
+          style={{
+            background: THEME.cardSoftBg,
+            border: `1px solid ${THEME.cardBorder}`,
+          }}
+          data-testid="editing-model"
+        >
+          <div
+            className="mb-2 text-[11px] font-semibold uppercase tracking-wide"
+            style={{ color: THEME.textSoft }}
+          >
+            Editing model
+          </div>
+          <ul className="space-y-2 text-[12px]" style={{ color: THEME.text }}>
+            <li className="flex items-start gap-2" data-testid="editing-model-bot">
+              <Hammer className="mt-0.5 h-3.5 w-3.5 shrink-0" style={{ color: THEME.textSoft }} />
+              <span>
+                <b style={{ color: THEME.textSoft }}>Bot logic changes:</b>{" "}
+                Luis edits the active RT/X bot folder directly on his runner
+                PC. The runner picks up the change on the next job — no
+                deploy, no PR for bot code.
+              </span>
+            </li>
+            <li className="flex items-start gap-2" data-testid="editing-model-ui">
+              <ExternalLink className="mt-0.5 h-3.5 w-3.5 shrink-0" style={{ color: THEME.textSoft }} />
+              <span>
+                <b style={{ color: THEME.textSoft }}>Digidle OS interface
+                changes:</b> branch off <code>main</code> in
+                Mission Control, open a PR, wait for checks, merge, deploy.
+                This card itself was added that way.
+              </span>
+            </li>
+          </ul>
+        </div>
       </NumberedCard>
 
       <NumberedCard n={8} title="AdsPower checklist (Claw computer)">

@@ -1322,9 +1322,9 @@ function NewDatabaseTabExact({
     <div data-testid="tab-pane-new-database">
       <HintBox icon={Hammer}>
         Baut eine neue Empfängerliste für den ausgewählten Account — sendet
-        KEINE DMs. „Inbox-Chats" landet in <code>contacts.json</code> und ist
-        sofort im Recipient-Database-Modus nutzbar. „Followers" landet in{" "}
-        <code>follower_lists.json</code>.
+        KEINE DMs. &bdquo;Inbox-Chats&ldquo; landet in <code>contacts.json</code>{" "}
+        und ist sofort im Recipient-Database-Modus nutzbar.{" "}
+        &bdquo;Followers&ldquo; landet in <code>follower_lists.json</code>.
       </HintBox>
 
       <NumberedCard n={1} title="Modus">

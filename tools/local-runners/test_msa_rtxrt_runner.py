@@ -253,6 +253,148 @@ def test_patch_job_status_returns_false_on_non_200() -> None:
     )
 
 
+# ── patch_job_status retry behaviour ────────────────────────────────────────
+#
+# Background: a transient HTTP blip while reporting "succeeded" used to leave
+# the job stuck as "running" in Mission Control because the call was one-shot
+# and any exception in the success path bubbled up to the poll loop's outer
+# except. We now retry transient failures and never raise.
+
+
+def test_patch_job_status_no_retry_on_non_retryable_4xx() -> None:
+    """400 / 404 etc are the request's own fault — retrying won't help."""
+    cfg = RunnerConfig.from_env(_base_env())
+    http = MagicMock(return_value=(404, {"detail": "job not found"}))
+    sleep = MagicMock()
+    ok = patch_job_status(
+        cfg, job_id="j-1", status_value="succeeded",
+        http=http, sleep=sleep,
+    )
+    assert ok is False
+    assert http.call_count == 1
+    sleep.assert_not_called()
+
+
+def test_patch_job_status_retries_on_500_then_succeeds() -> None:
+    """Transient 5xx → keep trying until the backend recovers."""
+    cfg = RunnerConfig.from_env(_base_env())
+    http = MagicMock(side_effect=[
+        (503, {"detail": "service unavailable"}),
+        (502, {"detail": "bad gateway"}),
+        (200, {"id": "j-1", "status": "succeeded"}),
+    ])
+    sleep = MagicMock()
+    ok = patch_job_status(
+        cfg, job_id="j-1", status_value="succeeded",
+        http=http, sleep=sleep,
+    )
+    assert ok is True
+    assert http.call_count == 3
+    assert sleep.call_count == 2  # two backoffs between three attempts
+
+
+def test_patch_job_status_retries_on_408_and_429() -> None:
+    """408 Request Timeout and 429 Too Many Requests are explicitly retryable."""
+    cfg = RunnerConfig.from_env(_base_env())
+    http = MagicMock(side_effect=[
+        (408, None),
+        (429, None),
+        (200, {"id": "j-1", "status": "succeeded"}),
+    ])
+    sleep = MagicMock()
+    ok = patch_job_status(
+        cfg, job_id="j-1", status_value="succeeded",
+        http=http, sleep=sleep,
+    )
+    assert ok is True
+    assert http.call_count == 3
+
+
+def test_patch_job_status_retries_on_url_error_then_succeeds() -> None:
+    """Raised network exceptions (URLError, ConnectionError, ...) must retry."""
+    import urllib.error
+    cfg = RunnerConfig.from_env(_base_env())
+    http = MagicMock(side_effect=[
+        urllib.error.URLError("connection reset"),
+        (200, {"id": "j-1", "status": "succeeded"}),
+    ])
+    sleep = MagicMock()
+    ok = patch_job_status(
+        cfg, job_id="j-1", status_value="succeeded",
+        http=http, sleep=sleep,
+    )
+    assert ok is True
+    assert http.call_count == 2
+
+
+def test_patch_job_status_returns_false_after_exhausting_retries() -> None:
+    """If the backend stays unreachable, return False — but NEVER raise."""
+    import urllib.error
+    cfg = RunnerConfig.from_env(_base_env())
+    http = MagicMock(side_effect=urllib.error.URLError("dns failure"))
+    sleep = MagicMock()
+    ok = patch_job_status(
+        cfg, job_id="j-1", status_value="succeeded",
+        http=http, sleep=sleep, max_attempts=3,
+    )
+    assert ok is False
+    assert http.call_count == 3
+    assert sleep.call_count == 2  # one sleep between each pair of attempts
+
+
+def test_patch_job_status_never_raises_on_unexpected_exception() -> None:
+    """Bot already exited; we must not turn a PATCH crash into a runner crash."""
+    cfg = RunnerConfig.from_env(_base_env())
+    http = MagicMock(side_effect=RuntimeError("totally unexpected"))
+    sleep = MagicMock()
+    # Should NOT raise; should just return False after the retries.
+    ok = patch_job_status(
+        cfg, job_id="j-1", status_value="succeeded",
+        http=http, sleep=sleep, max_attempts=2,
+    )
+    assert ok is False
+
+
+def test_patch_job_status_max_attempts_one_preserves_old_single_shot() -> None:
+    """Existing call sites that want the old behaviour can opt out of retry."""
+    cfg = RunnerConfig.from_env(_base_env())
+    http = MagicMock(return_value=(503, None))
+    sleep = MagicMock()
+    ok = patch_job_status(
+        cfg, job_id="j-1", status_value="succeeded",
+        http=http, sleep=sleep, max_attempts=1,
+    )
+    assert ok is False
+    assert http.call_count == 1
+    sleep.assert_not_called()
+
+
+def test_execute_job_returns_succeeded_even_if_final_patch_fails(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The bot subprocess succeeded; runner's intent is 'succeeded'.
+
+    A transient PATCH failure must NOT flip the locally-reported outcome to
+    'failed' — that would mis-represent what actually happened on disk.
+    """
+    # Avoid real backoff sleeps inside patch_job_status during this test.
+    import msa_rtxrt_runner as _runner
+    monkeypatch.setattr(_runner.time, "sleep", lambda _s: None)
+
+    cfg = RunnerConfig.from_env(_base_env())
+    http = MagicMock(return_value=(503, None))  # backend perpetually down
+    fake_runner = MagicMock(return_value=_ok(stdout="DRY RUN OK"))
+    result = execute_job(
+        cfg,
+        {"id": "j-9", "kind": "smoke"},
+        http=http,
+        runner=fake_runner,
+    )
+    assert result == "succeeded"
+    # PATCH was attempted (with the default retry budget), each attempt 503.
+    assert http.call_count >= 2
+
+
 # ── execute_job (mass-live / unknown / safety gate paths) ───────────────────
 
 

@@ -302,6 +302,14 @@ def poll_for_job(
     return job if isinstance(job, dict) else None
 
 
+# Retry config for the final-state PATCH. A transient HTTP blip (e.g. one
+# slow Render edge or a brief connection reset) must NOT leave a completed
+# job stuck as "running" in Mission Control. Retries are intentionally
+# short — we'd rather give up loudly than block the poll loop indefinitely.
+PATCH_MAX_ATTEMPTS: Final[int] = 4
+PATCH_BACKOFF_SECONDS: Final[tuple[float, ...]] = (0.5, 1.5, 4.0)
+
+
 def patch_job_status(
     cfg: RunnerConfig,
     *,
@@ -311,9 +319,27 @@ def patch_job_status(
     stdout_excerpt: str | None = None,
     error_excerpt: str | None = None,
     http: Any = None,
+    max_attempts: int = PATCH_MAX_ATTEMPTS,
+    sleep: Any = None,
 ) -> bool:
-    """PATCH a job with a new status. Returns True on success."""
+    """PATCH a job with a new status.
+
+    Retries on transient network errors (raised exceptions, server 5xx,
+    408 Request Timeout, 429 Too Many Requests) so a completed bot
+    subprocess does not leave its job stuck as "running" in Mission Control
+    after a brief HTTP blip. Returns True if the backend eventually
+    accepted the PATCH (HTTP 200), False otherwise.
+
+    Never raises. The bot subprocess has already exited by the time this
+    is called from the success / failure paths; turning a transient PATCH
+    failure into an apparent runner crash would mis-report a real outcome
+    and leave the poll loop's outer except to log a confusing trace.
+
+    ``max_attempts`` and ``sleep`` are parameterised so tests can drive
+    the retry path without inserting real seconds of backoff.
+    """
     http = http if http is not None else _http_request
+    sleep = sleep if sleep is not None else time.sleep
     payload: dict[str, Any] = {"status": status_value, "runner_id": cfg.runner_id}
     if summary is not None:
         payload["summary"] = summary
@@ -322,13 +348,52 @@ def patch_job_status(
     if error_excerpt is not None:
         payload["error_excerpt"] = error_excerpt
     url = f"{cfg.base_url}/api/v1/msa-rtxrt/jobs/{job_id}"
-    status, _body = http(
-        method="PATCH",
-        url=url,
-        token=cfg.runner_token,
-        body=payload,
+
+    attempts = max(1, max_attempts)
+    last_status: int | None = None
+    last_exc: BaseException | None = None
+    for attempt in range(1, attempts + 1):
+        try:
+            status, _body = http(
+                method="PATCH",
+                url=url,
+                token=cfg.runner_token,
+                body=payload,
+            )
+            last_status = status
+            last_exc = None
+            if status == 200:
+                return True
+            # Only retry transient server errors (5xx, 408 Request Timeout,
+            # 429 Too Many Requests). Other 4xx mean the request itself is
+            # invalid; retrying won't change the outcome.
+            if status < 500 and status not in (408, 429):
+                print(
+                    f"  PATCH job={job_id} status={status_value} -> HTTP {status} "
+                    f"(non-retryable, giving up after attempt {attempt}/{attempts})",
+                    file=sys.stderr,
+                )
+                return False
+        except Exception as exc:  # noqa: BLE001 - never crash the poll loop here
+            last_exc = exc
+
+        if attempt < attempts:
+            delay = PATCH_BACKOFF_SECONDS[
+                min(attempt - 1, len(PATCH_BACKOFF_SECONDS) - 1)
+            ]
+            sleep(delay)
+
+    detail = (
+        f"HTTP {last_status}" if last_exc is None
+        else f"{type(last_exc).__name__}: {last_exc!r}"
     )
-    return status == 200
+    print(
+        f"  PATCH job={job_id} status={status_value} FAILED after "
+        f"{attempts} attempts ({detail}). Job may remain visible as "
+        f"'running' in Mission Control until manually reconciled.",
+        file=sys.stderr,
+    )
+    return False
 
 
 # Privacy caps on excerpts we send back. The backend re-caps too.

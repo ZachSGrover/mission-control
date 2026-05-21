@@ -307,17 +307,87 @@ describe("MsaRtxrtDashboard — setup tab", () => {
     expect(notice.textContent).toMatch(/logged in/i);
   });
 
-  it("renders the working local dashboard URL block with the Open + Copy controls", () => {
+  it("renders the Luis Local Dashboard card with the Open + Copy controls", () => {
     openSetup();
     expect(screen.getByText(LOCAL_DASHBOARD_URL)).toBeInTheDocument();
     const openBtn = screen.getByTestId("local-dashboard-open");
     expect(openBtn).toHaveAttribute("href", LOCAL_DASHBOARD_URL);
+    expect(openBtn.textContent).toMatch(/Open Local Dashboard/);
     expect(
       screen.getByRole("button", { name: /copy local dashboard url/i }),
     ).toBeInTheDocument();
-    expect(screen.getByTestId("local-dashboard-note").textContent).toMatch(
-      /only resolves on the Claw computer/i,
+    // Intro explains the deep-link, not-a-proxy posture.
+    expect(screen.getByTestId("local-dashboard-intro").textContent).toMatch(
+      /deep link, not a proxy/i,
     );
+  });
+
+  it("explains localhost semantics across machines (luis-pc-1 / Zach / phone)", () => {
+    openSetup();
+    const semantics = screen.getByTestId("local-dashboard-semantics");
+    expect(semantics.textContent).toMatch(/luis-pc-1/);
+    // Zach's machine: localhost is Zach's own, not Luis's.
+    expect(semantics.textContent).toMatch(/Zach/);
+    expect(semantics.textContent).toMatch(/own computer, not Luis/i);
+    // Phone / remote: needs a tunnel; not building one yet.
+    expect(semantics.textContent).toMatch(/phone|remote/i);
+    expect(semantics.textContent).toMatch(/tunnel|proxy|bridge/i);
+  });
+
+  it("renders the Current Status card with all six checks", () => {
+    openSetup();
+    const status = screen.getByTestId("local-dashboard-current-status");
+    expect(status.textContent).toMatch(/Current status/i);
+    expect(screen.getByTestId("status-runner-connected").textContent).toMatch(
+      /luis-pc-1.*connected/i,
+    );
+    expect(screen.getByTestId("status-smoke-verified").textContent).toMatch(/smoke/i);
+    expect(screen.getByTestId("status-dry-runs-verified").textContent).toMatch(
+      /dry-runs verified/i,
+    );
+    expect(screen.getByTestId("status-live-one-gated").textContent).toMatch(
+      /live-one gated/i,
+    );
+    expect(screen.getByTestId("status-mass-live-blocked").textContent).toMatch(
+      /mass-live blocked/i,
+    );
+    expect(screen.getByTestId("status-bridge-added").textContent).toMatch(
+      /bridge added/i,
+    );
+  });
+
+  it("renders the ownership note naming Zach as owner and Luis as builder", () => {
+    openSetup();
+    const note = screen.getByTestId("ownership-note");
+    expect(note.textContent).toMatch(/Zach/);
+    expect(note.textContent).toMatch(/Digidle OS/);
+    expect(note.textContent).toMatch(/Modern Sales Agency/);
+    expect(note.textContent).toMatch(/Luis/);
+    expect(note.textContent).toMatch(/builder/i);
+    expect(note.textContent).toMatch(/operator/i);
+    expect(note.textContent).toMatch(/source of truth/i);
+    // Runner machines — current + planned future.
+    expect(note.textContent).toMatch(/luis-pc-1/);
+    expect(note.textContent).toMatch(/claw-1/);
+    expect(note.textContent).toMatch(/zach-laptop-1/);
+    expect(note.textContent).toMatch(/mac-mini-1/);
+    expect(note.textContent).toMatch(/mac-mini-2/);
+  });
+
+  it("renders the editing model: bot logic edits direct vs Mission Control via PR", () => {
+    openSetup();
+    const model = screen.getByTestId("editing-model");
+    const bot = screen.getByTestId("editing-model-bot");
+    expect(bot.textContent).toMatch(/Bot logic changes/i);
+    expect(bot.textContent).toMatch(/bot folder/i);
+    expect(bot.textContent).toMatch(/no deploy|next job/i);
+    const ui = screen.getByTestId("editing-model-ui");
+    expect(ui.textContent).toMatch(/Digidle OS interface/i);
+    expect(ui.textContent).toMatch(/PR/);
+    expect(ui.textContent).toMatch(/checks/i);
+    expect(ui.textContent).toMatch(/merge/i);
+    // The model card lives inside the same NumberedCard.
+    expect(model).toBeInTheDocument();
   });
 
   it("renders the safety posture summary", () => {

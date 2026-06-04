@@ -1,0 +1,21 @@
+{
+  "_comment": "SANITIZED SAMPLE DATA ONLY. Fake aliases, no real handles/fans/creators. Used by the manual Daily-QC import dry-run + tests. Never put real account data here.",
+  "account_baselines_cents": {
+    "luna_demo": 18000,
+    "indigo_demo": 22000
+  },
+  "records": [
+    {"creator_alias": "luna_demo", "chatter_alias": "chatter_a", "fan_alias": "fan_001", "direction": "in", "timestamp": "2026-06-02T14:01:00", "text": "hey how much for the custom video of you?", "reply_minutes": 3},
+    {"creator_alias": "luna_demo", "chatter_alias": "chatter_a", "fan_alias": "fan_001", "direction": "out", "timestamp": "2026-06-02T14:03:00", "text": "Customs start at $60 babe, want me to make one just for you?", "price_cents": 0},
+    {"creator_alias": "luna_demo", "chatter_alias": "chatter_a", "fan_alias": "fan_001", "direction": "in", "timestamp": "2026-06-02T14:05:00", "text": "yes please send it", "purchase_cents": 6000},
+    {"creator_alias": "luna_demo", "chatter_alias": "chatter_a", "fan_alias": "fan_002", "direction": "in", "timestamp": "2026-06-02T15:10:00", "text": "what does that ppv cost?", "reply_minutes": 1},
+    {"creator_alias": "luna_demo", "chatter_alias": "chatter_a", "fan_alias": "fan_002", "direction": "in", "timestamp": "2026-06-02T15:30:00", "text": "too expensive, cant afford that right now"},
+    {"creator_alias": "luna_demo", "chatter_alias": "chatter_a", "fan_alias": "fan_003", "direction": "in", "timestamp": "2026-06-02T16:00:00", "text": "do you have any menus or specials?", "tip_cents": 500},
+    {"creator_alias": "luna_demo", "chatter_alias": "chatter_a", "fan_alias": "fan_003", "direction": "out", "timestamp": "2026-06-02T16:02:00", "text": "Here is my menu love, lots to pick from", "price_cents": 0},
+    {"creator_alias": "luna_demo", "chatter_alias": "chatter_a", "fan_alias": "fan_004", "direction": "in", "timestamp": "2026-06-02T17:00:00", "text": "this feels like a scam, i want a refund"},
+    {"creator_alias": "indigo_demo", "chatter_alias": "chatter_b", "fan_alias": "fan_010", "direction": "in", "timestamp": "2026-06-02T11:00:00", "text": "can you make a voice note for me?", "tip_cents": 2000},
+    {"creator_alias": "indigo_demo", "chatter_alias": "chatter_b", "fan_alias": "fan_010", "direction": "out", "timestamp": "2026-06-02T11:30:00", "text": "stop being stupid, go away", "price_cents": 0},
+    {"creator_alias": "indigo_demo", "chatter_alias": "chatter_b", "fan_alias": "fan_011", "direction": "in", "timestamp": "2026-06-02T12:00:00", "text": "how do i buy your content?"},
+    {"creator_alias": "indigo_demo", "chatter_alias": "chatter_b", "fan_alias": "fan_012", "direction": "in", "timestamp": "2026-06-02T13:00:00", "text": "loved the last set, take my money", "purchase_cents": 12000}
+  ]
+}

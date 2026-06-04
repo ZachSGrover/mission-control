@@ -1,0 +1,8 @@
+creator_alias,chatter_alias,fan_alias,direction,timestamp,text,price_cents,tip_cents,purchase_cents,reply_minutes
+luna_demo,chatter_a,fan_001,in,2026-06-02T14:01:00,how much for a custom video of you?,0,0,0,3
+luna_demo,chatter_a,fan_001,out,2026-06-02T14:03:00,Customs start at $60 babe,0,0,0,
+luna_demo,chatter_a,fan_002,in,2026-06-02T15:10:00,what does that ppv cost?,0,0,0,1
+luna_demo,chatter_a,fan_002,in,2026-06-02T15:30:00,too expensive cant afford it,0,0,0,
+indigo_demo,chatter_b,fan_010,in,2026-06-02T11:00:00,can you make a voice note for me?,0,2000,0,
+indigo_demo,chatter_b,fan_010,out,2026-06-02T11:30:00,stop being stupid go away,0,0,0,
+indigo_demo,chatter_b,fan_012,in,2026-06-02T13:00:00,loved the last set take my money,0,0,12000,

@@ -5,6 +5,7 @@ import type { ReactNode } from "react";
 
 import { DM_Serif_Display, IBM_Plex_Sans, Sora } from "next/font/google";
 
+import { ApprovalGate } from "@/components/auth/ApprovalGate";
 import { AuthProvider } from "@/components/providers/AuthProvider";
 import { QueryProvider } from "@/components/providers/QueryProvider";
 import { GlobalLoader } from "@/components/ui/global-loader";
@@ -44,7 +45,7 @@ export default function RootLayout({ children }: { children: ReactNode }) {
         <AuthProvider>
           <QueryProvider>
             <GlobalLoader />
-            {children}
+            <ApprovalGate>{children}</ApprovalGate>
           </QueryProvider>
         </AuthProvider>
       </body>

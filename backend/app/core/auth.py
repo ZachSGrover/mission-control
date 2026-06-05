@@ -522,9 +522,18 @@ async def _check_allowlist(
                 await session.commit()
             return
 
-    # Owner bypass: env-pinned owner always passes
+    # Owner bypass: env-pinned owner always passes.
+    #
+    # IMPORTANT: seed an allowlist row for the env owner on first sign-in.
+    # Without this, the env-pinned owner authenticates and uses the app but
+    # never populates `mc_allowed_users`, leaving the table empty. The
+    # bootstrap branch below would then treat the next *stranger* as the
+    # "first caller" and silently admit them with full access. Mirroring the
+    # DB-owner branch keeps the table non-empty and closes that hole.
     owner_id = (settings.owner_user_id or "").strip()
     if owner_id and clerk_user_id == owner_id:
+        session.add(MCAllowedUser(clerk_user_id=clerk_user_id, email=normalized_email))
+        await session.commit()
         return
 
     # Owner bypass: DB owner row passes (existing owners pre-dating the allowlist)
@@ -539,7 +548,31 @@ async def _check_allowlist(
         await session.commit()
         return
 
-    # Bootstrap: if allowlist is empty, the first caller is admitted and added
+    # Bootstrap: admit the first caller ONLY on a genuinely unowned system.
+    #
+    # Fail-closed guard: if an owner is configured anywhere (env-pinned
+    # OWNER_USER_ID, or any existing owner role row), the deployment is owned
+    # even when `mc_allowed_users` happens to be empty — so an empty table must
+    # NOT be read as "fresh, admit anyone". Only a deployment with no owner at
+    # all is eligible for first-caller bootstrap.
+    if owner_id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Access denied. You are not on the allowlist for this application.",
+        )
+
+    any_owner_result = await session.exec(
+        sql_select(MCUserRole).where(
+            MCUserRole.role == "owner",
+            MCUserRole.disabled == False,  # noqa: E712 — SQL boolean comparison
+        )
+    )
+    if any_owner_result.first() is not None:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Access denied. You are not on the allowlist for this application.",
+        )
+
     count_result = await session.exec(sql_select(func.count()).select_from(MCAllowedUser))
     count = count_result.one()
     if count == 0:

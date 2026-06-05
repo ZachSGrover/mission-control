@@ -409,12 +409,15 @@ function RunnerSelector({
         style={{ color: THEME.text, minWidth: 160 }}
         aria-label="Target runner for new jobs"
       >
-        <option value="">— pick a runner —</option>
+        <option value="" style={{ background: THEME.cardBg, color: THEME.text }}>
+          — pick a runner —
+        </option>
         {runners.map((r) => (
           <option
             key={r.runner_id}
             value={r.runner_id}
             data-testid={`runner-option-${r.runner_id}`}
+            style={{ background: THEME.cardBg, color: THEME.text }}
           >
             {labelFor(r)}
           </option>
